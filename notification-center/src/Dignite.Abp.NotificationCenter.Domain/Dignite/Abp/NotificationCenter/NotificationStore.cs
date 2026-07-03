@@ -132,29 +132,46 @@ public class NotificationStore : INotificationStore, ITransientDependency
         DateTime? startDate = null,
         DateTime? endDate = null)
     {
-        var userNotifications = await UserNotificationRepository.GetQueryableAsync();
-        var notifications = await NotificationRepository.GetQueryableAsync();
+        // Two indexed queries + an in-memory join, rather than a cross-collection join, so the SAME store works on
+        // both EF Core and MongoDB. The (UserId, State, CreationTime) index serves the first query; the second is a
+        // primary-key batch lookup. A user-notification whose notification was deleted is skipped, not thrown on
+        // (roadmap problem D).
+        var userNotificationQuery = await UserNotificationRepository.GetQueryableAsync();
+        userNotificationQuery = userNotificationQuery.Where(un =>
+            un.UserId == userId
+            && (state == null || un.State == state)
+            && (startDate == null || un.CreationTime >= startDate)
+            && (endDate == null || un.CreationTime <= endDate));
 
-        var joined =
-            from un in userNotifications
-            where un.UserId == userId
-                && (state == null || un.State == state)
-                && (startDate == null || un.CreationTime >= startDate)
-                && (endDate == null || un.CreationTime <= endDate)
-            join n in notifications on un.NotificationId equals n.Id
-            orderby un.CreationTime descending
-            select new { un, n };
+        var pagedUserNotifications = await AsyncExecuter.ToListAsync(
+            userNotificationQuery
+                .OrderByDescending(un => un.CreationTime)
+                .Skip(skipCount)
+                .Take(maxResultCount));
 
-        var paged = joined.Skip(skipCount).Take(maxResultCount);
-        var rows = await AsyncExecuter.ToListAsync(paged);
+        if (pagedUserNotifications.Count == 0)
+        {
+            return new List<UserNotificationWithNotification>();
+        }
 
-        return rows
-            .Select(row => new UserNotificationWithNotification
+        var notificationIds = pagedUserNotifications.Select(un => un.NotificationId).Distinct().ToList();
+        var notifications = await NotificationRepository.GetListAsync(n => notificationIds.Contains(n.Id));
+        var notificationsById = notifications.ToDictionary(n => n.Id);
+
+        var result = new List<UserNotificationWithNotification>();
+        foreach (var userNotification in pagedUserNotifications)
+        {
+            if (notificationsById.TryGetValue(userNotification.NotificationId, out var notification))
             {
-                UserNotification = MapToUserNotificationInfo(row.un),
-                Notification = MapToNotificationInfo(row.n)
-            })
-            .ToList();
+                result.Add(new UserNotificationWithNotification
+                {
+                    UserNotification = MapToUserNotificationInfo(userNotification),
+                    Notification = MapToNotificationInfo(notification)
+                });
+            }
+        }
+
+        return result;
     }
 
     public virtual async Task<int> GetUserNotificationCountAsync(

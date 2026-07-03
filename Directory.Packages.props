@@ -24,6 +24,7 @@
     <PackageVersion Include="Volo.Abp.Emailing" Version="10.5.0" />
     <PackageVersion Include="Volo.Abp.EntityFrameworkCore" Version="10.5.0" />
     <PackageVersion Include="Volo.Abp.EntityFrameworkCore.Sqlite" Version="10.5.0" />
+    <PackageVersion Include="Volo.Abp.MongoDB" Version="10.5.0" />
     <PackageVersion Include="Volo.Abp.Autofac" Version="10.5.0" />
     <PackageVersion Include="Volo.Abp.TestBase" Version="10.5.0" />
   </ItemGroup>
