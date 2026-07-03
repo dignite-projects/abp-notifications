@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <RootNamespace />
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Shouldly" />
+    <PackageReference Include="NSubstitute" />
+    <PackageReference Include="Volo.Abp.TestBase" />
+    <PackageReference Include="Volo.Abp.Autofac" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Needed to reference SignalR types (IHubContext) from this non-web test project. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Dignite.Abp.Notifications\Dignite.Abp.Notifications.csproj" />
+    <ProjectReference Include="..\..\src\Dignite.Abp.Notifications.SignalR\Dignite.Abp.Notifications.SignalR.csproj" />
+    <ProjectReference Include="..\..\src\Dignite.Abp.Notifications.Emailing\Dignite.Abp.Notifications.Emailing.csproj" />
+  </ItemGroup>
+
+</Project>

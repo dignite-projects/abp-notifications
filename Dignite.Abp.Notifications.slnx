@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/core/" />
+  <Folder Name="/core/src/">
+    <Project Path="core/src/Dignite.Abp.Notifications.Abstractions/Dignite.Abp.Notifications.Abstractions.csproj" />
+    <Project Path="core/src/Dignite.Abp.Notifications.Emailing/Dignite.Abp.Notifications.Emailing.csproj" />
+    <Project Path="core/src/Dignite.Abp.Notifications.Identity/Dignite.Abp.Notifications.Identity.csproj" />
+    <Project Path="core/src/Dignite.Abp.Notifications.SignalR/Dignite.Abp.Notifications.SignalR.csproj" />
+    <Project Path="core/src/Dignite.Abp.Notifications/Dignite.Abp.Notifications.csproj" />
+  </Folder>
+  <Folder Name="/core/test/">
+    <Project Path="core/test/Dignite.Abp.Notifications.Tests/Dignite.Abp.Notifications.Tests.csproj" />
+  </Folder>
+</Solution>
