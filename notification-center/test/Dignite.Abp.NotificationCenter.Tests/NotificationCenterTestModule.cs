@@ -14,6 +14,7 @@ using Volo.Abp.Modularity;
 namespace Dignite.Abp.NotificationCenter;
 
 [DependsOn(
+    typeof(AbpNotificationCenterApplicationModule),
     typeof(AbpNotificationCenterEntityFrameworkCoreModule),
     typeof(AbpEntityFrameworkCoreSqliteModule),
     typeof(AbpAutofacModule),
@@ -26,6 +27,7 @@ public class NotificationCenterTestModule : AbpModule
     public override void ConfigureServices(ServiceConfigurationContext context)
     {
         ConfigureInMemorySqlite(context.Services);
+        context.Services.AddAlwaysAllowAuthorization();
 
         // Register the custom test payload so the shared serializer can resolve it by discriminator.
         Configure<NotificationDataOptions>(options =>

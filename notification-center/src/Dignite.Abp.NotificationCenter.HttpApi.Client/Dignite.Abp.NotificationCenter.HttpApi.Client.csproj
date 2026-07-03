@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace />
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Volo.Abp.Http.Client" />
+    <PackageReference Include="Volo.Abp.Json.SystemTextJson" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Dignite.Abp.NotificationCenter.Application.Contracts\Dignite.Abp.NotificationCenter.Application.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -18,6 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Dignite.Abp.NotificationCenter.Application\Dignite.Abp.NotificationCenter.Application.csproj" />
     <ProjectReference Include="..\..\src\Dignite.Abp.NotificationCenter.EntityFrameworkCore\Dignite.Abp.NotificationCenter.EntityFrameworkCore.csproj" />
   </ItemGroup>
 

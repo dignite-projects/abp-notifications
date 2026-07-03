@@ -16,6 +16,10 @@
     <PackageVersion Include="Volo.Abp.AspNetCore.SignalR" Version="10.5.0" />
     <PackageVersion Include="Volo.Abp.Json.SystemTextJson" Version="10.5.0" />
     <PackageVersion Include="Volo.Abp.Ddd.Domain" Version="10.5.0" />
+    <PackageVersion Include="Volo.Abp.Ddd.Application" Version="10.5.0" />
+    <PackageVersion Include="Volo.Abp.Ddd.Application.Contracts" Version="10.5.0" />
+    <PackageVersion Include="Volo.Abp.AspNetCore.Mvc" Version="10.5.0" />
+    <PackageVersion Include="Volo.Abp.Http.Client" Version="10.5.0" />
     <PackageVersion Include="Volo.Abp.EntityFrameworkCore" Version="10.5.0" />
     <PackageVersion Include="Volo.Abp.EntityFrameworkCore.Sqlite" Version="10.5.0" />
     <PackageVersion Include="Volo.Abp.Autofac" Version="10.5.0" />
