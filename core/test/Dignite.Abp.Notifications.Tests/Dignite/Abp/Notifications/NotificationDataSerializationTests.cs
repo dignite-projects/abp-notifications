@@ -51,7 +51,7 @@ public class NotificationDataSerializationTests
     }
 
     [Fact]
-    public void Unregistered_type_throws_a_clear_error()
+    public void Unregistered_type_throws_a_clear_error_on_read()
     {
         // Built-ins only — OrderShipped is NOT registered on this consumer.
         var serializer = NotificationTestObjects.CreateSerializer();
@@ -59,6 +59,33 @@ public class NotificationDataSerializationTests
 
         var ex = Should.Throw<JsonException>(() => serializer.Deserialize(json));
         ex.Message.ShouldContain("Test.OrderShipped");
+    }
+
+    [Fact]
+    public void Unregistered_type_throws_a_clear_error_on_write()
+    {
+        var serializer = NotificationTestObjects.CreateSerializer(); // OrderShipped not registered
+
+        Should.Throw<JsonException>(() =>
+            serializer.Serialize(new OrderShippedNotificationData { OrderNumber = "x" }));
+    }
+
+    [Fact]
+    public void Missing_discriminator_throws()
+    {
+        var serializer = NotificationTestObjects.CreateSerializer();
+
+        Should.Throw<JsonException>(() => serializer.Deserialize("{\"message\":\"x\"}"));
+    }
+
+    [Fact]
+    public void Null_and_empty_are_handled()
+    {
+        var serializer = NotificationTestObjects.CreateSerializer();
+
+        serializer.Serialize(null).ShouldBeNull();
+        serializer.Deserialize(null).ShouldBeNull();
+        serializer.Deserialize("").ShouldBeNull();
     }
 
     [Fact]

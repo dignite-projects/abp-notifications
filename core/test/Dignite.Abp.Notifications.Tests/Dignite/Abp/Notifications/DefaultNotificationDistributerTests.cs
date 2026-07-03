@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using NSubstitute;
@@ -43,6 +44,37 @@ public class DefaultNotificationDistributerTests
 
         await store.Received(1).InsertNotificationAsync(Arg.Any<NotificationInfo>());
         await store.Received(2).InsertUserNotificationAsync(Arg.Any<UserNotificationInfo>());
+    }
+
+    [Fact]
+    public async Task Resolves_subscribers_and_keeps_only_available_ones()
+    {
+        var store = Substitute.For<INotificationStore>();
+        var definitionManager = Substitute.For<INotificationDefinitionManager>();
+        var eventBus = Substitute.For<IDistributedEventBus>();
+
+        var available = Guid.NewGuid();
+        var notAvailable = Guid.NewGuid();
+        store.GetSubscriptionsAsync("test", null, null).Returns(new List<NotificationSubscriptionInfo>
+        {
+            new() { UserId = available, NotificationName = "test" },
+            new() { UserId = notAvailable, NotificationName = "test" }
+        });
+        definitionManager.IsAvailableAsync("test", available).Returns(true);
+        definitionManager.IsAvailableAsync("test", notAvailable).Returns(false);
+
+        RealTimeNotifyEto? published = null;
+        eventBus.WhenForAnyArgs(x => x.PublishAsync(Arg.Any<RealTimeNotifyEto>()))
+            .Do(ci => published = ci.Arg<RealTimeNotifyEto>());
+
+        var distributer = new DefaultNotificationDistributer(store, definitionManager, eventBus);
+        var notification = new NotificationInfo { Id = Guid.NewGuid(), NotificationName = "test" };
+
+        // No explicit userIds → subscription-driven path, filtered by availability.
+        await distributer.DistributeAsync(notification);
+
+        published.ShouldNotBeNull();
+        published!.UserIds.ShouldBe(new[] { available });
     }
 
     [Fact]
