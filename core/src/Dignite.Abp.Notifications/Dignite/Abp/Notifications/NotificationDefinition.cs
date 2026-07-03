@@ -58,4 +58,16 @@ public class NotificationDefinition
         Attributes[key] = value;
         return this;
     }
+
+    /// <summary>Restricts delivery to specific notifier channels (by name). Omit for every channel.</summary>
+    public NotificationDefinition UseChannels(params string[] channels)
+    {
+        Attributes[NotificationChannels.AttributeName] = channels;
+        return this;
+    }
+
+    public string[]? GetChannelsOrNull()
+    {
+        return Attributes.TryGetValue(NotificationChannels.AttributeName, out var value) ? value as string[] : null;
+    }
 }

@@ -100,7 +100,11 @@ public class DefaultNotificationDistributer : INotificationDistributer, ITransie
             notification.Data,
             notification.Severity,
             notification.CreationTime,
-            userIds.ToArray());
+            userIds.ToArray())
+        {
+            // Channel white-list from the definition (null = every channel).
+            Channels = DefinitionManager.GetOrNull(notification.NotificationName)?.GetChannelsOrNull()
+        };
 
         return DistributedEventBus.PublishAsync(eto);
     }

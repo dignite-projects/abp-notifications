@@ -12,9 +12,16 @@ namespace Dignite.Abp.Notifications.SignalR;
 /// <see cref="RealTimeNotification"/>, which by construction omits the ETO's full recipient list — so one user
 /// can never see the ids of the others (fixes the reference implementation's payload leak).
 /// </summary>
-public class NotifyEventHandler : IDistributedEventHandler<RealTimeNotifyEto>, ITransientDependency
+public class NotifyEventHandler :
+    IDistributedEventHandler<RealTimeNotifyEto>,
+    INotificationNotifier,
+    ITransientDependency
 {
+    public const string ChannelName = "SignalR";
+
     protected IHubContext<NotificationsHub, INotificationClient> HubContext { get; }
+
+    public string Name => ChannelName;
 
     public NotifyEventHandler(IHubContext<NotificationsHub, INotificationClient> hubContext)
     {
@@ -23,7 +30,10 @@ public class NotifyEventHandler : IDistributedEventHandler<RealTimeNotifyEto>, I
 
     public virtual Task HandleEventAsync(RealTimeNotifyEto eventData)
     {
-        if (eventData.UserIds == null || eventData.UserIds.Length == 0)
+        // Skip when channel routing excludes SignalR, or there are no recipients.
+        if (!NotificationChannels.IsAllowed(eventData.Channels, Name)
+            || eventData.UserIds == null
+            || eventData.UserIds.Length == 0)
         {
             return Task.CompletedTask;
         }

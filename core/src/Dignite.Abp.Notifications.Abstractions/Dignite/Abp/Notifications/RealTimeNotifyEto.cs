@@ -25,6 +25,9 @@ public class RealTimeNotifyEto
 
     public Guid[] UserIds { get; set; } = Array.Empty<Guid>();
 
+    /// <summary>Notifier channels this notification may be delivered on (by name). Null/empty = every channel.</summary>
+    public string[]? Channels { get; set; }
+
     public RealTimeNotifyEto()
     {
     }
