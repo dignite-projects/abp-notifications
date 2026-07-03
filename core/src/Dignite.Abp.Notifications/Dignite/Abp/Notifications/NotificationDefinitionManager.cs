@@ -77,12 +77,15 @@ public class NotificationDefinitionManager : INotificationDefinitionManager, ISi
     }
 
     /// <summary>
-    /// Overridden by permission-aware implementations (e.g. the Identity integration), which resolve scoped
-    /// authorization services per call rather than capturing them in this singleton.
+    /// Delegates to <see cref="INotificationPermissionChecker"/>, resolved from a fresh scope per call so this
+    /// singleton never captures request-scoped authorization services (fixes the reference's lifetime bug). The
+    /// default checker grants everything; the optional Identity integration replaces it with a real check.
     /// </summary>
-    protected virtual Task<bool> CheckPermissionAsync(string permissionName, Guid userId)
+    protected virtual async Task<bool> CheckPermissionAsync(string permissionName, Guid userId)
     {
-        return Task.FromResult(true);
+        using var scope = ServiceScopeFactory.CreateScope();
+        var permissionChecker = scope.ServiceProvider.GetRequiredService<INotificationPermissionChecker>();
+        return await permissionChecker.IsGrantedAsync(userId, permissionName);
     }
 
     public virtual async Task<IReadOnlyList<NotificationDefinition>> GetAllAvailableAsync(Guid userId)

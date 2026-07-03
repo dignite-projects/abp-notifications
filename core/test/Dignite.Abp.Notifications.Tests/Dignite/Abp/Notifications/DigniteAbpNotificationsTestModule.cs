@@ -24,5 +24,9 @@ public class DigniteAbpNotificationsTestModule : AbpModule
         context.Services.Replace(
             ServiceDescriptor.Singleton<IBackgroundJobManager>(
                 sp => sp.GetRequiredService<FakeBackgroundJobManager>()));
+
+        // Permission checks: swap the always-grant default for a fake that denies one specific permission.
+        context.Services.Replace(
+            ServiceDescriptor.Singleton<INotificationPermissionChecker, TestNotificationPermissionChecker>());
     }
 }
