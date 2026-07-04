@@ -4,7 +4,7 @@ using Volo.Abp.Modularity;
 namespace Dignite.Abp.Notifications.Emailing;
 
 [DependsOn(
-    typeof(AbpNotificationsModule),
+    typeof(AbpNotificationsAbstractionsModule),
     typeof(AbpEmailingModule)
     )]
 public class AbpNotificationsEmailingModule : AbpModule
