@@ -7,7 +7,7 @@ using Volo.Abp.EventBus.Distributed;
 
 namespace Dignite.Abp.Notifications;
 
-public class DefaultNotificationDistributer : INotificationDistributer, ITransientDependency
+public class DefaultNotificationDistributor : INotificationDistributor, ITransientDependency
 {
     protected INotificationStore Store { get; }
 
@@ -15,7 +15,7 @@ public class DefaultNotificationDistributer : INotificationDistributer, ITransie
 
     protected IDistributedEventBus DistributedEventBus { get; }
 
-    public DefaultNotificationDistributer(
+    public DefaultNotificationDistributor(
         INotificationStore store,
         INotificationDefinitionManager definitionManager,
         IDistributedEventBus distributedEventBus)

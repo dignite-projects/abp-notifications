@@ -34,7 +34,7 @@ public class Notification_Outbox_Tests : NotificationCenterTestBase
 
         await WithUnitOfWorkAsync(async () =>
         {
-            await GetRequiredService<INotificationDistributer>()
+            await GetRequiredService<INotificationDistributor>()
                 .DistributeAsync(NewNotification(notificationId), new[] { Guid.NewGuid() });
         });
 
@@ -53,7 +53,7 @@ public class Notification_Outbox_Tests : NotificationCenterTestBase
 
         using (var uow = GetRequiredService<IUnitOfWorkManager>().Begin(requiresNew: true))
         {
-            await GetRequiredService<INotificationDistributer>()
+            await GetRequiredService<INotificationDistributor>()
                 .DistributeAsync(NewNotification(notificationId), new[] { Guid.NewGuid() });
             // No CompleteAsync → the whole unit of work rolls back.
         }

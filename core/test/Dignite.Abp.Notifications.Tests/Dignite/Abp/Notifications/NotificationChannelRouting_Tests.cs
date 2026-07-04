@@ -54,7 +54,7 @@ public class NotificationChannelRouting_Tests
     }
 
     [Fact]
-    public async Task Distributer_sets_eto_channels_from_the_definition()
+    public async Task Distributor_sets_eto_channels_from_the_definition()
     {
         var store = Substitute.For<INotificationStore>();
         var definitionManager = Substitute.For<INotificationDefinitionManager>();
@@ -67,8 +67,8 @@ public class NotificationChannelRouting_Tests
         eventBus.WhenForAnyArgs(x => x.PublishAsync(Arg.Any<RealTimeNotifyEto>()))
             .Do(ci => published = ci.Arg<RealTimeNotifyEto>());
 
-        var distributer = new DefaultNotificationDistributer(store, definitionManager, eventBus);
-        await distributer.DistributeAsync(
+        var distributor = new DefaultNotificationDistributor(store, definitionManager, eventBus);
+        await distributor.DistributeAsync(
             new NotificationInfo { Id = Guid.NewGuid(), NotificationName = "test" }, new[] { Guid.NewGuid() });
 
         published.ShouldNotBeNull();

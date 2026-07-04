@@ -9,16 +9,16 @@ using Xunit;
 
 namespace Dignite.Abp.Notifications;
 
-public class NotificationPublisherTests
+public class DefaultNotificationPublisherTests
 {
-    private readonly INotificationDistributer _distributer = Substitute.For<INotificationDistributer>();
+    private readonly INotificationDistributor _distributor = Substitute.For<INotificationDistributor>();
     private readonly IBackgroundJobManager _backgroundJobManager = Substitute.For<IBackgroundJobManager>();
 
-    private NotificationPublisher CreatePublisher(int threshold)
+    private DefaultNotificationPublisher CreatePublisher(int threshold)
     {
         var options = Options.Create(new NotificationOptions
         {
-            MaxUserCountToDirectlyDistributeANotification = threshold
+            DirectDistributionUserThreshold = threshold
         });
 
         var guidGenerator = Substitute.For<IGuidGenerator>();
@@ -27,7 +27,7 @@ public class NotificationPublisherTests
         var clock = Substitute.For<IClock>();
         clock.Now.Returns(DateTime.UtcNow);
 
-        return new NotificationPublisher(options, _distributer, _backgroundJobManager, guidGenerator, clock);
+        return new DefaultNotificationPublisher(options, _distributor, _backgroundJobManager, guidGenerator, clock);
     }
 
     [Fact]
@@ -38,7 +38,7 @@ public class NotificationPublisherTests
 
         await publisher.PublishAsync("test", userIds: users);
 
-        await _distributer.Received(1).DistributeAsync(
+        await _distributor.Received(1).DistributeAsync(
             Arg.Any<NotificationInfo>(),
             Arg.Is<Guid[]>(u => u.Length == 3),
             Arg.Any<Guid[]?>());
@@ -55,6 +55,6 @@ public class NotificationPublisherTests
         await publisher.PublishAsync("test", userIds: users);
 
         await _backgroundJobManager.Received(1).EnqueueAsync(Arg.Any<NotificationDistributionJobArgs>());
-        await _distributer.DidNotReceiveWithAnyArgs().DistributeAsync(default!, default, default);
+        await _distributor.DidNotReceiveWithAnyArgs().DistributeAsync(default!, default, default);
     }
 }

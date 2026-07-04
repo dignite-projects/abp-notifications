@@ -9,7 +9,7 @@ public class NotificationOptions
     /// background job instead of inline. This was a hard-coded constant in the reference implementation;
     /// it is now configurable.
     /// </summary>
-    public int MaxUserCountToDirectlyDistributeANotification { get; set; } = 5;
+    public int DirectDistributionUserThreshold { get; set; } = 5;
 
     public ITypeList<INotificationDefinitionProvider> DefinitionProviders { get; }
 

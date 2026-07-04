@@ -9,7 +9,7 @@ using Xunit;
 
 namespace Dignite.Abp.Notifications;
 
-public class DefaultNotificationDistributerTests
+public class DefaultNotificationDistributorTests
 {
     [Fact]
     public async Task Publishes_eto_to_explicit_users_minus_excluded()
@@ -22,7 +22,7 @@ public class DefaultNotificationDistributerTests
         eventBus.WhenForAnyArgs(x => x.PublishAsync(Arg.Any<RealTimeNotifyEto>()))
             .Do(ci => published = ci.Arg<RealTimeNotifyEto>());
 
-        var distributer = new DefaultNotificationDistributer(store, definitionManager, eventBus);
+        var distributor = new DefaultNotificationDistributor(store, definitionManager, eventBus);
 
         var u1 = Guid.NewGuid();
         var u2 = Guid.NewGuid();
@@ -34,7 +34,7 @@ public class DefaultNotificationDistributerTests
             CreationTime = DateTime.UtcNow
         };
 
-        await distributer.DistributeAsync(notification, new[] { u1, u2, u3 }, new[] { u2 });
+        await distributor.DistributeAsync(notification, new[] { u1, u2, u3 }, new[] { u2 });
 
         published.ShouldNotBeNull();
         published!.UserIds.Length.ShouldBe(2);
@@ -67,11 +67,11 @@ public class DefaultNotificationDistributerTests
         eventBus.WhenForAnyArgs(x => x.PublishAsync(Arg.Any<RealTimeNotifyEto>()))
             .Do(ci => published = ci.Arg<RealTimeNotifyEto>());
 
-        var distributer = new DefaultNotificationDistributer(store, definitionManager, eventBus);
+        var distributor = new DefaultNotificationDistributor(store, definitionManager, eventBus);
         var notification = new NotificationInfo { Id = Guid.NewGuid(), NotificationName = "test" };
 
         // No explicit userIds → subscription-driven path, filtered by availability.
-        await distributer.DistributeAsync(notification);
+        await distributor.DistributeAsync(notification);
 
         published.ShouldNotBeNull();
         published!.UserIds.ShouldBe(new[] { available });
@@ -84,12 +84,12 @@ public class DefaultNotificationDistributerTests
         var definitionManager = Substitute.For<INotificationDefinitionManager>();
         var eventBus = Substitute.For<IDistributedEventBus>();
 
-        var distributer = new DefaultNotificationDistributer(store, definitionManager, eventBus);
+        var distributor = new DefaultNotificationDistributor(store, definitionManager, eventBus);
         var notification = new NotificationInfo { Id = Guid.NewGuid(), NotificationName = "test" };
 
         // Explicit single user, then excluded → empty target set.
         var user = Guid.NewGuid();
-        await distributer.DistributeAsync(notification, new[] { user }, new[] { user });
+        await distributor.DistributeAsync(notification, new[] { user }, new[] { user });
 
         await store.DidNotReceiveWithAnyArgs().InsertNotificationAsync(default!);
         await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<RealTimeNotifyEto>());
