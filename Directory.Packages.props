@@ -41,4 +41,11 @@
     <PackageVersion Include="NSubstitute" Version="5.1.0" />
   </ItemGroup>
 
+  <ItemGroup Label="MongoDB integration-test infrastructure (embedded mongod, ABP v10 pattern)">
+    <PackageVersion Include="MongoSandbox.Core" Version="2.0.0" />
+    <PackageVersion Include="MongoSandbox8.runtime.win-x64" Version="2.0.0" />
+    <PackageVersion Include="MongoSandbox8.runtime.linux-x64" Version="2.0.0" />
+    <PackageVersion Include="MongoSandbox8.runtime.osx-arm64" Version="2.0.0" />
+  </ItemGroup>
+
 </Project>

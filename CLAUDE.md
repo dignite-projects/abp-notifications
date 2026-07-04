@@ -15,18 +15,26 @@ application (not in this repo) references these projects/packages and runs the a
   target `net10.0` only.
 - Persistence: EF Core and MongoDB, both implementing the same `INotificationStore` abstraction.
 - Tests: xUnit + Shouldly + NSubstitute + `Volo.Abp.TestBase` (Autofac); EF Core tests run against
-  in-memory Sqlite.
+  in-memory Sqlite, MongoDB tests against an embedded mongod (MongoSandbox). The
+  `NotificationCenter` store/app-service scenarios are written once in a shared `*.TestBase` project
+  and run against both providers — see `.claude/rules/framework/testing/patterns.md`.
 - License: LGPL-3.0-only.
 
 ## Solution layout
 
-Two sibling `.slnx` solutions, each its own module tree:
+One `.slnx` solution — **`Dignite.Abp.Notifications.slnx`** — aggregates both module trees:
 
-- **`Dignite.Abp.Notifications.slnx`** — the core framework: `core/src/{Abstractions, Notifications,
-  Notifications.Identity, Notifications.Emailing, Notifications.SignalR}` + `core/test`.
-- **`Dignite.Abp.NotificationCenter.slnx`** — optional persistence + REST API, depends on Core:
+- **`core/`** — the core framework: `core/src/{Abstractions, Notifications, Notifications.Identity,
+  Notifications.Emailing, Notifications.SignalR}` + `core/test`.
+- **`notification-center/`** — optional persistence + REST API, depends on Core:
   `notification-center/src/{Domain.Shared, Domain, Application.Contracts, Application, HttpApi,
   HttpApi.Client, EntityFrameworkCore, MongoDB}` + `notification-center/test`.
+
+The two trees are still **independently distributable** (that boundary is enforced by project
+references / module `[DependsOn]` and per-project NuGet packaging, not by the solution): Core never
+references NotificationCenter, and Core keeps working with `NullNotificationStore` alone. The single
+solution is just a build/dev convenience. To work on Core in isolation without pulling in
+EF Core/MongoDB/AspNetCore, build or test the individual `core/**` projects directly.
 
 Source files live at `<Project>/<mirrored namespace path>/File.cs` (every `.csproj` sets
 `<RootNamespace />` empty) — not a generic `Entities/`/`Services/` split.
@@ -49,11 +57,13 @@ exactly what this rewrite was started to fix (see `docs/03-roadmap.md`).
 ## Commands
 
 ```bash
-# Build / test (from repo root — there is no single top-level .sln)
+# Build / test everything (core + notification-center) from the one solution
 dotnet build Dignite.Abp.Notifications.slnx
-dotnet build Dignite.Abp.NotificationCenter.slnx
 dotnet test Dignite.Abp.Notifications.slnx
-dotnet test Dignite.Abp.NotificationCenter.slnx
+
+# `dotnet test` on the solution starts an embedded mongod for the MongoDB provider tests. To iterate
+# on Core alone without that, target the core test project directly:
+dotnet test core/test/Dignite.Abp.Notifications.Tests
 
 # Pack for local testing (version/license come from Directory.Build.props)
 dotnet pack Dignite.Abp.Notifications.slnx -c Release
