@@ -129,7 +129,7 @@ bookStoreGroup.AddPermission(
 2. **`INotificationPermissionChecker`** (in Core, `Dignite.Abp.Notifications`) is a separate,
    pluggable abstraction that gates whether a *given user* is allowed to **receive** a given
    notification definition — checked during distribution (`NotificationDefinitionManager` /
-   `DefaultNotificationDistributer`), not on an AppService call. The default is
+   `DefaultNotificationDistributor`), not on an AppService call. The default is
    `AlwaysGrantedNotificationPermissionChecker`; `Notifications.Identity` supplies a real
    implementation backed by ABP Identity/Authorization.
 

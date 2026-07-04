@@ -9,15 +9,15 @@ namespace Dignite.Abp.Notifications;
 /// </summary>
 public class NotificationDistributionJob : AsyncBackgroundJob<NotificationDistributionJobArgs>, ITransientDependency
 {
-    protected INotificationDistributer Distributer { get; }
+    protected INotificationDistributor Distributor { get; }
 
-    public NotificationDistributionJob(INotificationDistributer distributer)
+    public NotificationDistributionJob(INotificationDistributor distributor)
     {
-        Distributer = distributer;
+        Distributor = distributor;
     }
 
     public override Task ExecuteAsync(NotificationDistributionJobArgs args)
     {
-        return Distributer.DistributeAsync(args.Notification, args.UserIds, args.ExcludedUserIds);
+        return Distributor.DistributeAsync(args.Notification, args.UserIds, args.ExcludedUserIds);
     }
 }

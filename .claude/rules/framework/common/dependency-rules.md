@@ -72,7 +72,7 @@ public class NotificationAppService : ApplicationService
 }
 
 // Core depends only on the store abstraction, resolved via DI
-public class DefaultNotificationDistributer : INotificationDistributer
+public class DefaultNotificationDistributor : INotificationDistributor
 {
     private readonly INotificationStore _store; // ✅ Null or Center impl, Core doesn't care which
 }

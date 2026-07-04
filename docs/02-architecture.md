@@ -66,7 +66,7 @@ flowchart TD
 flowchart TD
     A["业务调用 INotificationPublisher"] --> B["构造 NotificationInfo"]
     B --> C{"显式 UserIds 数量 ≤ 阈值(应可配)"}
-    C -->|是| D["直接调用 INotificationDistributer"]
+    C -->|是| D["直接调用 INotificationDistributor"]
     C -->|否| E["NotificationDistributionJob(后台任务)"]
     E --> D
     D --> F{"显式 UserIds 是否存在"}
@@ -90,7 +90,7 @@ flowchart TD
 | 扩展点 | 作用 |
 |---|---|
 | `INotificationPublisher` | 发布入口(≤阈值直发,否则后台任务) |
-| `INotificationDistributer` | 解析用户、校验、写 Store、发 ETO |
+| `INotificationDistributor` | 解析用户、校验、写 Store、发 ETO |
 | `INotificationStore` | 持久化抽象(Null / Center 两实现) |
 | `INotificationDefinitionProvider` | 业务模块注册自己的通知类型 |
 | `INotificationDefinitionManager` | 定义注册表 + 可用性(Feature/Permission)判定,抽象权限检查 |
