@@ -8,11 +8,11 @@ using Volo.Abp.Timing;
 
 namespace Dignite.Abp.Notifications;
 
-public class NotificationPublisher : INotificationPublisher, ITransientDependency
+public class DefaultNotificationPublisher : INotificationPublisher, ITransientDependency
 {
     protected NotificationOptions Options { get; }
 
-    protected INotificationDistributer Distributer { get; }
+    protected INotificationDistributor Distributor { get; }
 
     protected IBackgroundJobManager BackgroundJobManager { get; }
 
@@ -20,15 +20,15 @@ public class NotificationPublisher : INotificationPublisher, ITransientDependenc
 
     protected IClock Clock { get; }
 
-    public NotificationPublisher(
+    public DefaultNotificationPublisher(
         IOptions<NotificationOptions> options,
-        INotificationDistributer distributer,
+        INotificationDistributor distributor,
         IBackgroundJobManager backgroundJobManager,
         IGuidGenerator guidGenerator,
         IClock clock)
     {
         Options = options.Value;
-        Distributer = distributer;
+        Distributor = distributor;
         BackgroundJobManager = backgroundJobManager;
         GuidGenerator = guidGenerator;
         Clock = clock;
@@ -53,9 +53,9 @@ public class NotificationPublisher : INotificationPublisher, ITransientDependenc
             CreationTime = Clock.Now
         };
 
-        if (userIds != null && userIds.Length <= Options.MaxUserCountToDirectlyDistributeANotification)
+        if (userIds != null && userIds.Length <= Options.DirectDistributionUserThreshold)
         {
-            await Distributer.DistributeAsync(notification, userIds, excludedUserIds);
+            await Distributor.DistributeAsync(notification, userIds, excludedUserIds);
         }
         else
         {
