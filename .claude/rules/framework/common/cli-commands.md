@@ -15,14 +15,13 @@ paths:
 ## Build / test
 
 ```bash
-# Per solution (there is no single top-level .sln)
+# One solution aggregates both module trees (core/ + notification-center/)
 dotnet build Dignite.Abp.Notifications.slnx
-dotnet build Dignite.Abp.NotificationCenter.slnx
-
 dotnet test Dignite.Abp.Notifications.slnx
-dotnet test Dignite.Abp.NotificationCenter.slnx
 
-# A single test project
+# A single test project (e.g. iterate on Core without starting the embedded mongod that the
+# MongoDB provider tests need)
+dotnet test core/test/Dignite.Abp.Notifications.Tests
 dotnet test notification-center/test/Dignite.Abp.NotificationCenter.Tests
 ```
 
@@ -60,8 +59,9 @@ Version, license, and package metadata come from the root `Directory.Build.props
 packages for testing:
 
 ```bash
+# Packs every project in the solution (core + notification-center). Non-packable projects
+# (tests, IsPackable=false) are skipped automatically.
 dotnet pack Dignite.Abp.Notifications.slnx -c Release
-dotnet pack Dignite.Abp.NotificationCenter.slnx -c Release
 ```
 
 Bump `<Version>` in `Directory.Build.props` before a real release — it applies to every project in

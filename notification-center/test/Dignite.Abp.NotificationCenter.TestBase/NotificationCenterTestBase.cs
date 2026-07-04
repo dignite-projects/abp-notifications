@@ -2,14 +2,21 @@ using System;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using Volo.Abp;
-using Volo.Abp.Autofac;
+using Volo.Abp.Modularity;
 using Volo.Abp.Security.Claims;
 using Volo.Abp.Testing;
 using Volo.Abp.Uow;
 
 namespace Dignite.Abp.NotificationCenter;
 
-public abstract class NotificationCenterTestBase : AbpIntegratedTest<NotificationCenterTestModule>
+/// <summary>
+/// Generic base for every NotificationCenter integration test. Concrete test classes never inherit
+/// this directly — they inherit a provider-agnostic <c>*_Tests&lt;TStartupModule&gt;</c> which in turn
+/// inherits this, and each provider test project binds <typeparamref name="TStartupModule"/> to its
+/// own startup module (EF Core / MongoDB).
+/// </summary>
+public abstract class NotificationCenterTestBase<TStartupModule> : AbpIntegratedTest<TStartupModule>
+    where TStartupModule : IAbpModule
 {
     protected override void SetAbpApplicationCreationOptions(AbpApplicationCreationOptions options)
     {

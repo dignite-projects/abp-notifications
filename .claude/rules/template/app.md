@@ -2,16 +2,18 @@
 
 > **Docs**: https://abp.io/docs/latest/solution-templates/module-development-template
 
-This repo is **class libraries only** — two sibling, independently distributable ABP module
-trees. There is no `Host`, no `DbMigrator`, no frontend. A separate host application (not in this
-repo) references these projects (or their NuGet packages) and owns the actual running app.
+This repo is **class libraries only** — two independently distributable ABP module trees (`core/`
+and `notification-center/`) under a **single** `.slnx` solution. There is no `Host`, no
+`DbMigrator`, no frontend. A separate host application (not in this repo) references these projects
+(or their NuGet packages) and owns the actual running app. "Independently distributable" is enforced
+by project references + per-project NuGet packaging (Core never references NotificationCenter), not
+by the solution file — the single solution is only a build/dev convenience.
 
 ## Solution structure
 
 ```
 abp-notifications/
-├── Dignite.Abp.Notifications.slnx           # core framework solution
-├── Dignite.Abp.NotificationCenter.slnx       # optional persistence + REST API solution
+├── Dignite.Abp.Notifications.slnx           # the one solution — aggregates core/ + notification-center/
 ├── Directory.Build.props                     # shared MSBuild props (LangVersion, Nullable, Version, license)
 ├── Directory.Packages.props                  # ⚠️ central package management — ALL package versions live here
 ├── core/
@@ -37,7 +39,10 @@ abp-notifications/
     │   ├── Dignite.Abp.NotificationCenter.HttpApi.Client/    # C# client proxies for remote consumers
     │   ├── Dignite.Abp.NotificationCenter.EntityFrameworkCore/  # INotificationStore impl #1 (relational)
     │   └── Dignite.Abp.NotificationCenter.MongoDB/           # INotificationStore impl #2 (document)
-    └── test/Dignite.Abp.NotificationCenter.Tests/
+    └── test/
+        ├── Dignite.Abp.NotificationCenter.TestBase/       # shared provider-agnostic test scenarios (abstract *_Tests<TModule>)
+        ├── Dignite.Abp.NotificationCenter.Tests/          # EF Core / in-memory Sqlite provider + EF-only outbox test
+        └── Dignite.Abp.NotificationCenter.MongoDB.Tests/  # MongoDB provider (embedded mongod via MongoSandbox)
 ```
 
 ## File layout convention
@@ -120,14 +125,16 @@ core publish/distribute logic has to work with `NullNotificationStore` too.
 
 ```bash
 dotnet build Dignite.Abp.Notifications.slnx
-dotnet build Dignite.Abp.NotificationCenter.slnx
 dotnet test Dignite.Abp.Notifications.slnx
-dotnet test Dignite.Abp.NotificationCenter.slnx
+
+# Core only (skips the embedded-mongod MongoDB provider tests):
+dotnet test core/test/Dignite.Abp.Notifications.Tests
 ```
 
 No `DbMigrator`, no `appsettings.json` — a consuming host owns its own DbContext/migrations. EF
-Core integration tests run against an in-memory Sqlite provider, so `dotnet test` needs no migration
-step.
+Core integration tests run against an in-memory Sqlite provider and the MongoDB provider tests run
+against an embedded mongod (MongoSandbox), so `dotnet test` needs no migration step and no local
+database install.
 
 ## Docs
 

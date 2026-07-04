@@ -1,13 +1,10 @@
 using Dignite.Abp.NotificationCenter.EntityFrameworkCore;
-using Dignite.Abp.Notifications;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Volo.Abp;
-using Volo.Abp.Autofac;
-using Volo.Abp.BackgroundWorkers;
 using Volo.Abp.EntityFrameworkCore;
 using Volo.Abp.EntityFrameworkCore.DistributedEvents;
 using Volo.Abp.EntityFrameworkCore.Sqlite;
@@ -17,34 +14,25 @@ using Volo.Abp.Modularity;
 namespace Dignite.Abp.NotificationCenter;
 
 [DependsOn(
-    typeof(AbpNotificationCenterApplicationModule),
+    typeof(AbpNotificationCenterTestBaseModule),
     typeof(AbpNotificationCenterEntityFrameworkCoreModule),
-    typeof(AbpEntityFrameworkCoreSqliteModule),
-    typeof(AbpAutofacModule),
-    typeof(AbpTestBaseModule)
+    typeof(AbpEntityFrameworkCoreSqliteModule)
     )]
-public class NotificationCenterTestModule : AbpModule
+public class AbpNotificationCenterEntityFrameworkCoreTestModule : AbpModule
 {
     private SqliteConnection? _sqliteConnection;
 
     public override void ConfigureServices(ServiceConfigurationContext context)
     {
         ConfigureInMemorySqlite(context.Services);
-        context.Services.AddAlwaysAllowAuthorization();
 
-        // Route the distributed event bus through the transactional outbox/inbox on our DbContext, and keep
-        // background workers off so a test can observe the stored outbox record deterministically.
+        // Route the distributed event bus through the transactional outbox/inbox on our DbContext so a
+        // test can observe the stored outbox record deterministically (background workers are disabled in
+        // AbpNotificationCenterTestBaseModule, so the sender never drains it).
         Configure<AbpDistributedEventBusOptions>(options =>
         {
             options.Outboxes.Configure(config => config.UseDbContext<NotificationCenterDbContext>());
             options.Inboxes.Configure(config => config.UseDbContext<NotificationCenterDbContext>());
-        });
-        Configure<AbpBackgroundWorkerOptions>(options => options.IsEnabled = false);
-
-        // Register the custom test payload so the shared serializer can resolve it by discriminator.
-        Configure<NotificationDataOptions>(options =>
-        {
-            options.Add<OrderShippedNotificationData>();
         });
     }
 

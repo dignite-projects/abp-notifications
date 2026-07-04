@@ -11,9 +11,10 @@ namespace Dignite.Abp.NotificationCenter;
 
 /// <summary>
 /// Proves the store-write and the RealTimeNotifyEto publish are atomic via the transactional outbox
-/// (roadmap problem C): both commit together, or neither does.
+/// (roadmap problem C): both commit together, or neither does. EF Core only — the MongoDB provider in
+/// this repo does not wire up the transactional outbox, so this scenario is not part of the shared suite.
 /// </summary>
-public class Notification_Outbox_Tests : NotificationCenterTestBase
+public class Notification_Outbox_Tests : NotificationCenterTestBase<AbpNotificationCenterEntityFrameworkCoreTestModule>
 {
     private static NotificationInfo NewNotification(Guid id)
     {
