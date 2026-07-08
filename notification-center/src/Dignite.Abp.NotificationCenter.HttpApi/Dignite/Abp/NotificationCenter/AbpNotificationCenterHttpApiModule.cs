@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Volo.Abp.AspNetCore.Mvc;
 using Volo.Abp.Modularity;
 
@@ -9,11 +10,14 @@ namespace Dignite.Abp.NotificationCenter;
     )]
 public class AbpNotificationCenterHttpApiModule : AbpModule
 {
-    public override void ConfigureServices(ServiceConfigurationContext context)
+    public override void PreConfigureServices(ServiceConfigurationContext context)
     {
-        Configure<AbpAspNetCoreMvcOptions>(options =>
+        // Make MVC discover the controllers defined in this HttpApi assembly (e.g. NotificationsController).
+        // These are explicit controllers that delegate to INotificationAppService — not conventional/auto API
+        // controllers, so this application-part registration (not ConventionalControllers.Create) is what's needed.
+        PreConfigure<IMvcBuilder>(mvcBuilder =>
         {
-            options.ConventionalControllers.Create(typeof(AbpNotificationCenterApplicationContractsModule).Assembly);
+            mvcBuilder.AddApplicationPartIfNotExists(typeof(AbpNotificationCenterHttpApiModule).Assembly);
         });
     }
 }
