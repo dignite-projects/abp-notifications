@@ -1,4 +1,5 @@
 using System;
+using Volo.Abp;
 
 namespace Dignite.Abp.Notifications;
 
@@ -13,7 +14,7 @@ public class NotificationEntityIdentifier
 
     public NotificationEntityIdentifier(Type entityType, object entityId)
     {
-        EntityType = entityType ?? throw new ArgumentNullException(nameof(entityType));
-        EntityId = entityId ?? throw new ArgumentNullException(nameof(entityId));
+        EntityType = Check.NotNull(entityType, nameof(entityType));
+        EntityId = Check.NotNull(entityId, nameof(entityId));
     }
 }

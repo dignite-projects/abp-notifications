@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Volo.Abp;
 
 namespace Dignite.Abp.Notifications;
 
@@ -23,6 +24,8 @@ public class NotificationDataOptions
 
     public NotificationDataOptions Add(Type dataType)
     {
+        Check.NotNull(dataType, nameof(dataType));
+
         var name = NotificationDataTypeAttribute.GetNameOrNull(dataType)
             ?? throw new ArgumentException(
                 $"'{dataType.FullName}' must be annotated with [NotificationDataType(\"...\")] to be registered.",
@@ -33,16 +36,8 @@ public class NotificationDataOptions
 
     public NotificationDataOptions Add(string discriminator, Type dataType)
     {
-        if (string.IsNullOrWhiteSpace(discriminator))
-        {
-            throw new ArgumentException("Discriminator cannot be null or whitespace.", nameof(discriminator));
-        }
-
-        if (!typeof(NotificationData).IsAssignableFrom(dataType))
-        {
-            throw new ArgumentException(
-                $"'{dataType.FullName}' is not a {nameof(NotificationData)}.", nameof(dataType));
-        }
+        Check.NotNullOrWhiteSpace(discriminator, nameof(discriminator));
+        Check.AssignableTo<NotificationData>(dataType, nameof(dataType));
 
         DataTypes[discriminator] = dataType;
         return this;

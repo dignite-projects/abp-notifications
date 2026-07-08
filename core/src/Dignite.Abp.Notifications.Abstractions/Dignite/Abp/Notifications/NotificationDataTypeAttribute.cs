@@ -1,5 +1,6 @@
 using System;
 using System.Reflection;
+using Volo.Abp;
 
 namespace Dignite.Abp.Notifications;
 
@@ -15,13 +16,7 @@ public sealed class NotificationDataTypeAttribute : Attribute
 
     public NotificationDataTypeAttribute(string name)
     {
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            throw new ArgumentException(
-                "Notification data type discriminator cannot be null or whitespace.", nameof(name));
-        }
-
-        Name = name;
+        Name = Check.NotNullOrWhiteSpace(name, nameof(name));
     }
 
     public static string? GetNameOrNull(Type type)

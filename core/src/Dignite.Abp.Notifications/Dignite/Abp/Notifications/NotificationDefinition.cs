@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Volo.Abp;
 using Volo.Abp.Localization;
 
 namespace Dignite.Abp.Notifications;
@@ -29,8 +30,8 @@ public class NotificationDefinition
 
     public NotificationDefinition(string name, ILocalizableString displayName, Type? entityType = null)
     {
-        Name = name ?? throw new ArgumentNullException(nameof(name));
-        DisplayName = displayName ?? throw new ArgumentNullException(nameof(displayName));
+        Name = Check.NotNull(name, nameof(name));
+        DisplayName = Check.NotNull(displayName, nameof(displayName));
         EntityType = entityType;
         Attributes = new Dictionary<string, object?>();
     }
