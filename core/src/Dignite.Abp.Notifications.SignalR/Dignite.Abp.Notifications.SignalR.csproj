@@ -6,6 +6,7 @@
     <IsPackable>true</IsPackable>
     <OutputType>Library</OutputType>
     <NoDefaultLaunchSettingsFile>true</NoDefaultLaunchSettingsFile>
+    <Description>Real-time push notifier for Dignite.Abp.Notifications via an ABP SignalR hub at /signalr-hubs/notifications.</Description>
   </PropertyGroup>
 
   <ItemGroup>

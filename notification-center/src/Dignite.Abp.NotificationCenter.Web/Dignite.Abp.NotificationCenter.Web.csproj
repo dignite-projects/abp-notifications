@@ -4,6 +4,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace />
     <AddRazorSupportForMvc>true</AddRazorSupportForMvc>
+    <Description>MVC UI library for the Dignite Notification Center: a notification-bell view component and a subscriptions page.</Description>
   </PropertyGroup>
 
   <ItemGroup>
