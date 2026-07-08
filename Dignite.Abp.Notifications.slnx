@@ -10,6 +10,9 @@
   <Folder Name="/core/test/">
     <Project Path="core/test/Dignite.Abp.Notifications.Tests/Dignite.Abp.Notifications.Tests.csproj" />
   </Folder>
+  <Folder Name="/host/">
+    <Project Path="host/Dignite.Abp.NotificationCenter.Web.Host/Dignite.Abp.NotificationCenter.Web.Host.csproj" />
+  </Folder>
   <Folder Name="/notification-center/" />
   <Folder Name="/notification-center/src/">
     <Project Path="notification-center/src/Dignite.Abp.NotificationCenter.Application.Contracts/Dignite.Abp.NotificationCenter.Application.Contracts.csproj" />
