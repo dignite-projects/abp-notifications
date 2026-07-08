@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - '.claude/**'
+  pull_request:
+    branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - '.claude/**'
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore Dignite.Abp.Notifications.slnx
+
+      - name: Build
+        run: dotnet build Dignite.Abp.Notifications.slnx --no-restore --configuration Release
+
+      # Dignite.Abp.NotificationCenter.TestBase is IsTestProject=false (shared scenarios, no
+      # runner) - it is exercised indirectly via the two projects below, never run directly.
+      - name: Run Notifications (core) tests
+        run: dotnet test core/test/Dignite.Abp.Notifications.Tests/Dignite.Abp.Notifications.Tests.csproj --no-build --configuration Release --verbosity normal
+
+      # EF Core provider - runs against in-memory Sqlite, no external database dependency.
+      - name: Run NotificationCenter (EF Core) tests
+        run: dotnet test notification-center/test/Dignite.Abp.NotificationCenter.Tests/Dignite.Abp.NotificationCenter.Tests.csproj --no-build --configuration Release --verbosity normal
+
+      # MongoDB provider - starts an embedded mongod via MongoSandbox (MongoSandbox8.runtime.linux-x64
+      # is pinned in Directory.Packages.props and resolves fine on this runner); no external
+      # MongoDB install needed.
+      - name: Run NotificationCenter (MongoDB) tests
+        run: dotnet test notification-center/test/Dignite.Abp.NotificationCenter.MongoDB.Tests/Dignite.Abp.NotificationCenter.MongoDB.Tests.csproj --no-build --configuration Release --verbosity normal
