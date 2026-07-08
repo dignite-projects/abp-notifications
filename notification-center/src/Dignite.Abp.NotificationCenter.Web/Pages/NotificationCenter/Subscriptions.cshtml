@@ -1,0 +1,31 @@
+@page
+@model Dignite.Abp.NotificationCenter.Web.Pages.NotificationCenter.SubscriptionsModel
+@{
+    ViewData["Title"] = L["Subscriptions"];
+}
+<h2>@L["Subscriptions"]</h2>
+<table class="table dignite-subscriptions-table">
+    <thead>
+        <tr>
+            <th>@L["NotificationType"]</th>
+            <th>@L["Description"]</th>
+            <th>@L["Subscribed"]</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var subscription in Model.Subscriptions)
+        {
+            <tr>
+                <td>@(subscription.DisplayName ?? subscription.NotificationName)</td>
+                <td>@subscription.Description</td>
+                <td>
+                    <input type="checkbox"
+                           class="dignite-subscription-toggle form-check-input"
+                           data-notification-name="@subscription.NotificationName"
+                           checked="@subscription.IsSubscribed" />
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+@Html.AntiForgeryToken()
