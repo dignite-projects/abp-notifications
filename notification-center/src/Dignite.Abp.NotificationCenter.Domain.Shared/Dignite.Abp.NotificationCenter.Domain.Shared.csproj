@@ -9,4 +9,9 @@
     <PackageReference Include="Volo.Abp.Localization" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Dignite\Abp\NotificationCenter\Localization\*.json" />
+    <Content Remove="Dignite\Abp\NotificationCenter\Localization\*.json" />
+  </ItemGroup>
+
 </Project>

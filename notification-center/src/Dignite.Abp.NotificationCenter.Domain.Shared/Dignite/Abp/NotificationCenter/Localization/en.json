@@ -1,0 +1,13 @@
+{
+  "culture": "en",
+  "texts": {
+    "Menu:Notifications": "Notifications",
+    "Notifications": "Notifications",
+    "MarkAllAsRead": "Mark all as read",
+    "NoNotifications": "No notifications",
+    "Subscriptions": "Notification subscriptions",
+    "NotificationType": "Notification type",
+    "Description": "Description",
+    "Subscribed": "Subscribed"
+  }
+}
