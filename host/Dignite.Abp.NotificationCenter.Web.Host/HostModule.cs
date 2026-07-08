@@ -334,7 +334,7 @@ public class HostModule : AbpModule
             options.Languages.Add(new LanguageInfo("es", "es", "Spanish")); 
             options.Languages.Add(new LanguageInfo("sv", "sv", "Swedish")); 
             options.Languages.Add(new LanguageInfo("tr", "tr", "Turkish")); 
-            options.Languages.Add(new LanguageInfo("ja", "ja", "日语")); 
+            options.Languages.Add(new LanguageInfo("ja", "ja", "Japanese")); 
 
         });
 

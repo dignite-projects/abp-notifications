@@ -1,5 +1,6 @@
 import { Component, Input, OnDestroy, OnInit, inject } from '@angular/core';
 import { DatePipe } from '@angular/common';
+import { LocalizationPipe } from '@abp/ng.core';
 import { Subscription, interval } from 'rxjs';
 import { NotificationsService, UserNotificationDto } from '../proxy/dignite/abp/notification-center';
 import { UserNotificationState } from '../proxy/dignite/abp/notifications';
@@ -13,10 +14,10 @@ import { UserNotificationState } from '../proxy/dignite/abp/notifications';
 @Component({
   selector: 'nc-notification-bell',
   standalone: true,
-  imports: [DatePipe],
+  imports: [DatePipe, LocalizationPipe],
   template: `
     <div class="nc-bell">
-      <button type="button" class="nc-bell-btn" (click)="open = !open" aria-label="Notifications">
+      <button type="button" class="nc-bell-btn" (click)="open = !open" [attr.aria-label]="'AbpNotificationCenter::Notifications' | abpLocalization">
         <span class="nc-bell-icon">&#128276;</span>
         @if (unreadCount > 0) {
           <span class="nc-badge">{{ unreadCount }}</span>
@@ -25,13 +26,15 @@ import { UserNotificationState } from '../proxy/dignite/abp/notifications';
       @if (open) {
         <div class="nc-dropdown">
           <div class="nc-dropdown-header">
-            <strong>Notifications</strong>
+            <strong>{{ 'AbpNotificationCenter::Notifications' | abpLocalization }}</strong>
             @if (unreadCount > 0) {
-              <a href="#" (click)="markAllAsRead(); $event.preventDefault()">Mark all as read</a>
+              <a href="#" (click)="markAllAsRead(); $event.preventDefault()">{{
+                'AbpNotificationCenter::MarkAllAsRead' | abpLocalization
+              }}</a>
             }
           </div>
           @if (notifications.length === 0) {
-            <div class="nc-empty">No notifications</div>
+            <div class="nc-empty">{{ 'AbpNotificationCenter::NoNotifications' | abpLocalization }}</div>
           } @else {
             @for (n of notifications; track n.id) {
               <div class="nc-item" [class.nc-unread]="n.state === 0" (click)="markAsRead(n)">

@@ -1,4 +1,5 @@
 import { Component, OnInit, inject } from '@angular/core';
+import { LocalizationPipe } from '@abp/ng.core';
 import { NotificationsService, NotificationSubscriptionDto } from '../proxy/dignite/abp/notification-center';
 
 /**
@@ -7,14 +8,14 @@ import { NotificationsService, NotificationSubscriptionDto } from '../proxy/dign
 @Component({
   selector: 'nc-notification-subscriptions',
   standalone: true,
-  imports: [],
+  imports: [LocalizationPipe],
   template: `
     <table class="nc-subs-table">
       <thead>
         <tr>
-          <th>Notification type</th>
-          <th>Description</th>
-          <th>Subscribed</th>
+          <th>{{ 'AbpNotificationCenter::NotificationType' | abpLocalization }}</th>
+          <th>{{ 'AbpNotificationCenter::Description' | abpLocalization }}</th>
+          <th>{{ 'AbpNotificationCenter::Subscribed' | abpLocalization }}</th>
         </tr>
       </thead>
       <tbody>
