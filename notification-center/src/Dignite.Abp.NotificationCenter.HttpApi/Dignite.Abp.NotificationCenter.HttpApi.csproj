@@ -3,6 +3,7 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace />
+    <Description>REST API controllers for the Dignite Notification Center at /api/notifications.</Description>
   </PropertyGroup>
 
   <ItemGroup>

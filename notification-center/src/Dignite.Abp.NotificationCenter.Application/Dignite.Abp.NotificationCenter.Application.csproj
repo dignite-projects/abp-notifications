@@ -3,6 +3,7 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace />
+    <Description>Application service implementations for the Dignite Notification Center's inbox and subscription features.</Description>
   </PropertyGroup>
 
   <ItemGroup>

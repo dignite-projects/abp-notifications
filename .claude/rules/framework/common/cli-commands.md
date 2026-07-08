@@ -67,6 +67,10 @@ dotnet pack Dignite.Abp.Notifications.slnx -c Release
 Bump `<Version>` in `Directory.Build.props` before a real release — it applies to every project in
 the repo (there's no per-project versioning).
 
+See `framework/common/versioning.md` for what this repo's `<Version>` MAJOR/MINOR/PATCH segments
+actually mean (MAJOR tracks the ABP major version, not this module's own breaking changes) before
+bumping it.
+
 ## Not applicable in this repo
 
 - `abp generate-proxy` (JS/C#/Angular) — no frontend, no `Host` to point it at.

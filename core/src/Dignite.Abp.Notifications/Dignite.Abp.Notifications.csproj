@@ -3,6 +3,7 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace />
+    <Description>The core notification framework for ABP: definitions, the publish/distribute pipeline, and the INotificationStore abstraction with a built-in no-op NullNotificationStore.</Description>
   </PropertyGroup>
 
   <ItemGroup>

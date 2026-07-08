@@ -1,0 +1,142 @@
+# Release workflow. The version is read from <Version> in Directory.Build.props (the single
+# source of truth); a pushed v* tag must match it (guard step below), but tags do not drive the
+# number.
+#
+# Routing by channel, derived from the SemVer pre-release suffix in <Version>:
+#   - Pre-release (e.g. 10.0.0-preview.2) -> NuGet packages pushed to GitHub Packages only.
+#   - Stable      (e.g. 10.0.0)           -> NuGet pushed to NuGet.org.
+#
+# Triggers: push a v* tag (e.g. v10.0.0-preview.1 or v10.0.0) or use workflow_dispatch. For churny
+# pre-release builds prefer workflow_dispatch: no tag, no draft Release - just bump <Version> in
+# Directory.Build.props, run, and the packages land in GitHub Packages.
+#
+# The Angular library (angular/projects/notification-center) is not published by this workflow
+# yet - it is out of scope for this repo's first release pass. When that changes, mirror the
+# npm build/pack/publish steps from https://github.com/dignite-projects/vault-extract's
+# release.yml, and add the npm-version lockstep check to the guard step below.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write # Required by softprops/action-gh-release to create a draft Release
+      packages: write # Required to push pre-release NuGet packages to GitHub Packages
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # Fail fast when the tag and Directory.Build.props <Version> disagree.
+      - name: Verify tag and version lockstep
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          VERSION=$(sed -n 's/.*<Version>\(.*\)<\/Version>.*/\1/p' Directory.Build.props | head -n1)
+          TAG="${GITHUB_REF#refs/tags/}"
+          if [ "v$VERSION" != "$TAG" ]; then
+            echo "::error::Tag $TAG does not match <Version>$VERSION</Version> in Directory.Build.props."
+            exit 1
+          fi
+
+      # Derive the release channel from the SemVer pre-release suffix. Runs on every trigger.
+      - name: Determine release channel
+        id: channel
+        run: |
+          VERSION=$(sed -n 's/.*<Version>\(.*\)<\/Version>.*/\1/p' Directory.Build.props | head -n1)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [[ "$VERSION" == *-* ]]; then
+            echo "channel=preview" >> "$GITHUB_OUTPUT"
+            echo "::notice::Version $VERSION is a pre-release -> GitHub Packages only."
+          else
+            echo "channel=stable" >> "$GITHUB_OUTPUT"
+            echo "::notice::Version $VERSION is stable -> NuGet.org."
+          fi
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore Dignite.Abp.Notifications.slnx
+
+      - name: Build
+        run: dotnet build Dignite.Abp.Notifications.slnx --no-restore --configuration Release
+
+      - name: Run Notifications (core) tests
+        run: dotnet test core/test/Dignite.Abp.Notifications.Tests/Dignite.Abp.Notifications.Tests.csproj --no-build --configuration Release --verbosity normal
+
+      - name: Run NotificationCenter (EF Core) tests
+        run: dotnet test notification-center/test/Dignite.Abp.NotificationCenter.Tests/Dignite.Abp.NotificationCenter.Tests.csproj --no-build --configuration Release --verbosity normal
+
+      - name: Run NotificationCenter (MongoDB) tests
+        run: dotnet test notification-center/test/Dignite.Abp.NotificationCenter.MongoDB.Tests/Dignite.Abp.NotificationCenter.MongoDB.Tests.csproj --no-build --configuration Release --verbosity normal
+
+      # Projects with IsPackable=false (host/ and the 4 test projects) are skipped automatically.
+      # Only the 14 packable projects under core/src and notification-center/src are produced.
+      - name: Pack
+        run: dotnet pack Dignite.Abp.Notifications.slnx --no-build --configuration Release -o ./artifacts
+
+      - name: Upload NuGet packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages
+          path: artifacts/*.nupkg
+          if-no-files-found: error
+
+      # Pre-release builds go to GitHub Packages only (private to the org, authenticated with the
+      # workflow's built-in GITHUB_TOKEN).
+      - name: Push to GitHub Packages (pre-release)
+        if: steps.channel.outputs.channel == 'preview'
+        run: |
+          dotnet nuget push ./artifacts/*.nupkg \
+            --api-key "${{ secrets.GITHUB_TOKEN }}" \
+            --source https://nuget.pkg.github.com/dignite-projects/index.json \
+            --skip-duplicate
+
+      # Stable builds go to public NuGet.org. Secrets can't be referenced directly in `if:`, so
+      # inject through env and check in the shell; skip the push (not fail) when unconfigured.
+      - name: Push to NuGet.org (stable)
+        if: steps.channel.outputs.channel == 'stable'
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          if [ -z "$NUGET_API_KEY" ]; then
+            echo "::notice::NUGET_API_KEY secret is not configured; skipping NuGet.org push (packages were uploaded as workflow artifacts)."
+            exit 0
+          fi
+          dotnet nuget push ./artifacts/*.nupkg \
+            --api-key "$NUGET_API_KEY" \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate
+
+      # Extract this version's section from CHANGELOG.md as the draft release body.
+      - name: Extract release notes from CHANGELOG
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          awk -v ver="$VERSION" '
+            /^## \[/ { if (found) exit; if (index($0, "[" ver "]") > 0) found = 1; next }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "::warning::CHANGELOG.md has no section for $VERSION; the draft release body will be empty - fill it in before publishing."
+          fi
+
+      # Draft only, on tag pushes (workflow_dispatch has no tag context) - review before publishing.
+      - name: Create draft GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          prerelease: ${{ steps.channel.outputs.channel == 'preview' }}
+          body_path: release-notes.md
+          files: artifacts/*
