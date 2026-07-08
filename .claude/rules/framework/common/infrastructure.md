@@ -134,8 +134,8 @@ await _backgroundJobManager.EnqueueAsync(new EmailSendingArgs { ... }, delay: Ti
 ```
 
 **This repo's own background job is `NotificationDistributionJob`** — `INotificationPublisher`
-enqueues it when the explicit recipient count exceeds the (currently hardcoded — see
-`docs/03-roadmap.md` problem F) direct-distribution threshold, instead of distributing inline.
+enqueues it when the explicit recipient count exceeds the (currently hardcoded)
+direct-distribution threshold, instead of distributing inline.
 
 ## Localization
 
