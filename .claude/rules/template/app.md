@@ -2,18 +2,21 @@
 
 > **Docs**: https://abp.io/docs/latest/solution-templates/module-development-template
 
-This repo is **class libraries only** — two independently distributable ABP module trees (`core/`
-and `notification-center/`) under a **single** `.slnx` solution. There is no `Host`, no
-`DbMigrator`, no frontend. A separate host application (not in this repo) references these projects
-(or their NuGet packages) and owns the actual running app. "Independently distributable" is enforced
-by project references + per-project NuGet packaging (Core never references NotificationCenter), not
-by the solution file — the single solution is only a build/dev convenience.
+The **distributed packages** are class libraries only — two independently distributable ABP module trees
+(`core/` and `notification-center/`) under a **single** `.slnx` solution. There is no *production* `Host`,
+`DbMigrator`, or frontend to publish; a real consuming application (not in this repo) references these
+projects (or their NuGet packages) and owns the running app. The repo *does* carry a **local-dev-only** demo
+`host/` (a runnable ABP MVC host — **in the `.slnx`** per ABP's module-template convention, but a Web SDK
+project so it's never packed) plus an `angular/` workspace (npm-only, not in the `.slnx`), purely to
+run/demo the stack. "Independently distributable" is enforced by project references + per-project NuGet
+packaging (Core never references NotificationCenter), not by the solution file — the single solution is only
+a build/dev convenience.
 
 ## Solution structure
 
 ```
 abp-notifications/
-├── Dignite.Abp.Notifications.slnx           # the one solution — aggregates core/ + notification-center/
+├── Dignite.Abp.Notifications.slnx           # one solution: core/ + notification-center/ libs + demo host/
 ├── Directory.Build.props                     # shared MSBuild props (LangVersion, Nullable, Version, license)
 ├── Directory.Packages.props                  # ⚠️ central package management — ALL package versions live here
 ├── core/
@@ -73,7 +76,7 @@ mirroring — match whichever convention the project you're editing already uses
 | `NotificationCenter.HttpApi.Client` | Remote C# client proxies | Application.Contracts |
 | `NotificationCenter.EntityFrameworkCore` / `.MongoDB` | `INotificationStore` implementations | Domain |
 
-> **Plugin boundary**: the design intent (`docs/02-architecture.md`) is that Notifiers depend on
+> **Plugin boundary**: the design intent is that Notifiers depend on
 > **only** `Abstractions`, so any channel can be added without touching Core. `SignalR` follows
 > this. `Emailing` currently also depends on Core (`Notifications`) — be aware of this when adding
 > a new Notifier; prefer depending on Abstractions only unless you have a concrete reason to need
@@ -136,16 +139,12 @@ Core integration tests run against an in-memory Sqlite provider and the MongoDB 
 against an embedded mongod (MongoSandbox), so `dotnet test` needs no migration step and no local
 database install.
 
-## Docs
+## Design rationale
 
-`docs/` carries the design rationale behind these rules — read before large architectural changes:
+The architecture overview (layering, the dependency diagram, the two modes, the
+publish→distribute→notify flow, extension points) and usage live in the root `README.md`. The
+"why" behind these rules — the serialization, DI-lifetime, plugin-boundary, and recipient-privacy
+invariants — lives inline in `framework/common/notifications-invariants.md`.
 
-| Doc | Content |
-|---|---|
-| `docs/01-strategy.md` | Positioning, differentiation, naming decisions |
-| `docs/02-architecture.md` | Layering, dependency diagram, the two modes, the publish→distribute→notify flow, extension points |
-| `docs/03-roadmap.md` | Problems (A–F) found in the **legacy reference implementation** this repo replaces, and the priority plan (P0–P4) that produced today's invariants |
-
-`03-roadmap.md` describes the *old* codebase being replaced, not necessarily open work here —
-cross-check against `git log` before treating an item as unfinished (e.g. the P0 serialization
-fix, the transactional outbox, and P2 notifier/channel-routing already exist in this repo).
+This repo is a from-scratch rewrite of a legacy implementation; those invariants encode the exact
+bugs that rewrite set out to fix, so don't reintroduce them.

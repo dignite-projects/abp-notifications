@@ -1,0 +1,13 @@
+{
+  "culture": "zh-Hans",
+  "texts": {
+    "Menu:Notifications": "通知",
+    "Notifications": "通知",
+    "MarkAllAsRead": "全部标记为已读",
+    "NoNotifications": "暂无通知",
+    "Subscriptions": "通知订阅",
+    "NotificationType": "通知类型",
+    "Description": "描述",
+    "Subscribed": "已订阅"
+  }
+}

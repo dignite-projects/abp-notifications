@@ -19,6 +19,8 @@
     <PackageVersion Include="Volo.Abp.Ddd.Application" Version="10.5.0" />
     <PackageVersion Include="Volo.Abp.Ddd.Application.Contracts" Version="10.5.0" />
     <PackageVersion Include="Volo.Abp.AspNetCore.Mvc" Version="10.5.0" />
+    <PackageVersion Include="Volo.Abp.AspNetCore.Mvc.UI.Theme.Shared" Version="10.5.0" />
+    <PackageVersion Include="Volo.Abp.AspNetCore.Mvc.UI.Bundling" Version="10.5.0" />
     <PackageVersion Include="Volo.Abp.Http.Client" Version="10.5.0" />
     <PackageVersion Include="Volo.Abp.Identity.Domain" Version="10.5.0" />
     <PackageVersion Include="Volo.Abp.Emailing" Version="10.5.0" />

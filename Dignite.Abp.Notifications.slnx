@@ -10,6 +10,9 @@
   <Folder Name="/core/test/">
     <Project Path="core/test/Dignite.Abp.Notifications.Tests/Dignite.Abp.Notifications.Tests.csproj" />
   </Folder>
+  <Folder Name="/host/">
+    <Project Path="host/Dignite.Abp.NotificationCenter.Web.Host/Dignite.Abp.NotificationCenter.Web.Host.csproj" />
+  </Folder>
   <Folder Name="/notification-center/" />
   <Folder Name="/notification-center/src/">
     <Project Path="notification-center/src/Dignite.Abp.NotificationCenter.Application.Contracts/Dignite.Abp.NotificationCenter.Application.Contracts.csproj" />
@@ -20,6 +23,7 @@
     <Project Path="notification-center/src/Dignite.Abp.NotificationCenter.HttpApi.Client/Dignite.Abp.NotificationCenter.HttpApi.Client.csproj" />
     <Project Path="notification-center/src/Dignite.Abp.NotificationCenter.HttpApi/Dignite.Abp.NotificationCenter.HttpApi.csproj" />
     <Project Path="notification-center/src/Dignite.Abp.NotificationCenter.MongoDB/Dignite.Abp.NotificationCenter.MongoDB.csproj" />
+    <Project Path="notification-center/src/Dignite.Abp.NotificationCenter.Web/Dignite.Abp.NotificationCenter.Web.csproj" />
   </Folder>
   <Folder Name="/notification-center/test/">
     <Project Path="notification-center/test/Dignite.Abp.NotificationCenter.TestBase/Dignite.Abp.NotificationCenter.TestBase.csproj" />

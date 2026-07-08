@@ -105,8 +105,8 @@ public override void ConfigureServices(ServiceConfigurationContext context)
 `NotificationCenterDbContext` always defines the outbox/inbox tables
 (`IncomingEventRecord`/`OutgoingEventRecord`); whether an app actually routes distributed events
 through them is an ABP-level, app-side opt-in. This is what makes "persist the notification" +
-"publish `RealTimeNotifyEto`" atomic — see invariant §1/§5 in `notifications-invariants.md` and
-`docs/03-roadmap.md` problem C. Don't remove these interfaces when touching the DbContext.
+"publish `RealTimeNotifyEto`" atomic — see invariant §1/§5 in `notifications-invariants.md`.
+Don't remove these interfaces when touching the DbContext.
 
 ## Testing
 
@@ -120,8 +120,7 @@ via the test module) — no real SQL Server/migration needed to run `dotnet test
 - Add explicit indexes for the fields you actually query by — check the real access pattern, not
   just "the obvious" column (this repo's indexes were specifically redesigned around
   `(TenantId, UserId, State, CreationTime)` for the inbox query and
-  `(TenantId, NotificationName, EntityTypeName, EntityId)` for subscription lookup — see
-  `docs/03-roadmap.md` problem D for what *not* to do).
+  `(TenantId, NotificationName, EntityTypeName, EntityId)` for subscription lookup).
 - Use `AsNoTracking()` / the async query executer for read-only queries; avoid N+1 by batching
   (see `NotificationStore.GetUserNotificationsAsync` for the two-query-plus-in-memory-join pattern
   used to keep the same store logic portable to MongoDB).

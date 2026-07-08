@@ -2,7 +2,7 @@
 
 > This file has **no `paths:` frontmatter, so it always loads**, alongside `abp-core.md` and
 > `template/app.md`. It exists because this repo is a from-scratch rewrite of a legacy
-> implementation that shipped with the exact bugs described below (see `docs/03-roadmap.md`) —
+> implementation that shipped with the exact bugs described below —
 > these are not style preferences, they're the reasons this repo exists. Do not reintroduce them.
 
 ## 1. `NotificationData` serialization: stable discriminator, System.Text.Json only

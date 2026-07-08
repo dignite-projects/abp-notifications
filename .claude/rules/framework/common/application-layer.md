@@ -142,5 +142,5 @@ do add one (and use the declarative pattern) for anything that touches *other* u
 Display text (`NotificationDisplayName`) is localized **at read time**, per the current reader's
 culture, inside `MapToDto` — not baked in at publish time. Keep this if you touch that method; the
 opposite (localizing once at publish/distribution time) was a real bug in the legacy
-implementation (`docs/03-roadmap.md` problem F) because background-job distribution runs without a
+implementation because background-job distribution runs without a
 request culture.
