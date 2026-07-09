@@ -5,7 +5,7 @@ an optional **Notification Center** (persistent inbox, subscriptions, read/unrea
 with **MVC** and **Angular** UI libraries.
 
 - **Event-driven, pluggable notifiers.** The core publishes one distributed event
-  (`RealTimeNotifyEto`); each notifier (SignalR, Email, …) subscribes and relays it to its own
+  (`NotificationDeliveryEto`); each notifier (SignalR, Email, …) subscribes and relays it to its own
   channel. Channels can be added, removed, or deployed independently without touching the core.
 - **Two operation modes, one framework.** Run stateless (fire-and-forget real-time push, no
   persistence) or as a full Notification Center (persistent per-user inbox, subscriptions,
@@ -29,7 +29,7 @@ them.
 
 | Package | Purpose |
 |---|---|
-| `Dignite.Abp.Notifications.Abstractions` | Shared contracts: `NotificationData`, `RealTimeNotifyEto`, `[NotificationDataType]`, `INotificationDefinitionProvider`, `INotificationNotifier`. Notifiers and remote clients depend on **only** this. |
+| `Dignite.Abp.Notifications.Abstractions` | Shared contracts: `NotificationData`, `NotificationDeliveryEto`, `[NotificationDataType]`, `INotificationDefinitionProvider`, `INotificationNotifier`. Notifiers and remote clients depend on **only** this. |
 | `Dignite.Abp.Notifications` | The core: definitions, the publish/distribute pipeline, the `INotificationStore` abstraction + `NullNotificationStore`. |
 | `Dignite.Abp.Notifications.SignalR` | Real-time push notifier (SignalR hub at `/signalr-hubs/notifications`). |
 | `Dignite.Abp.Notifications.Emailing` | Email notifier (ABP `IEmailSender`). |
@@ -139,7 +139,7 @@ Configure<NotificationDataOptions>(options =>
 ```
 
 **3. Register the notification definition** through an `INotificationDefinitionProvider` — its name,
-display text, and optional feature/permission gating or channel routing:
+display text, optional feature/permission gating, and explicit channel routing:
 
 ```csharp
 public class ShopNotificationDefinitionProvider : NotificationDefinitionProvider
@@ -148,7 +148,8 @@ public class ShopNotificationDefinitionProvider : NotificationDefinitionProvider
     {
         context.Add(new NotificationDefinition(
             "Demo.OrderShipped",
-            new FixedLocalizableString("Order shipped")));
+            new FixedLocalizableString("Order shipped"))
+            .UseChannels(SignalRNotifier.ChannelName));
     }
 }
 ```
@@ -170,13 +171,13 @@ threshold is configurable — see [Configuration](#configuration)). In Notificat
 
 ## Notifiers
 
-A notifier is an `INotificationNotifier<RealTimeNotifyEto>` that relays the event to a single channel.
+A notifier is an `INotificationNotifier<NotificationDeliveryEto>` that relays the event to a single channel.
 The generic notifier contract includes ABP's `IDistributedEventHandler<TEvent>` contract, while the
 non-generic `INotificationNotifier` keeps the stable channel metadata (`Name`) available for channel
 enumeration and routing.
 
 - **SignalR** — clients connect to the hub at `/signalr-hubs/notifications` (an ABP `AbpHub`, mapped
-  **automatically**; the host must *not* call `MapHub`) and receive a trimmed `RealTimeNotification`
+  **automatically**; the host must *not* call `MapHub`) and receive a trimmed `NotificationDelivery`
   with the recipient list stripped, so siblings' user IDs never leak to each other.
 - **Emailing** — resolves each recipient's email address and sends via ABP's `IEmailSender`.
 
@@ -185,12 +186,12 @@ enumeration and routing.
 
 ```csharp
 public class WebPushNotifier
-    : INotificationNotifier<RealTimeNotifyEto>, ITransientDependency
+    : INotificationNotifier<NotificationDeliveryEto>, ITransientDependency
 {
     public const string ChannelName = "WebPush";
     public string Name => ChannelName;
 
-    public async Task HandleEventAsync(RealTimeNotifyEto eventData)
+    public async Task HandleEventAsync(NotificationDeliveryEto eventData)
     {
         // Respect channel routing, and skip when there are no recipients.
         if (!NotificationChannels.IsAllowed(eventData.Channels, Name) ||
@@ -199,18 +200,31 @@ public class WebPushNotifier
             return;
         }
 
-        var payload = RealTimeNotification.FromEto(eventData);   // recipient list already stripped
+        var payload = NotificationDelivery.FromEto(eventData);   // recipient list already stripped
         // ... relay `payload` to your channel SDK, per recipient ...
     }
 }
 ```
 
-Route a notification to specific channels via its definition (null/none = every installed channel):
+Use `UseChannels(...)` only for external delivery channels. If a definition omits `UseChannels(...)`,
+it is NotificationCenter inbox-only: the notification is persisted for the recipient to read later,
+but no SignalR, Email, Web Push, or other notifier event is published. This keeps adding another
+notifier from accidentally fanning out existing notification types to a new channel:
 
 ```csharp
 context.Add(new NotificationDefinition("Demo.OrderShipped", new FixedLocalizableString("Order shipped"))
-    .UseChannels("SignalR", "Email"));
+    .UseChannels(SignalRNotifier.ChannelName, EmailNotifier.ChannelName));
 ```
+
+For inbox-only Notification Center entries, omit `UseChannels(...)`:
+
+```csharp
+context.Add(new NotificationDefinition("Demo.AuditLog", new FixedLocalizableString("Audit log")));
+```
+
+In stateless forwarding mode (`NullNotificationStore`, no NotificationCenter installed), an inbox-only
+definition has nowhere to persist; publishing it fails fast. Configure at least one external channel in
+that mode.
 
 ## REST API (Notification Center)
 
@@ -250,7 +264,7 @@ Configure<NotificationOptions>(options =>
 });
 
 // EF Core Notification Center hosts can opt in to ABP's transactional outbox so the persisted
-// notification rows and the RealTimeNotifyEto commit together.
+// notification rows and the NotificationDeliveryEto commit together.
 Configure<AbpDistributedEventBusOptions>(options =>
 {
     options.UseNotificationCenterEfCoreOutbox();
@@ -260,9 +274,9 @@ Configure<AbpDistributedEventBusOptions>(options =>
 ## Architecture
 
 ```
-Notifications.Abstractions   ── data model + RealTimeNotifyEto (the one boundary everyone shares)
+Notifications.Abstractions   ── data model + NotificationDeliveryEto (the one boundary everyone shares)
         │
-Notifications (Core)         ── define → publish → distribute; INotificationStore; publishes RealTimeNotifyEto
+Notifications (Core)         ── define → publish → distribute; INotificationStore; publishes NotificationDeliveryEto
         │
    ┌────┴───────────────────┐
 Notifiers                 NotificationCenter (optional)
@@ -275,11 +289,12 @@ Notifiers                 NotificationCenter (optional)
 2. Small explicit fan-outs distribute inline; larger ones enqueue a `NotificationDistributionJob`.
 3. The distributor resolves recipients (explicit `userIds`, or subscribers from
    `INotificationStore`), checks the definition's feature/permission availability, persists to the
-   store (a no-op under `NullNotificationStore`), then publishes one `RealTimeNotifyEto`.
+   store (a no-op under `NullNotificationStore`), then publishes one `NotificationDeliveryEto` when
+   external channels are configured.
 4. Every installed notifier handling that event relays it to its channel — honoring channel routing
    and stripping the recipient list per user.
 
-`RealTimeNotifyEto` is the load-bearing boundary: between core and notifiers, between monolithic and
+`NotificationDeliveryEto` is the load-bearing boundary: between core and notifiers, between monolithic and
 distributed deployment, and the extension point for any new channel. Under the EF Core Notification
 Center provider, hosts should opt in to ABP's transactional outbox (see [Configuration](#configuration))
 so "persist the notification" + "publish the event" commit together.
