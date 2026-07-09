@@ -10,6 +10,8 @@ changes.
 
 ## [Unreleased]
 
+## [10.0.0-preview.1] - 2026-07-09
+
 ### Added
 
 - Initial public release: an event-driven, pluggable notification framework for ABP Framework
