@@ -24,11 +24,31 @@ public class NotificationSubscriptionManager : INotificationSubscriptionManager,
         Clock = clock;
     }
 
-    public virtual Task SubscribeAsync(
+    public virtual async Task SubscribeAsync(
         Guid userId, string notificationName, NotificationEntityIdentifier? entityIdentifier = null)
     {
         var (entityTypeName, entityId) = Deconstruct(entityIdentifier);
-        return Store.InsertSubscriptionAsync(new NotificationSubscriptionInfo
+
+        if (!await DefinitionManager.IsAvailableAsync(notificationName, userId))
+        {
+            return;
+        }
+
+        await SubscribeIfNotSubscribedAsync(userId, notificationName, entityTypeName, entityId);
+    }
+
+    protected virtual async Task SubscribeIfNotSubscribedAsync(
+        Guid userId,
+        string notificationName,
+        string? entityTypeName,
+        string? entityId)
+    {
+        if (await Store.IsSubscribedAsync(userId, notificationName, entityTypeName, entityId))
+        {
+            return;
+        }
+
+        await Store.InsertSubscriptionAsync(new NotificationSubscriptionInfo
         {
             UserId = userId,
             NotificationName = notificationName,
@@ -43,10 +63,7 @@ public class NotificationSubscriptionManager : INotificationSubscriptionManager,
         var definitions = await DefinitionManager.GetAllAvailableAsync(userId);
         foreach (var definition in definitions)
         {
-            if (!await IsSubscribedAsync(userId, definition.Name))
-            {
-                await SubscribeAsync(userId, definition.Name);
-            }
+            await SubscribeIfNotSubscribedAsync(userId, definition.Name, null, null);
         }
     }
 

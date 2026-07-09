@@ -45,6 +45,8 @@ public static class NotificationCenterDbContextModelCreatingExtensions
 
             // Distribution lookup: subscribers of a notification, optionally scoped to an entity (fixes problem D).
             b.HasIndex(x => new { x.TenantId, x.NotificationName, x.EntityTypeName, x.EntityId });
+            // At most one subscription per user/notification/entity scope.
+            b.HasIndex(x => new { x.TenantId, x.UserId, x.NotificationName, x.EntityTypeName, x.EntityId }).IsUnique();
             // A user's own subscriptions.
             b.HasIndex(x => new { x.UserId, x.NotificationName });
         });

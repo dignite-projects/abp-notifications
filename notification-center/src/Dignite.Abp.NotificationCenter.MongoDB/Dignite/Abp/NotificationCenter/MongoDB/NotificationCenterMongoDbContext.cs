@@ -1,3 +1,4 @@
+using MongoDB.Bson;
 using MongoDB.Driver;
 using Volo.Abp.Data;
 using Volo.Abp.MongoDB;
@@ -18,10 +19,64 @@ public class NotificationCenterMongoDbContext : AbpMongoDbContext, INotification
         base.CreateModel(modelBuilder);
 
         modelBuilder.Entity<Notification>(b =>
-            b.CollectionName = NotificationCenterDbProperties.DbTablePrefix + "Notifications");
+        {
+            b.CollectionName = NotificationCenterDbProperties.DbTablePrefix + "Notifications";
+            b.ConfigureIndexes(indexes =>
+            {
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(Notification.TenantId))
+                        .Ascending(nameof(Notification.NotificationName))
+                        .Descending(nameof(Notification.CreationTime))));
+            });
+        });
+
         modelBuilder.Entity<UserNotification>(b =>
-            b.CollectionName = NotificationCenterDbProperties.DbTablePrefix + "UserNotifications");
+        {
+            b.CollectionName = NotificationCenterDbProperties.DbTablePrefix + "UserNotifications";
+            b.ConfigureIndexes(indexes =>
+            {
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(UserNotification.TenantId))
+                        .Ascending(nameof(UserNotification.UserId))
+                        .Ascending(nameof(UserNotification.State))
+                        .Descending(nameof(UserNotification.CreationTime))));
+
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(UserNotification.UserId))
+                        .Ascending(nameof(UserNotification.NotificationId)),
+                    new CreateIndexOptions { Unique = true }));
+            });
+        });
+
         modelBuilder.Entity<NotificationSubscription>(b =>
-            b.CollectionName = NotificationCenterDbProperties.DbTablePrefix + "NotificationSubscriptions");
+        {
+            b.CollectionName = NotificationCenterDbProperties.DbTablePrefix + "NotificationSubscriptions";
+            b.ConfigureIndexes(indexes =>
+            {
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(NotificationSubscription.TenantId))
+                        .Ascending(nameof(NotificationSubscription.NotificationName))
+                        .Ascending(nameof(NotificationSubscription.EntityTypeName))
+                        .Ascending(nameof(NotificationSubscription.EntityId))));
+
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(NotificationSubscription.TenantId))
+                        .Ascending(nameof(NotificationSubscription.UserId))
+                        .Ascending(nameof(NotificationSubscription.NotificationName))
+                        .Ascending(nameof(NotificationSubscription.EntityTypeName))
+                        .Ascending(nameof(NotificationSubscription.EntityId)),
+                    new CreateIndexOptions { Unique = true }));
+
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(NotificationSubscription.UserId))
+                        .Ascending(nameof(NotificationSubscription.NotificationName))));
+            });
+        });
     }
 }
