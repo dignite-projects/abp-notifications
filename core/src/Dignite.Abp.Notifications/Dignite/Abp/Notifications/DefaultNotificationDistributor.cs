@@ -103,7 +103,8 @@ public class DefaultNotificationDistributor : INotificationDistributor, ITransie
             userIds.ToArray())
         {
             // Channel white-list from the definition (null = every channel).
-            Channels = DefinitionManager.GetOrNull(notification.NotificationName)?.GetChannelsOrNull()
+            Channels = DefinitionManager.GetOrNull(notification.NotificationName)?.GetChannelsOrNull(),
+            TenantId = notification.TenantId
         };
 
         return DistributedEventBus.PublishAsync(eto);

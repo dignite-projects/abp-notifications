@@ -1,6 +1,7 @@
 using System.Threading.Tasks;
 using Volo.Abp.BackgroundJobs;
 using Volo.Abp.DependencyInjection;
+using Volo.Abp.MultiTenancy;
 
 namespace Dignite.Abp.Notifications;
 
@@ -11,13 +12,21 @@ public class NotificationDistributionJob : AsyncBackgroundJob<NotificationDistri
 {
     protected INotificationDistributor Distributor { get; }
 
-    public NotificationDistributionJob(INotificationDistributor distributor)
+    protected ICurrentTenant CurrentTenant { get; }
+
+    public NotificationDistributionJob(
+        INotificationDistributor distributor,
+        ICurrentTenant currentTenant)
     {
         Distributor = distributor;
+        CurrentTenant = currentTenant;
     }
 
-    public override Task ExecuteAsync(NotificationDistributionJobArgs args)
+    public override async Task ExecuteAsync(NotificationDistributionJobArgs args)
     {
-        return Distributor.DistributeAsync(args.Notification, args.UserIds, args.ExcludedUserIds);
+        using (CurrentTenant.Change(args.Notification.TenantId, null))
+        {
+            await Distributor.DistributeAsync(args.Notification, args.UserIds, args.ExcludedUserIds);
+        }
     }
 }

@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using NSubstitute;
 using Shouldly;
+using Volo.Abp.EventBus;
 using Volo.Abp.EventBus.Distributed;
 using Xunit;
 
@@ -27,11 +28,13 @@ public class DefaultNotificationDistributorTests
         var u1 = Guid.NewGuid();
         var u2 = Guid.NewGuid();
         var u3 = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
         var notification = new NotificationInfo
         {
             Id = Guid.NewGuid(),
             NotificationName = "test",
-            CreationTime = DateTime.UtcNow
+            CreationTime = DateTime.UtcNow,
+            TenantId = tenantId
         };
 
         await distributor.DistributeAsync(notification, new[] { u1, u2, u3 }, new[] { u2 });
@@ -41,6 +44,9 @@ public class DefaultNotificationDistributorTests
         published.UserIds.ShouldContain(u1);
         published.UserIds.ShouldContain(u3);
         published.UserIds.ShouldNotContain(u2);
+        published.TenantId.ShouldBe(tenantId);
+        ((IEventDataMayHaveTenantId)published).IsMultiTenant(out var eventTenantId).ShouldBeTrue();
+        eventTenantId.ShouldBe(tenantId);
 
         await store.Received(1).InsertNotificationAsync(Arg.Any<NotificationInfo>());
         await store.Received(2).InsertUserNotificationAsync(Arg.Any<UserNotificationInfo>());

@@ -11,7 +11,7 @@ namespace Dignite.Abp.Notifications;
 /// </summary>
 [EventName("Dignite.Abp.Notifications.RealTimeNotify")]
 [Serializable]
-public class RealTimeNotifyEto
+public class RealTimeNotifyEto : IEventDataMayHaveTenantId
 {
     public Guid NotificationId { get; set; }
 
@@ -27,6 +27,9 @@ public class RealTimeNotifyEto
 
     /// <summary>Notifier channels this notification may be delivered on (by name). Null/empty = every channel.</summary>
     public string[]? Channels { get; set; }
+
+    /// <summary>The tenant that owns this notification. Null means host-side/no tenant.</summary>
+    public Guid? TenantId { get; set; }
 
     public RealTimeNotifyEto()
     {
@@ -46,5 +49,11 @@ public class RealTimeNotifyEto
         Severity = severity;
         CreationTime = creationTime;
         UserIds = userIds;
+    }
+
+    public bool IsMultiTenant(out Guid? tenantId)
+    {
+        tenantId = TenantId;
+        return TenantId.HasValue;
     }
 }
