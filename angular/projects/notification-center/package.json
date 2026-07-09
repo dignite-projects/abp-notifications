@@ -10,8 +10,13 @@
   },
   "peerDependencies": {
     "@abp/ng.core": "~10.5.0",
+    "@abp/ng.theme.shared": "~10.5.0",
+    "@abp/ng.setting-management": "~10.5.0",
     "@angular/common": "^21.2.0",
-    "@angular/core": "^21.2.0"
+    "@angular/core": "^21.2.0",
+    "@angular/router": "^21.2.0",
+    "@microsoft/signalr": "^10.0.0",
+    "@ng-bootstrap/ng-bootstrap": "~20.0.0"
   },
   "dependencies": {
     "tslib": "^2.3.0"

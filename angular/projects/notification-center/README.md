@@ -10,7 +10,7 @@ Angular consumers and is packaged like ABP's own `@abp/ng.*` libraries: a main e
 
 | Import | Contents |
 |---|---|
-| `@dignite-abp/notification-center` | `NotificationBellComponent`, `NotificationSubscriptionsComponent`, and the `NotificationsService` proxy + DTOs/enums. |
+| `@dignite-abp/notification-center` | `NotificationBellComponent` (`<abp-notification-bell>`), `NotificationSubscriptionsComponent`, and the `NotificationsService` proxy + DTOs/enums. |
 | `@dignite-abp/notification-center/config` | `provideNotificationCenterConfig()` — registers the navigation-menu entry into the host — plus the `eNotificationCenterRouteNames` route-name enum. Call the provider once in `app.config.ts`. |
 
 ## Usage
@@ -28,26 +28,50 @@ export const appConfig: ApplicationConfig = {
 };
 ```
 
-Use the components in a page:
+Use the subscriptions component in a page:
 
 ```ts
-import {
-  NotificationBellComponent,
-  NotificationSubscriptionsComponent,
-} from '@dignite-abp/notification-center';
+import { NotificationSubscriptionsComponent } from '@dignite-abp/notification-center';
 
 @Component({
-  imports: [NotificationBellComponent, NotificationSubscriptionsComponent],
+  imports: [NotificationSubscriptionsComponent],
   template: `
-    <nc-notification-bell />
-    <nc-notification-subscriptions />
+    <abp-notification-subscriptions />
   `,
 })
 export class MyNotificationsPage {}
 ```
 
-The bell polls the unread count on an interval and exposes a public `refresh()` the host can call
-from a SignalR `ReceiveNotification` handler for live updates.
+The toolbar bell is registered by `provideNotificationCenterConfig()`. It loads its initial count/list
+once and refreshes from the Notification Center SignalR hub (`/signalr-hubs/notifications`) on
+`ReceiveNotification`; it does not poll. The hub endpoint follows ABP's SignalR convention and is mapped
+server-side by ABP. Angular uses the Microsoft SignalR client, as ABP's SignalR documentation directs
+non-MVC clients to do.
+
+### Custom notification bodies and entity links
+
+The bell keeps the notification title and time in a fixed header row. The body below it is rendered by
+the notification data discriminator; register custom body components with `NotificationDataComponentsService`.
+
+Notifications are not required to be navigable. Clicking an item marks it as read in place, updates the badge,
+and keeps the item visible in the currently open dropdown. The next time the bell is opened, it reloads the
+unread list and read items naturally drop out. If a resolver is registered for the item's `entityTypeName`,
+the bell marks it as read and navigates through Angular Router so the SPA is not reloaded:
+
+```ts
+import { inject, provideAppInitializer } from '@angular/core';
+import { NotificationEntityLinksService } from '@dignite-abp/notification-center';
+
+provideAppInitializer(() => {
+  inject(NotificationEntityLinksService).register('MyApp.Order', notification => [
+    '/orders',
+    notification.entityId,
+  ]);
+});
+```
+
+Return a Router commands array, a `UrlTree`, or an app-relative URL string. External URLs still use normal
+browser navigation.
 
 ## Structure
 
@@ -57,7 +81,9 @@ The `config` entry follows ABP's own convention (see `@abp/ng.identity/config`):
 config/src/
 ├── enums/route-names.ts   # eNotificationCenterRouteNames (menu name = localization key)
 ├── providers/
-│   ├── route.provider.ts                     # NOTIFICATION_CENTER_ROUTE_PROVIDERS + configureRoutes()
+│   ├── route.provider.ts                     # routes
+│   ├── nav-item.provider.ts                  # toolbar bell
+│   ├── setting-tab.provider.ts               # subscriptions settings tab
 │   └── notification-center-config.provider.ts # provideNotificationCenterConfig()
 └── public-api.ts
 ```

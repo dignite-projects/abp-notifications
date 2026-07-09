@@ -8,3 +8,7 @@ export * from './lib/proxy/dignite/abp/notification-center';
 export * from './lib/proxy/dignite/abp/notifications';
 export * from './lib/notification-bell/notification-bell.component';
 export * from './lib/notification-subscriptions/notification-subscriptions.component';
+export * from './lib/notification-data/notification-data-components.service';
+export * from './lib/notification-data/message-notification-data.component';
+export * from './lib/notification-data/localizable-message-notification-data.component';
+export * from './lib/notification-links/notification-entity-links.service';

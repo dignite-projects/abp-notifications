@@ -213,7 +213,7 @@
       "projectType": "library",
       "root": "projects/notification-center",
       "sourceRoot": "projects/notification-center/src",
-      "prefix": "nc",
+      "prefix": "abp",
       "architect": {
         "build": {
           "builder": "@angular/build:ng-packagr",

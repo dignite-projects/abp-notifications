@@ -6,11 +6,11 @@ import { NotificationsService, NotificationSubscriptionDto } from '../proxy/dign
  * Lists the notification types available to the current user with subscribe/unsubscribe toggles.
  */
 @Component({
-  selector: 'nc-notification-subscriptions',
+  selector: 'abp-notification-subscriptions',
   standalone: true,
   imports: [LocalizationPipe],
   template: `
-    <table class="nc-subs-table">
+    <table class="abp-notification-subscriptions-table">
       <thead>
         <tr>
           <th>{{ 'AbpNotificationCenter::NotificationType' | abpLocalization }}</th>
@@ -37,8 +37,8 @@ import { NotificationsService, NotificationSubscriptionDto } from '../proxy/dign
   `,
   styles: [
     `
-      .nc-subs-table { width: 100%; border-collapse: collapse; }
-      .nc-subs-table th, .nc-subs-table td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #eee; }
+      .abp-notification-subscriptions-table { width: 100%; border-collapse: collapse; }
+      .abp-notification-subscriptions-table th, .abp-notification-subscriptions-table td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #eee; }
     `,
   ],
 })

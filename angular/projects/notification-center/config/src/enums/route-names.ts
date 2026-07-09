@@ -4,5 +4,5 @@
  * `Domain.Shared` layer. Mirrors ABP's `e<Module>RouteNames` convention (e.g. `eIdentityRouteNames`).
  */
 export const enum eNotificationCenterRouteNames {
-  Notifications = 'AbpNotificationCenter::Menu:Notifications',
+  Notifications = 'AbpNotificationCenter::Menu:NotificationCenter',
 }
