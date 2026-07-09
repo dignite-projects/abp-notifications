@@ -1,3 +1,5 @@
+using Dignite.Abp.Notifications;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using Volo.Abp.AspNetCore.Mvc;
 using Volo.Abp.Modularity;
@@ -19,5 +21,22 @@ public class AbpNotificationCenterHttpApiModule : AbpModule
         {
             mvcBuilder.AddApplicationPartIfNotExists(typeof(AbpNotificationCenterHttpApiModule).Assembly);
         });
+    }
+
+    public override void ConfigureServices(ServiceConfigurationContext context)
+    {
+        // AbpNotificationsModule registers NotificationDataJsonConverter on AbpSystemTextJsonSerializerOptions
+        // (what the distributed event bus / INotificationDataSerializer use), but ASP.NET Core's actual HTTP
+        // response JSON formatter reads Microsoft.AspNetCore.Mvc.JsonOptions instead — a separate, unsynced
+        // JsonSerializerOptions. Without this, UserNotificationDto.Data serializes over HTTP via System.Text.Json's
+        // default reflection-based output for its declared type (NotificationData), silently dropping the
+        // discriminator and every derived-type field — exactly what notifications-invariants.md §1 requires the
+        // HTTP API to avoid.
+        context.Services
+            .AddOptions<JsonOptions>()
+            .Configure<INotificationDataTypeRegistry>((options, registry) =>
+            {
+                options.JsonSerializerOptions.Converters.Add(new NotificationDataJsonConverter(registry));
+            });
     }
 }
