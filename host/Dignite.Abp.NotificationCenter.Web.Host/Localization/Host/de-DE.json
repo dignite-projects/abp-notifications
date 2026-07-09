@@ -1,7 +1,7 @@
 {
   "culture": "de-DE",
   "texts": {
-    "AppName": "Host",
+    "AppName": "Notification Center Host",
     "Welcome_Title": "Willkommen",
     "Welcome_Text": "Dies ist eine minimalistische, einschichtige Anwendungsstartvorlage für das ABP-Framework.",
     "Menu:Home": "Home"

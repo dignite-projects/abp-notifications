@@ -1,4 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" role="img" aria-label="DIGNITE circular badge">
+  <rect width="1000" height="1000" fill="#322488"/>
+  <g color="#fad7d3" transform="translate(500 500) scale(1.316) translate(-500 -500)">
   <!-- 圆形徽章：外环 + 内环 + 四角星(平头，竖向尖端触及内环)，DIGNITE 采用品牌字形(logo-文字品牌.svg)沿顶部弧线排布，中间字母 N 居顶居中（D、E 锚定不动，两侧字母各自等距）。fill/stroke=currentColor -->
   <g fill="none" stroke="currentColor">
     <circle cx="500" cy="500" r="340" stroke-width="25"/>
@@ -13,5 +15,6 @@
     <g transform="translate(500,500) rotate(23.309) translate(0,-254) scale(0.37) translate(-710.50,-170)"><g transform="translate(694,12)"><path d="M0,0L33,0L33,158L0,158Z"/></g></g>
     <g transform="translate(500,500) rotate(46.206) translate(0,-254) scale(0.37) translate(-821.50,-170)"><g transform="translate(750,12)"><path d="M0,0L143,0L143,17.5L88,17.5L88,158L55,158L55,17.5L0,17.5Z"/></g></g>
     <g transform="translate(500,500) rotate(72.434) translate(0,-254) scale(0.37) translate(-980.00,-170)"><g transform="translate(919,12)"><path d="M0,0L122,0L122,17.5L33,17.5L33,69L92,69L92,87L33,87L33,140.5L122,140.5L122,158L0,158Z"/></g></g>
+  </g>
   </g>
 </svg>
