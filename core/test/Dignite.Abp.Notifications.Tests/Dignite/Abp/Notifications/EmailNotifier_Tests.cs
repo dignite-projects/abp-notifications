@@ -2,13 +2,28 @@ using System;
 using System.Threading.Tasks;
 using Dignite.Abp.Notifications.Emailing;
 using NSubstitute;
+using Shouldly;
 using Volo.Abp.Emailing;
+using Volo.Abp.EventBus.Distributed;
 using Xunit;
 
 namespace Dignite.Abp.Notifications;
 
 public class EmailNotifier_Tests
 {
+    [Fact]
+    public void Email_notifier_exposes_its_channel_name_and_event_contract()
+    {
+        var notifier = new EmailNotifier(
+            Substitute.For<IEmailSender>(),
+            Substitute.For<IEmailNotificationAddressResolver>(),
+            new DefaultNotificationEmailBuilder());
+
+        ((INotificationNotifier)notifier).Name.ShouldBe(EmailNotifier.ChannelName);
+        (notifier is INotificationNotifier<RealTimeNotifyEto>).ShouldBeTrue();
+        (notifier is IDistributedEventHandler<RealTimeNotifyEto>).ShouldBeTrue();
+    }
+
     [Fact]
     public async Task Emails_only_users_with_a_resolved_address()
     {

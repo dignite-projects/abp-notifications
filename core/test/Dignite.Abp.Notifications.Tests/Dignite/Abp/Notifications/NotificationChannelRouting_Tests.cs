@@ -1,12 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Dignite.Abp.Notifications.Emailing;
 using Dignite.Abp.Notifications.SignalR;
 using Microsoft.AspNetCore.SignalR;
 using NSubstitute;
 using Shouldly;
 using Volo.Abp.EventBus.Distributed;
 using Volo.Abp.Localization;
+using Volo.Abp.Reflection;
 using Xunit;
 
 namespace Dignite.Abp.Notifications;
@@ -26,10 +28,24 @@ public class NotificationChannelRouting_Tests
     }
 
     [Fact]
-    public void SignalR_notifier_exposes_its_channel_name()
+    public void SignalR_notifier_exposes_its_channel_name_and_event_contract()
     {
         var handler = new NotifyEventHandler(Substitute.For<IHubContext<NotificationsHub, INotificationClient>>());
+
         ((INotificationNotifier)handler).Name.ShouldBe(NotifyEventHandler.ChannelName);
+        (handler is INotificationNotifier<RealTimeNotifyEto>).ShouldBeTrue();
+        (handler is IDistributedEventHandler<RealTimeNotifyEto>).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Generic_notifier_contract_is_visible_to_abp_event_handler_scanning()
+    {
+        ReflectionHelper.IsAssignableToGenericType(
+            typeof(NotifyEventHandler),
+            typeof(IDistributedEventHandler<>)).ShouldBeTrue();
+        ReflectionHelper.IsAssignableToGenericType(
+            typeof(EmailNotifier),
+            typeof(IDistributedEventHandler<>)).ShouldBeTrue();
     }
 
     [Fact]

@@ -3,7 +3,6 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.SignalR;
 using Volo.Abp.DependencyInjection;
-using Volo.Abp.EventBus.Distributed;
 
 namespace Dignite.Abp.Notifications.SignalR;
 
@@ -13,8 +12,7 @@ namespace Dignite.Abp.Notifications.SignalR;
 /// can never see the ids of the others (fixes the reference implementation's payload leak).
 /// </summary>
 public class NotifyEventHandler :
-    IDistributedEventHandler<RealTimeNotifyEto>,
-    INotificationNotifier,
+    INotificationNotifier<RealTimeNotifyEto>,
     ITransientDependency
 {
     public const string ChannelName = "SignalR";

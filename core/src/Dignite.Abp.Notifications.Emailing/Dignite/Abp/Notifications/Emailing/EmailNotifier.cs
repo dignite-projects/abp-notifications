@@ -2,7 +2,6 @@ using System.Linq;
 using System.Threading.Tasks;
 using Volo.Abp.DependencyInjection;
 using Volo.Abp.Emailing;
-using Volo.Abp.EventBus.Distributed;
 
 namespace Dignite.Abp.Notifications.Emailing;
 
@@ -12,7 +11,7 @@ namespace Dignite.Abp.Notifications.Emailing;
 /// <see cref="IEmailNotificationAddressResolver"/>. Idempotency across duplicate event delivery comes from the
 /// transactional inbox (roadmap C/P1). Honors channel routing via <see cref="NotificationChannels"/>.
 /// </summary>
-public class EmailNotifier : IDistributedEventHandler<RealTimeNotifyEto>, INotificationNotifier, ITransientDependency
+public class EmailNotifier : INotificationNotifier<RealTimeNotifyEto>, ITransientDependency
 {
     public const string ChannelName = "Email";
 
