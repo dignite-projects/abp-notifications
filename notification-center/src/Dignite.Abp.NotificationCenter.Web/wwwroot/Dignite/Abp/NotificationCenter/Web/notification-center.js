@@ -10,19 +10,95 @@
         return dignite.abp.notificationCenter.notifications;
     }
 
-    // ---- click handling (mark-as-read, mark-all, follow entity link) ----
+    function refreshDropdown(bell) {
+        if (!bell || bell.getAttribute('data-refreshing-dropdown') === 'true') {
+            return;
+        }
+
+        var url = bell.getAttribute('data-dropdown-url');
+        var list = bell.querySelector('.dignite-notification-list');
+        if (!url || !list || typeof abp === 'undefined' || !abp.ajax) {
+            return;
+        }
+
+        var currentContent = list.querySelector('.dignite-notification-list-content');
+        if (currentContent) {
+            currentContent.setAttribute('aria-busy', 'true');
+        }
+        bell.setAttribute('data-refreshing-dropdown', 'true');
+
+        var clearRefreshing = function () {
+            bell.removeAttribute('data-refreshing-dropdown');
+            var content = list.querySelector('.dignite-notification-list-content');
+            if (content) {
+                content.removeAttribute('aria-busy');
+            }
+        };
+
+        abp.ajax({
+            url: url,
+            type: 'GET',
+            dataType: 'html'
+        }).then(function (html) {
+            var temp = document.createElement('div');
+            temp.innerHTML = (html || '').trim();
+
+            var nextContent = temp.querySelector('.dignite-notification-list-content') || temp.firstElementChild;
+            if (!nextContent) {
+                clearRefreshing();
+                return;
+            }
+
+            currentContent = list.querySelector('.dignite-notification-list-content');
+            if (currentContent) {
+                currentContent.replaceWith(nextContent);
+            } else {
+                list.innerHTML = '';
+                list.appendChild(nextContent);
+            }
+
+            var unreadCount = parseInt(nextContent.getAttribute('data-unread-count') || '0', 10);
+            if (!isNaN(unreadCount)) {
+                setBadgeCount(unreadCount);
+            }
+
+            clearRefreshing();
+        }, clearRefreshing);
+    }
+
+    document.addEventListener('show.bs.dropdown', function (e) {
+        refreshDropdown(e.target.closest('.dignite-notification-bell'));
+    });
+
+    // ---- click handling (refresh dropdown, mark-as-read, mark-all, follow entity link) ----
     document.addEventListener('click', function (e) {
+        var toggle = e.target.closest('.dignite-notification-toggle');
+        if (toggle) {
+            refreshDropdown(toggle.closest('.dignite-notification-bell'));
+        }
+
         var item = e.target.closest('.dignite-notification-item');
         if (item) {
             var notificationId = item.getAttribute('data-notification-id');
+            var hasLink = item.getAttribute('data-has-link') === 'true';
+            var href = item.getAttribute('href');
+            e.preventDefault();
             if (notificationId) {
                 api().markAsRead(notificationId).then(function () {
                     setBadgeCount(getBadgeCount() - 1);
                     item.classList.remove('dignite-notification-unread');
+                    if (hasLink && href) {
+                        window.location.href = href;
+                    }
+                }, function () {
+                    if (hasLink && href) {
+                        window.location.href = href;
+                    }
                 });
+                return;
             }
-            if (item.getAttribute('data-has-link') !== 'true') {
-                e.preventDefault();
+            if (hasLink && href) {
+                window.location.href = href;
             }
             return;
         }
@@ -31,7 +107,13 @@
         if (markAllLink) {
             e.preventDefault();
             api().markAllAsRead().then(function () {
-                location.reload();
+                setBadgeCount(0);
+                var bell = markAllLink.closest('.dignite-notification-bell');
+                if (bell) {
+                    bell.querySelectorAll('.dignite-notification-item').forEach(function (item) {
+                        item.classList.remove('dignite-notification-unread');
+                    });
+                }
             });
         }
     });

@@ -1,11 +1,27 @@
 .dignite-notification-list {
-    min-width: 320px;
+    min-width: 380px;
     max-height: 400px;
     overflow-y: auto;
 }
 
 .dignite-notification-item.dignite-notification-unread {
     background-color: rgba(13, 110, 253, 0.05);
+}
+
+.dignite-notification-item-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) max-content;
+    align-items: baseline;
+    gap: 0.5rem;
+}
+
+.dignite-notification-item-title {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.dignite-notification-item-time {
+    white-space: nowrap;
 }
 
 .dignite-notification-image {

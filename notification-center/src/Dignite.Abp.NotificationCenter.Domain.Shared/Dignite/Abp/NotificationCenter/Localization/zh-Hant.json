@@ -1,10 +1,11 @@
 {
   "culture": "zh-Hant",
   "texts": {
-    "Menu:Notifications": "通知",
+    "Menu:NotificationCenter": "通知中心",
     "Notifications": "通知",
     "MarkAllAsRead": "全部標記為已讀",
     "NoNotifications": "暫無通知",
+    "NoUnreadNotifications": "暫無未讀通知",
     "Subscriptions": "通知訂閱",
     "NotificationType": "通知類型",
     "Description": "描述",

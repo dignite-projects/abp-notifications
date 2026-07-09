@@ -9,6 +9,6 @@ public class MessageNotificationDataViewComponent : ViewComponent
 {
     public virtual IViewComponentResult Invoke(Dignite.Abp.Notifications.MessageNotificationData data)
     {
-        return View(data);
+        return View("~/Dignite/Abp/NotificationCenter/Web/Components/MessageNotificationData/Default.cshtml", data);
     }
 }

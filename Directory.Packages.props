@@ -21,6 +21,7 @@
     <PackageVersion Include="Volo.Abp.AspNetCore.Mvc" Version="10.5.0" />
     <PackageVersion Include="Volo.Abp.AspNetCore.Mvc.UI.Theme.Shared" Version="10.5.0" />
     <PackageVersion Include="Volo.Abp.AspNetCore.Mvc.UI.Bundling" Version="10.5.0" />
+    <PackageVersion Include="Volo.Abp.SettingManagement.Web" Version="10.5.0" />
     <PackageVersion Include="Volo.Abp.Http.Client" Version="10.5.0" />
     <PackageVersion Include="Volo.Abp.Identity.Domain" Version="10.5.0" />
     <PackageVersion Include="Volo.Abp.Emailing" Version="10.5.0" />
@@ -33,6 +34,10 @@
 
   <ItemGroup Label="System.Text.Json (only needed for netstandard targets; in-box on net10.0)">
     <PackageVersion Include="System.Text.Json" Version="10.0.7" />
+  </ItemGroup>
+
+  <ItemGroup Label="Embedded static wwwroot content (ABP's AddEmbedded/ManifestEmbeddedFileProvider) -- direct reference needed to activate its build-time manifest generation, ABP's own dependency doesn't flow it transitively">
+    <PackageVersion Include="Microsoft.Extensions.FileProviders.Embedded" Version="10.0.7" />
   </ItemGroup>
 
   <ItemGroup Label="Test stack">

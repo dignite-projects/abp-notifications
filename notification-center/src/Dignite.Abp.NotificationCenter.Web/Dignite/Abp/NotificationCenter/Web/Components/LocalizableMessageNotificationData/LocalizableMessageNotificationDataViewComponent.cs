@@ -29,6 +29,6 @@ public class LocalizableMessageNotificationDataViewComponent : ViewComponent
                 ? localizer[data.Name, data.Arguments.Values.ToArray()].Value
                 : localizer[data.Name].Value;
 
-        return View("Default", text);
+        return View("~/Dignite/Abp/NotificationCenter/Web/Components/LocalizableMessageNotificationData/Default.cshtml", text);
     }
 }

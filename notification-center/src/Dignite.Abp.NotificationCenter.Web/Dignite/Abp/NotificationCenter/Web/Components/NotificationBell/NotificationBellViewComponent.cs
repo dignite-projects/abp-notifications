@@ -35,15 +35,25 @@ public class NotificationBellViewComponent : ViewComponent
             return Content(string.Empty);
         }
 
+        var model = await CreateViewModelAsync();
+
+        return View(
+            "~/Dignite/Abp/NotificationCenter/Web/Components/NotificationBell/Default.cshtml",
+            model);
+    }
+
+    protected virtual async Task<NotificationBellViewModel> CreateViewModelAsync()
+    {
         var unreadCount = await NotificationAppService.GetCountAsync(UserNotificationState.Unread);
         var recent = await NotificationAppService.GetListAsync(new GetUserNotificationListInput
         {
+            State = UserNotificationState.Unread,
             MaxResultCount = 10
         });
 
         var items = recent.Items.Select(CreateItemViewModel).ToList();
 
-        return View(new NotificationBellViewModel(unreadCount, items, WebOptions.SignalRHubUrl));
+        return new NotificationBellViewModel(unreadCount, items, WebOptions.SignalRHubUrl);
     }
 
     protected virtual NotificationBellItemViewModel CreateItemViewModel(UserNotificationDto notification)

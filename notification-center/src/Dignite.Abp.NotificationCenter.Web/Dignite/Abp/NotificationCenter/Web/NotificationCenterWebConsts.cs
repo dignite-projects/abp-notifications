@@ -4,5 +4,5 @@ public static class NotificationCenterWebConsts
 {
     public const string GlobalBundleName = "Dignite.Abp.NotificationCenter.Web.Global";
 
-    public const string MenuGroupName = "Dignite.Abp.NotificationCenter";
+    public const string SettingGroupName = "Dignite.Abp.NotificationCenter";
 }
