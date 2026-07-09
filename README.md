@@ -170,8 +170,10 @@ threshold is configurable — see [Configuration](#configuration)). In Notificat
 
 ## Notifiers
 
-A notifier is an `IDistributedEventHandler<RealTimeNotifyEto>` (and, by convention, an
-`INotificationNotifier`) that relays the event to a single channel.
+A notifier is an `INotificationNotifier<RealTimeNotifyEto>` that relays the event to a single channel.
+The generic notifier contract includes ABP's `IDistributedEventHandler<TEvent>` contract, while the
+non-generic `INotificationNotifier` keeps the stable channel metadata (`Name`) available for channel
+enumeration and routing.
 
 - **SignalR** — clients connect to the hub at `/signalr-hubs/notifications` (an ABP `AbpHub`, mapped
   **automatically**; the host must *not* call `MapHub`) and receive a trimmed `RealTimeNotification`
@@ -183,7 +185,7 @@ A notifier is an `IDistributedEventHandler<RealTimeNotifyEto>` (and, by conventi
 
 ```csharp
 public class WebPushNotifier
-    : IDistributedEventHandler<RealTimeNotifyEto>, INotificationNotifier, ITransientDependency
+    : INotificationNotifier<RealTimeNotifyEto>, ITransientDependency
 {
     public const string ChannelName = "WebPush";
     public string Name => ChannelName;
@@ -246,6 +248,13 @@ Configure<NotificationOptions>(options =>
     // Explicit recipients above this count distribute on a background job instead of inline. Default: 5.
     options.DirectDistributionUserThreshold = 10;
 });
+
+// EF Core Notification Center hosts can opt in to ABP's transactional outbox so the persisted
+// notification rows and the RealTimeNotifyEto commit together.
+Configure<AbpDistributedEventBusOptions>(options =>
+{
+    options.UseNotificationCenterEfCoreOutbox();
+});
 ```
 
 ## Architecture
@@ -271,8 +280,9 @@ Notifiers                 NotificationCenter (optional)
    and stripping the recipient list per user.
 
 `RealTimeNotifyEto` is the load-bearing boundary: between core and notifiers, between monolithic and
-distributed deployment, and the extension point for any new channel. Under the Notification Center,
-"persist the notification" + "publish the event" is made atomic via ABP's transactional outbox.
+distributed deployment, and the extension point for any new channel. Under the EF Core Notification
+Center provider, hosts should opt in to ABP's transactional outbox (see [Configuration](#configuration))
+so "persist the notification" + "publish the event" commit together.
 
 > **Serialization invariant:** every `NotificationData` subclass must carry a stable
 > `[NotificationDataType]` discriminator and round-trip through System.Text.Json only — never a CLR

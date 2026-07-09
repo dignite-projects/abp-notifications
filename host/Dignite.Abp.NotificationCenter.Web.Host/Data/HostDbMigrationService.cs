@@ -148,13 +148,13 @@ public class HostDbMigrationService : ITransientDependency
         return Path.Combine(slnDirectoryPath, "Dignite.Abp.NotificationCenter.Web.Host");
     }
 
-    private string GetSolutionDirectoryPath()
+    private string? GetSolutionDirectoryPath()
     {
         var currentDirectory = new DirectoryInfo(Directory.GetCurrentDirectory());
 
-        while (Directory.GetParent(currentDirectory.FullName) != null)
+        while (currentDirectory.Parent != null)
         {
-            currentDirectory = Directory.GetParent(currentDirectory.FullName);
+            currentDirectory = currentDirectory.Parent;
 
             if (Directory.GetFiles(currentDirectory.FullName).FirstOrDefault(f => f.EndsWith(".sln") || f.EndsWith(".slnx")) != null)
             {

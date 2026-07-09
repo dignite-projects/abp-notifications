@@ -29,11 +29,7 @@ public class AbpNotificationCenterEntityFrameworkCoreTestModule : AbpModule
         // Route the distributed event bus through the transactional outbox/inbox on our DbContext so a
         // test can observe the stored outbox record deterministically (background workers are disabled in
         // AbpNotificationCenterTestBaseModule, so the sender never drains it).
-        Configure<AbpDistributedEventBusOptions>(options =>
-        {
-            options.Outboxes.Configure(config => config.UseDbContext<NotificationCenterDbContext>());
-            options.Inboxes.Configure(config => config.UseDbContext<NotificationCenterDbContext>());
-        });
+        Configure<AbpDistributedEventBusOptions>(options => options.UseNotificationCenterEfCoreOutbox());
     }
 
     private void ConfigureInMemorySqlite(IServiceCollection services)

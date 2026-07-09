@@ -25,6 +25,7 @@ using Volo.Abp.AspNetCore.Serilog;
 using Volo.Abp.Autofac;
 using Volo.Abp.Mapperly;
 using Volo.Abp.Caching;
+using Volo.Abp.EventBus.Distributed;
 using Volo.Abp.FeatureManagement;
 using Volo.Abp.Identity;
 using Volo.Abp.Emailing;
@@ -36,7 +37,6 @@ using Volo.Abp.MultiTenancy;
 using Volo.Abp.PermissionManagement;
 using Volo.Abp.PermissionManagement.HttpApi;
 using Volo.Abp.PermissionManagement.Identity;
-using Volo.Abp.SettingManagement;
 using Volo.Abp.Swashbuckle;
 using Volo.Abp.UI.Navigation.Urls;
 using Volo.Abp.Validation.Localization;
@@ -127,7 +127,7 @@ namespace Dignite.Abp.NotificationCenter.Web.Host;
 public class HostModule : AbpModule
 {
     /* Single point to enable/disable multi-tenancy */
-    public const bool IsMultiTenant = false;
+    public static bool IsMultiTenant => false;
 
     public override void PreConfigureServices(ServiceConfigurationContext context)
     {
@@ -198,6 +198,7 @@ public class HostModule : AbpModule
         ConfigureDataProtection(context);
         ConfigureVirtualFiles(hostingEnvironment);
         ConfigureEfCore(context);
+        ConfigureNotificationCenterOutbox();
         ConfigureNotificationCenterUi();
 
         if (hostingEnvironment.IsDevelopment())
@@ -223,6 +224,13 @@ public class HostModule : AbpModule
             options.DataViewComponents["Demo.OrderShipped"] = typeof(OrderShippedNotificationDataViewComponent);
             options.EntityLinkResolvers["Demo.Order"] = orderId => $"/Orders/{orderId}";
         });
+    }
+
+    private void ConfigureNotificationCenterOutbox()
+    {
+        // Demo host uses the NotificationCenter EF Core DbContext as the ABP transactional outbox/inbox store so
+        // persisting notification rows and publishing RealTimeNotifyEto commit together.
+        Configure<AbpDistributedEventBusOptions>(options => options.UseNotificationCenterEfCoreOutbox());
     }
     
 

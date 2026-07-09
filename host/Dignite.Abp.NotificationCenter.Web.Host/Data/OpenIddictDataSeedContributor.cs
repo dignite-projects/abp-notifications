@@ -63,33 +63,40 @@ public class OpenIddictDataSeedContributor : OpenIddictDataSeedContributorBase, 
         if (!appClientId.IsNullOrWhiteSpace())
         {
             var appClientRootUrl = configurationSection["Host_App:RootUrl"]?.TrimEnd('/');
-            await CreateOrUpdateApplicationAsync(
-                applicationType: OpenIddictConstants.ApplicationTypes.Web,
-                name: appClientId,
-                type: OpenIddictConstants.ClientTypes.Public,
-                consentType: OpenIddictConstants.ConsentTypes.Implicit,
-                displayName: "Console Test / Angular Application",
-                secret: null,
-                grantTypes: new List<string>
-                {
-                    OpenIddictConstants.GrantTypes.AuthorizationCode,
-                    OpenIddictConstants.GrantTypes.Password,
-                    OpenIddictConstants.GrantTypes.ClientCredentials,
-                    OpenIddictConstants.GrantTypes.RefreshToken,
-                    "LinkLogin",
-                    "Impersonation"
-                },
-                scopes: commonScopes,
-                redirectUris: new List<string> { appClientRootUrl },
-                postLogoutRedirectUris: new List<string> { appClientRootUrl }
-            );
+            if (!appClientRootUrl.IsNullOrWhiteSpace())
+            {
+                await CreateOrUpdateApplicationAsync(
+                    applicationType: OpenIddictConstants.ApplicationTypes.Web,
+                    name: appClientId,
+                    type: OpenIddictConstants.ClientTypes.Public,
+                    consentType: OpenIddictConstants.ConsentTypes.Implicit,
+                    displayName: "Console Test / Angular Application",
+                    secret: null,
+                    grantTypes: new List<string>
+                    {
+                        OpenIddictConstants.GrantTypes.AuthorizationCode,
+                        OpenIddictConstants.GrantTypes.Password,
+                        OpenIddictConstants.GrantTypes.ClientCredentials,
+                        OpenIddictConstants.GrantTypes.RefreshToken,
+                        "LinkLogin",
+                        "Impersonation"
+                    },
+                    scopes: commonScopes,
+                    redirectUris: new List<string> { appClientRootUrl },
+                    postLogoutRedirectUris: new List<string> { appClientRootUrl }
+                );
+            }
         }
 
         // Swagger Client
         var swaggerClientId = configurationSection["Host_Swagger:ClientId"];
         if (!swaggerClientId.IsNullOrWhiteSpace())
         {
-            var swaggerRootUrl = configurationSection["Host_Swagger:RootUrl"].TrimEnd('/');
+            var swaggerRootUrl = configurationSection["Host_Swagger:RootUrl"]?.TrimEnd('/');
+            if (swaggerRootUrl.IsNullOrWhiteSpace())
+            {
+                return;
+            }
 
             await CreateOrUpdateApplicationAsync(
                 applicationType: OpenIddictConstants.ApplicationTypes.Web,
