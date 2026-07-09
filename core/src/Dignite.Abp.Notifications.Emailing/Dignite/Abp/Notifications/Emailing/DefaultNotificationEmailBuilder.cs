@@ -5,7 +5,7 @@ namespace Dignite.Abp.Notifications.Emailing;
 
 public class DefaultNotificationEmailBuilder : INotificationEmailBuilder, ITransientDependency
 {
-    public virtual Task<NotificationEmail> BuildAsync(RealTimeNotification notification)
+    public virtual Task<NotificationEmail> BuildAsync(NotificationDelivery notification)
     {
         var body = notification.Data is MessageNotificationData message
             ? message.Message

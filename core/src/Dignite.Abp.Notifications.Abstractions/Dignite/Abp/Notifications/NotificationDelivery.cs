@@ -4,9 +4,9 @@ namespace Dignite.Abp.Notifications;
 
 /// <summary>
 /// The per-user view of a notification pushed to a client (e.g. over SignalR). Deliberately omits the recipient
-/// list carried by <see cref="RealTimeNotifyEto"/>, so a user never receives other users' ids.
+/// list carried by <see cref="NotificationDeliveryEto"/>, so a user never receives other users' ids.
 /// </summary>
-public class RealTimeNotification
+public class NotificationDelivery
 {
     public Guid NotificationId { get; set; }
 
@@ -18,13 +18,13 @@ public class RealTimeNotification
 
     public DateTime CreationTime { get; set; }
 
-    public RealTimeNotification()
+    public NotificationDelivery()
     {
     }
 
-    public static RealTimeNotification FromEto(RealTimeNotifyEto eto)
+    public static NotificationDelivery FromEto(NotificationDeliveryEto eto)
     {
-        return new RealTimeNotification
+        return new NotificationDelivery
         {
             NotificationId = eto.NotificationId,
             NotificationName = eto.NotificationName,

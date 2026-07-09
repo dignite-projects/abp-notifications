@@ -4,8 +4,10 @@ using System.Linq;
 using System.Threading.Tasks;
 using NSubstitute;
 using Shouldly;
+using Volo.Abp;
 using Volo.Abp.EventBus;
 using Volo.Abp.EventBus.Distributed;
+using Volo.Abp.Localization;
 using Xunit;
 
 namespace Dignite.Abp.Notifications;
@@ -18,10 +20,11 @@ public class DefaultNotificationDistributorTests
         var store = Substitute.For<INotificationStore>();
         var definitionManager = Substitute.For<INotificationDefinitionManager>();
         var eventBus = Substitute.For<IDistributedEventBus>();
+        definitionManager.Get("test").Returns(DefinitionWithChannels());
 
-        RealTimeNotifyEto? published = null;
-        eventBus.WhenForAnyArgs(x => x.PublishAsync(Arg.Any<RealTimeNotifyEto>()))
-            .Do(ci => published = ci.Arg<RealTimeNotifyEto>());
+        NotificationDeliveryEto? published = null;
+        eventBus.WhenForAnyArgs(x => x.PublishAsync(Arg.Any<NotificationDeliveryEto>()))
+            .Do(ci => published = ci.Arg<NotificationDeliveryEto>());
 
         var distributor = new DefaultNotificationDistributor(store, definitionManager, eventBus);
 
@@ -58,6 +61,7 @@ public class DefaultNotificationDistributorTests
         var store = Substitute.For<INotificationStore>();
         var definitionManager = Substitute.For<INotificationDefinitionManager>();
         var eventBus = Substitute.For<IDistributedEventBus>();
+        definitionManager.Get("test").Returns(DefinitionWithChannels());
 
         var available = Guid.NewGuid();
         var notAvailable = Guid.NewGuid();
@@ -69,9 +73,9 @@ public class DefaultNotificationDistributorTests
         definitionManager.IsAvailableAsync("test", available).Returns(true);
         definitionManager.IsAvailableAsync("test", notAvailable).Returns(false);
 
-        RealTimeNotifyEto? published = null;
-        eventBus.WhenForAnyArgs(x => x.PublishAsync(Arg.Any<RealTimeNotifyEto>()))
-            .Do(ci => published = ci.Arg<RealTimeNotifyEto>());
+        NotificationDeliveryEto? published = null;
+        eventBus.WhenForAnyArgs(x => x.PublishAsync(Arg.Any<NotificationDeliveryEto>()))
+            .Do(ci => published = ci.Arg<NotificationDeliveryEto>());
 
         var distributor = new DefaultNotificationDistributor(store, definitionManager, eventBus);
         var notification = new NotificationInfo { Id = Guid.NewGuid(), NotificationName = "test" };
@@ -89,6 +93,7 @@ public class DefaultNotificationDistributorTests
         var store = Substitute.For<INotificationStore>();
         var definitionManager = Substitute.For<INotificationDefinitionManager>();
         var eventBus = Substitute.For<IDistributedEventBus>();
+        definitionManager.Get("test").Returns(DefinitionWithChannels());
 
         var distributor = new DefaultNotificationDistributor(store, definitionManager, eventBus);
         var notification = new NotificationInfo { Id = Guid.NewGuid(), NotificationName = "test" };
@@ -98,6 +103,46 @@ public class DefaultNotificationDistributorTests
         await distributor.DistributeAsync(notification, new[] { user }, new[] { user });
 
         await store.DidNotReceiveWithAnyArgs().InsertNotificationAsync(default!);
-        await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<RealTimeNotifyEto>());
+        await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<NotificationDeliveryEto>());
+    }
+
+    [Fact]
+    public async Task No_channels_persists_without_publishing_a_delivery_event()
+    {
+        var store = Substitute.For<INotificationStore>();
+        var definitionManager = Substitute.For<INotificationDefinitionManager>();
+        var eventBus = Substitute.For<IDistributedEventBus>();
+        definitionManager.Get("test").Returns(new NotificationDefinition("test", new FixedLocalizableString("Test")));
+
+        var userId = Guid.NewGuid();
+        var distributor = new DefaultNotificationDistributor(store, definitionManager, eventBus);
+        var notification = new NotificationInfo { Id = Guid.NewGuid(), NotificationName = "test" };
+
+        await distributor.DistributeAsync(notification, new[] { userId });
+
+        await store.Received(1).InsertNotificationAsync(notification);
+        await store.Received(1).InsertUserNotificationAsync(Arg.Is<UserNotificationInfo>(x => x.UserId == userId));
+        await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<NotificationDeliveryEto>());
+    }
+
+    [Fact]
+    public async Task No_channels_throw_when_there_is_no_inbox_store()
+    {
+        var store = new NullNotificationStore();
+        var definitionManager = Substitute.For<INotificationDefinitionManager>();
+        var eventBus = Substitute.For<IDistributedEventBus>();
+        definitionManager.Get("test").Returns(new NotificationDefinition("test", new FixedLocalizableString("Test")));
+
+        var distributor = new DefaultNotificationDistributor(store, definitionManager, eventBus);
+        var notification = new NotificationInfo { Id = Guid.NewGuid(), NotificationName = "test" };
+
+        await Should.ThrowAsync<AbpException>(() => distributor.DistributeAsync(notification, new[] { Guid.NewGuid() }));
+
+        await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<NotificationDeliveryEto>());
+    }
+
+    private static NotificationDefinition DefinitionWithChannels()
+    {
+        return new NotificationDefinition("test", new FixedLocalizableString("Test")).UseChannels("Test");
     }
 }

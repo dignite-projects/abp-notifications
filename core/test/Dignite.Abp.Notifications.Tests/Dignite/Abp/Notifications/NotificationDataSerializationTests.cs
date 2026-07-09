@@ -117,13 +117,13 @@ public class NotificationDataSerializationTests
     [Fact]
     public void Notification_data_nested_in_an_eto_round_trips_polymorphically()
     {
-        // Proves the converter also works when NotificationData is nested (as in RealTimeNotifyEto / DTOs),
+        // Proves the converter also works when NotificationData is nested (as in NotificationDeliveryEto / DTOs),
         // not just at the top level.
         var registry = NotificationTestObjects.CreateRegistry(typeof(OrderShippedNotificationData));
         var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
         options.Converters.Add(new NotificationDataJsonConverter(registry));
 
-        var eto = new RealTimeNotifyEto(
+        var eto = new NotificationDeliveryEto(
             Guid.NewGuid(),
             "order.shipped",
             new OrderShippedNotificationData { OrderNumber = "SO-7", ItemCount = 2 },
@@ -132,7 +132,7 @@ public class NotificationDataSerializationTests
             new[] { Guid.NewGuid() });
 
         var json = JsonSerializer.Serialize(eto, options);
-        var back = JsonSerializer.Deserialize<RealTimeNotifyEto>(json, options)!;
+        var back = JsonSerializer.Deserialize<NotificationDeliveryEto>(json, options)!;
 
         back.Data.ShouldBeOfType<OrderShippedNotificationData>().OrderNumber.ShouldBe("SO-7");
     }

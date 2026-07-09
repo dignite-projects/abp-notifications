@@ -7,26 +7,26 @@ using Volo.Abp.DependencyInjection;
 namespace Dignite.Abp.Notifications.SignalR;
 
 /// <summary>
-/// Relays <see cref="RealTimeNotifyEto"/> to connected SignalR users. Recipients receive only a
-/// <see cref="RealTimeNotification"/>, which by construction omits the ETO's full recipient list — so one user
+/// Relays <see cref="NotificationDeliveryEto"/> to connected SignalR users. Recipients receive only a
+/// <see cref="NotificationDelivery"/>, which by construction omits the ETO's full recipient list — so one user
 /// can never see the ids of the others (fixes the reference implementation's payload leak).
 /// </summary>
-public class NotifyEventHandler :
-    INotificationNotifier<RealTimeNotifyEto>,
+public class SignalRNotifier :
+    INotificationNotifier<NotificationDeliveryEto>,
     ITransientDependency
 {
     public const string ChannelName = "SignalR";
 
-    protected IHubContext<NotificationsHub, INotificationClient> HubContext { get; }
+    protected IHubContext<NotificationsHub, INotificationsClient> HubContext { get; }
 
     public string Name => ChannelName;
 
-    public NotifyEventHandler(IHubContext<NotificationsHub, INotificationClient> hubContext)
+    public SignalRNotifier(IHubContext<NotificationsHub, INotificationsClient> hubContext)
     {
         HubContext = hubContext;
     }
 
-    public virtual Task HandleEventAsync(RealTimeNotifyEto eventData)
+    public virtual Task HandleEventAsync(NotificationDeliveryEto eventData)
     {
         // Skip when channel routing excludes SignalR, or there are no recipients.
         if (!NotificationChannels.IsAllowed(eventData.Channels, Name)
@@ -37,7 +37,7 @@ public class NotifyEventHandler :
         }
 
         // Trim the recipient list out of the payload, then deliver the same trimmed payload to every target user.
-        var payload = RealTimeNotification.FromEto(eventData);
+        var payload = NotificationDelivery.FromEto(eventData);
         var userIds = eventData.UserIds.Select(userId => userId.ToString()).ToList();
 
         return HubContext.Clients.Users(userIds).ReceiveNotification(payload);

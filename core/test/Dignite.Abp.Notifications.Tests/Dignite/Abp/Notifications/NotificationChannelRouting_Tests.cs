@@ -16,32 +16,46 @@ namespace Dignite.Abp.Notifications;
 public class NotificationChannelRouting_Tests
 {
     [Theory]
-    [InlineData(null, true)]
-    [InlineData(new string[0], true)]
+    [InlineData(null, false)]
+    [InlineData(new string[0], false)]
     [InlineData(new[] { "SignalR" }, true)]
     [InlineData(new[] { "signalr" }, true)] // case-insensitive
     [InlineData(new[] { "Email" }, false)]
-    [InlineData(new[] { "Email", "WebPush" }, false)]
+    [InlineData(new[] { "Email", "Other" }, false)]
     public void IsAllowed_respects_the_channel_white_list(string[]? channels, bool expected)
     {
         NotificationChannels.IsAllowed(channels, "SignalR").ShouldBe(expected);
     }
 
     [Fact]
+    public void UseChannels_requires_at_least_one_channel()
+    {
+        Should.Throw<ArgumentException>(() =>
+            new NotificationDefinition("test", new FixedLocalizableString("Test")).UseChannels());
+    }
+
+    [Fact]
+    public void UseChannels_rejects_blank_channel_names()
+    {
+        Should.Throw<ArgumentException>(() =>
+            new NotificationDefinition("test", new FixedLocalizableString("Test")).UseChannels("SignalR", " "));
+    }
+
+    [Fact]
     public void SignalR_notifier_exposes_its_channel_name_and_event_contract()
     {
-        var handler = new NotifyEventHandler(Substitute.For<IHubContext<NotificationsHub, INotificationClient>>());
+        var notifier = new SignalRNotifier(Substitute.For<IHubContext<NotificationsHub, INotificationsClient>>());
 
-        ((INotificationNotifier)handler).Name.ShouldBe(NotifyEventHandler.ChannelName);
-        (handler is INotificationNotifier<RealTimeNotifyEto>).ShouldBeTrue();
-        (handler is IDistributedEventHandler<RealTimeNotifyEto>).ShouldBeTrue();
+        ((INotificationNotifier)notifier).Name.ShouldBe(SignalRNotifier.ChannelName);
+        (notifier is INotificationNotifier<NotificationDeliveryEto>).ShouldBeTrue();
+        (notifier is IDistributedEventHandler<NotificationDeliveryEto>).ShouldBeTrue();
     }
 
     [Fact]
     public void Generic_notifier_contract_is_visible_to_abp_event_handler_scanning()
     {
         ReflectionHelper.IsAssignableToGenericType(
-            typeof(NotifyEventHandler),
+            typeof(SignalRNotifier),
             typeof(IDistributedEventHandler<>)).ShouldBeTrue();
         ReflectionHelper.IsAssignableToGenericType(
             typeof(EmailNotifier),
@@ -49,24 +63,24 @@ public class NotificationChannelRouting_Tests
     }
 
     [Fact]
-    public async Task Handler_skips_when_its_channel_is_not_allowed()
+    public async Task SignalR_notifier_skips_when_its_channel_is_not_allowed()
     {
         var (handler, clients, clientProxy) = CreateHandler();
 
         await handler.HandleEventAsync(EtoWithChannels(new[] { "Email" }));
 
         clients.DidNotReceiveWithAnyArgs().Users(Arg.Any<IReadOnlyList<string>>());
-        await clientProxy.DidNotReceiveWithAnyArgs().ReceiveNotification(Arg.Any<RealTimeNotification>());
+        await clientProxy.DidNotReceiveWithAnyArgs().ReceiveNotification(Arg.Any<NotificationDelivery>());
     }
 
     [Fact]
-    public async Task Handler_delivers_when_its_channel_is_allowed()
+    public async Task SignalR_notifier_delivers_when_its_channel_is_allowed()
     {
         var (handler, _, clientProxy) = CreateHandler();
 
-        await handler.HandleEventAsync(EtoWithChannels(new[] { "SignalR" }));
+        await handler.HandleEventAsync(EtoWithChannels(new[] { SignalRNotifier.ChannelName }));
 
-        await clientProxy.Received(1).ReceiveNotification(Arg.Any<RealTimeNotification>());
+        await clientProxy.Received(1).ReceiveNotification(Arg.Any<NotificationDelivery>());
     }
 
     [Fact]
@@ -76,24 +90,25 @@ public class NotificationChannelRouting_Tests
         var definitionManager = Substitute.For<INotificationDefinitionManager>();
         var eventBus = Substitute.For<IDistributedEventBus>();
 
-        definitionManager.GetOrNull("test").Returns(
-            new NotificationDefinition("test", new FixedLocalizableString("Test")).UseChannels("Email", "WebPush"));
+        definitionManager.Get("test").Returns(
+            new NotificationDefinition("test", new FixedLocalizableString("Test"))
+                .UseChannels(EmailNotifier.ChannelName, SignalRNotifier.ChannelName));
 
-        RealTimeNotifyEto? published = null;
-        eventBus.WhenForAnyArgs(x => x.PublishAsync(Arg.Any<RealTimeNotifyEto>()))
-            .Do(ci => published = ci.Arg<RealTimeNotifyEto>());
+        NotificationDeliveryEto? published = null;
+        eventBus.WhenForAnyArgs(x => x.PublishAsync(Arg.Any<NotificationDeliveryEto>()))
+            .Do(ci => published = ci.Arg<NotificationDeliveryEto>());
 
         var distributor = new DefaultNotificationDistributor(store, definitionManager, eventBus);
         await distributor.DistributeAsync(
             new NotificationInfo { Id = Guid.NewGuid(), NotificationName = "test" }, new[] { Guid.NewGuid() });
 
         published.ShouldNotBeNull();
-        published!.Channels.ShouldBe(new[] { "Email", "WebPush" });
+        published!.Channels.ShouldBe(new[] { EmailNotifier.ChannelName, SignalRNotifier.ChannelName });
     }
 
-    private static RealTimeNotifyEto EtoWithChannels(string[] channels)
+    private static NotificationDeliveryEto EtoWithChannels(string[] channels)
     {
-        return new RealTimeNotifyEto(
+        return new NotificationDeliveryEto(
             Guid.NewGuid(), "test", new MessageNotificationData("hi"),
             NotificationSeverity.Info, DateTime.UtcNow, new[] { Guid.NewGuid() })
         {
@@ -101,14 +116,14 @@ public class NotificationChannelRouting_Tests
         };
     }
 
-    private static (NotifyEventHandler handler, IHubClients<INotificationClient> clients, INotificationClient client)
+    private static (SignalRNotifier handler, IHubClients<INotificationsClient> clients, INotificationsClient client)
         CreateHandler()
     {
-        var clientProxy = Substitute.For<INotificationClient>();
-        var clients = Substitute.For<IHubClients<INotificationClient>>();
+        var clientProxy = Substitute.For<INotificationsClient>();
+        var clients = Substitute.For<IHubClients<INotificationsClient>>();
         clients.Users(Arg.Any<IReadOnlyList<string>>()).Returns(clientProxy);
-        var hubContext = Substitute.For<IHubContext<NotificationsHub, INotificationClient>>();
+        var hubContext = Substitute.For<IHubContext<NotificationsHub, INotificationsClient>>();
         hubContext.Clients.Returns(clients);
-        return (new NotifyEventHandler(hubContext), clients, clientProxy);
+        return (new SignalRNotifier(hubContext), clients, clientProxy);
     }
 }

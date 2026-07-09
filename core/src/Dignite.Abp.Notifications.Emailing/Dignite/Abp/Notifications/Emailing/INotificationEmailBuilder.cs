@@ -21,5 +21,5 @@ public class NotificationEmail
 /// <summary>Turns a notification into an email. Business modules replace this to customize content.</summary>
 public interface INotificationEmailBuilder
 {
-    Task<NotificationEmail> BuildAsync(RealTimeNotification notification);
+    Task<NotificationEmail> BuildAsync(NotificationDelivery notification);
 }

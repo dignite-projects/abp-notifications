@@ -11,12 +11,12 @@ public static class NotificationChannels
 
     /// <summary>
     /// Whether a notifier named <paramref name="notifierName"/> may deliver a notification whose allowed channels
-    /// are <paramref name="allowedChannels"/>. Null or empty means "every channel".
+    /// are <paramref name="allowedChannels"/>. Null or empty means "no external channel".
     /// </summary>
     public static bool IsAllowed(string[]? allowedChannels, string notifierName)
     {
-        return allowedChannels == null
-            || allowedChannels.Length == 0
-            || allowedChannels.Contains(notifierName, StringComparer.OrdinalIgnoreCase);
+        return allowedChannels != null
+            && allowedChannels.Length > 0
+            && allowedChannels.Contains(notifierName, StringComparer.OrdinalIgnoreCase);
     }
 }

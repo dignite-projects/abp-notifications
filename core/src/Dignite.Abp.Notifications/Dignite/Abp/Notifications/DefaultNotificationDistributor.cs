@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Volo.Abp;
 using Volo.Abp.DependencyInjection;
 using Volo.Abp.EventBus.Distributed;
 
@@ -28,6 +29,7 @@ public class DefaultNotificationDistributor : INotificationDistributor, ITransie
     public virtual async Task DistributeAsync(
         NotificationInfo notification, Guid[]? userIds = null, Guid[]? excludedUserIds = null)
     {
+        var channels = ResolveExternalChannelsOrNull(notification.NotificationName);
         var targetUserIds = await GetTargetUserIdsAsync(notification, userIds, excludedUserIds);
         if (targetUserIds.Count == 0)
         {
@@ -36,7 +38,35 @@ public class DefaultNotificationDistributor : INotificationDistributor, ITransie
 
         // NOTE: store-write then event-publish is not yet atomic. The ABP Outbox will make it so (roadmap P1).
         await SaveUserNotificationsAsync(notification, targetUserIds);
-        await PublishRealTimeNotifyAsync(notification, targetUserIds);
+        if (channels != null)
+        {
+            await PublishNotificationDeliveryAsync(notification, targetUserIds, channels);
+        }
+    }
+
+    protected virtual string[]? ResolveExternalChannelsOrNull(string notificationName)
+    {
+        var definition = DefinitionManager.Get(notificationName);
+
+        var channels = definition.GetChannelsOrNull();
+        if (channels == null)
+        {
+            if (Store is NullNotificationStore)
+            {
+                throw new AbpException(
+                    $"Notification '{notificationName}' has no external channels and no NotificationCenter inbox store is installed. Configure UseChannels(...) or install NotificationCenter.");
+            }
+
+            return null;
+        }
+
+        if (channels.Length == 0 || channels.Any(string.IsNullOrWhiteSpace))
+        {
+            throw new AbpException(
+                $"Notification '{notificationName}' has invalid delivery channel configuration.");
+        }
+
+        return channels;
     }
 
     protected virtual async Task<List<Guid>> GetTargetUserIdsAsync(
@@ -91,10 +121,10 @@ public class DefaultNotificationDistributor : INotificationDistributor, ITransie
         }
     }
 
-    protected virtual Task PublishRealTimeNotifyAsync(NotificationInfo notification, List<Guid> userIds)
+    protected virtual Task PublishNotificationDeliveryAsync(NotificationInfo notification, List<Guid> userIds, string[] channels)
     {
         // The ETO carries the full recipient list for notifier routing; notifiers trim it per user before pushing.
-        var eto = new RealTimeNotifyEto(
+        var eto = new NotificationDeliveryEto(
             notification.Id,
             notification.NotificationName,
             notification.Data,
@@ -102,8 +132,7 @@ public class DefaultNotificationDistributor : INotificationDistributor, ITransie
             notification.CreationTime,
             userIds.ToArray())
         {
-            // Channel white-list from the definition (null = every channel).
-            Channels = DefinitionManager.GetOrNull(notification.NotificationName)?.GetChannelsOrNull(),
+            Channels = channels,
             TenantId = notification.TenantId
         };
 

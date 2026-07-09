@@ -4,12 +4,12 @@ using Xunit;
 
 namespace Dignite.Abp.Notifications;
 
-public class RealTimeNotificationTrimmingTests
+public class NotificationDeliveryTrimmingTests
 {
     [Fact]
     public void FromEto_carries_content_but_not_the_recipient_list()
     {
-        var eto = new RealTimeNotifyEto(
+        var eto = new NotificationDeliveryEto(
             Guid.NewGuid(),
             "test",
             new MessageNotificationData("hi"),
@@ -17,10 +17,10 @@ public class RealTimeNotificationTrimmingTests
             DateTime.UtcNow,
             new[] { Guid.NewGuid(), Guid.NewGuid() });
 
-        var payload = RealTimeNotification.FromEto(eto);
+        var payload = NotificationDelivery.FromEto(eto);
 
         // Compile-time + reflective proof that the per-user payload exposes no recipient list at all.
-        typeof(RealTimeNotification).GetProperty("UserIds").ShouldBeNull();
+        typeof(NotificationDelivery).GetProperty("UserIds").ShouldBeNull();
 
         payload.NotificationId.ShouldBe(eto.NotificationId);
         payload.NotificationName.ShouldBe("test");

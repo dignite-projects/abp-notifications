@@ -7,7 +7,7 @@ namespace Dignite.Abp.Notifications;
 
 /// <summary>
 /// No-op store used in stateless forwarding mode (no NotificationCenter installed). Notifications are still
-/// published as real-time events; nothing is persisted, and there are no subscriptions or inbox.
+/// published as delivery events; nothing is persisted, and there are no subscriptions or inbox.
 /// </summary>
 public class NullNotificationStore : INotificationStore, ISingletonDependency
 {

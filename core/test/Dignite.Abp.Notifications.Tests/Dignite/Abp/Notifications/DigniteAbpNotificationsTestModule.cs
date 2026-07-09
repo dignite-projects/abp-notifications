@@ -16,8 +16,8 @@ public class DigniteAbpNotificationsTestModule : AbpModule
 {
     public override void ConfigureServices(ServiceConfigurationContext context)
     {
-        // Collector for real-time ETOs delivered through the (local) distributed event bus.
-        context.Services.AddSingleton<ReceivedRealTimeNotifications>();
+        // Collector for notification delivery ETOs delivered through the (local) distributed event bus.
+        context.Services.AddSingleton<ReceivedNotificationDeliveries>();
 
         // No real background job infrastructure in tests — swap in a fake we can inspect.
         context.Services.AddSingleton<FakeBackgroundJobManager>();

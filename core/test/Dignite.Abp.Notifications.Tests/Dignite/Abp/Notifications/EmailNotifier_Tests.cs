@@ -20,8 +20,8 @@ public class EmailNotifier_Tests
             new DefaultNotificationEmailBuilder());
 
         ((INotificationNotifier)notifier).Name.ShouldBe(EmailNotifier.ChannelName);
-        (notifier is INotificationNotifier<RealTimeNotifyEto>).ShouldBeTrue();
-        (notifier is IDistributedEventHandler<RealTimeNotifyEto>).ShouldBeTrue();
+        (notifier is INotificationNotifier<NotificationDeliveryEto>).ShouldBeTrue();
+        (notifier is IDistributedEventHandler<NotificationDeliveryEto>).ShouldBeTrue();
     }
 
     [Fact]
@@ -35,9 +35,12 @@ public class EmailNotifier_Tests
         resolver.GetEmailOrNullAsync(userWithoutEmail).Returns((string?)null);
 
         var notifier = new EmailNotifier(emailSender, resolver, new DefaultNotificationEmailBuilder());
-        var eto = new RealTimeNotifyEto(
+        var eto = new NotificationDeliveryEto(
             Guid.NewGuid(), "order.shipped", new MessageNotificationData("Shipped!"),
-            NotificationSeverity.Info, DateTime.UtcNow, new[] { userWithEmail, userWithoutEmail });
+            NotificationSeverity.Info, DateTime.UtcNow, new[] { userWithEmail, userWithoutEmail })
+        {
+            Channels = new[] { EmailNotifier.ChannelName }
+        };
 
         await notifier.HandleEventAsync(eto);
 
@@ -59,7 +62,7 @@ public class EmailNotifier_Tests
         resolver.GetEmailOrNullAsync(Arg.Any<Guid>()).Returns("a@b.com");
 
         var notifier = new EmailNotifier(emailSender, resolver, new DefaultNotificationEmailBuilder());
-        var eto = new RealTimeNotifyEto(
+        var eto = new NotificationDeliveryEto(
             Guid.NewGuid(), "test", new MessageNotificationData("x"),
             NotificationSeverity.Info, DateTime.UtcNow, new[] { Guid.NewGuid() })
         {

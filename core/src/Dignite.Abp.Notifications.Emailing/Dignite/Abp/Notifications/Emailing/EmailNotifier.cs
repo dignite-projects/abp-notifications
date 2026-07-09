@@ -11,7 +11,7 @@ namespace Dignite.Abp.Notifications.Emailing;
 /// <see cref="IEmailNotificationAddressResolver"/>. Idempotency across duplicate event delivery comes from the
 /// transactional inbox (roadmap C/P1). Honors channel routing via <see cref="NotificationChannels"/>.
 /// </summary>
-public class EmailNotifier : INotificationNotifier<RealTimeNotifyEto>, ITransientDependency
+public class EmailNotifier : INotificationNotifier<NotificationDeliveryEto>, ITransientDependency
 {
     public const string ChannelName = "Email";
 
@@ -33,7 +33,7 @@ public class EmailNotifier : INotificationNotifier<RealTimeNotifyEto>, ITransien
         EmailBuilder = emailBuilder;
     }
 
-    public virtual async Task HandleEventAsync(RealTimeNotifyEto eventData)
+    public virtual async Task HandleEventAsync(NotificationDeliveryEto eventData)
     {
         if (!NotificationChannels.IsAllowed(eventData.Channels, Name)
             || eventData.UserIds == null
@@ -42,7 +42,7 @@ public class EmailNotifier : INotificationNotifier<RealTimeNotifyEto>, ITransien
             return;
         }
 
-        var email = await EmailBuilder.BuildAsync(RealTimeNotification.FromEto(eventData));
+        var email = await EmailBuilder.BuildAsync(NotificationDelivery.FromEto(eventData));
 
         foreach (var userId in eventData.UserIds.Distinct())
         {

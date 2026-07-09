@@ -1,4 +1,5 @@
 using Dignite.Abp.Notifications;
+using Dignite.Abp.Notifications.SignalR;
 using Volo.Abp.Localization;
 
 namespace Dignite.Abp.NotificationCenter.Web.Host.Notifications;
@@ -13,10 +14,12 @@ public class DemoNotificationDefinitionProvider : NotificationDefinitionProvider
     {
         context.Add(new NotificationDefinition(
             "Demo.OrderShipped",
-            new FixedLocalizableString("Order shipped")));
+            new FixedLocalizableString("Order shipped"))
+            .UseChannels(SignalRNotifier.ChannelName));
 
         context.Add(new NotificationDefinition(
             "Demo.Announcement",
-            new FixedLocalizableString("Announcement")));
+            new FixedLocalizableString("Announcement"))
+            .UseChannels(SignalRNotifier.ChannelName));
     }
 }

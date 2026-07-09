@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Volo.Abp;
 using Volo.Abp.Localization;
 
@@ -25,7 +26,7 @@ public class NotificationDefinition
     /// <summary>When set, this feature must be enabled for the notification to be available.</summary>
     public string? FeatureName { get; private set; }
 
-    /// <summary>Free-form extension bag — e.g. channel white-lists for future routing.</summary>
+    /// <summary>Free-form extension bag — e.g. explicit external channel routing.</summary>
     public IDictionary<string, object?> Attributes { get; }
 
     public NotificationDefinition(string name, ILocalizableString displayName, Type? entityType = null)
@@ -60,10 +61,22 @@ public class NotificationDefinition
         return this;
     }
 
-    /// <summary>Restricts delivery to specific notifier channels (by name). Omit for every channel.</summary>
+    /// <summary>Routes delivery to specific external notifier channels (by name).</summary>
     public NotificationDefinition UseChannels(params string[] channels)
     {
-        Attributes[NotificationChannels.AttributeName] = channels;
+        if (channels == null || channels.Length == 0)
+        {
+            throw new ArgumentException(
+                "At least one notification channel must be specified. Omit UseChannels(...) for inbox-only notifications.",
+                nameof(channels));
+        }
+
+        if (channels.Any(string.IsNullOrWhiteSpace))
+        {
+            throw new ArgumentException("Notification channel names cannot be null, empty or whitespace.", nameof(channels));
+        }
+
+        Attributes[NotificationChannels.AttributeName] = channels.Select(channel => channel.Trim()).ToArray();
         return this;
     }
 

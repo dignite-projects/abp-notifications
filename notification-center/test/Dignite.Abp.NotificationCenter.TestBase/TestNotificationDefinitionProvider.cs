@@ -5,8 +5,11 @@ namespace Dignite.Abp.NotificationCenter;
 
 public class TestNotificationDefinitionProvider : NotificationDefinitionProvider
 {
+    public const string TestChannel = "Test";
+
     public override void Define(INotificationDefinitionContext context)
     {
-        context.Add(new NotificationDefinition("order.shipped", new FixedLocalizableString("Order Shipped")));
+        context.Add(new NotificationDefinition("order.shipped", new FixedLocalizableString("Order Shipped"))
+            .UseChannels(TestChannel));
     }
 }

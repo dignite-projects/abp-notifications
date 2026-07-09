@@ -15,17 +15,17 @@ public class NotificationDistribution_Integration_Tests : DigniteAbpNotification
 {
     private readonly INotificationPublisher _publisher;
     private readonly INotificationDefinitionManager _definitionManager;
-    private readonly ReceivedRealTimeNotifications _received;
+    private readonly ReceivedNotificationDeliveries _received;
 
     public NotificationDistribution_Integration_Tests()
     {
         _publisher = GetRequiredService<INotificationPublisher>();
         _definitionManager = GetRequiredService<INotificationDefinitionManager>();
-        _received = GetRequiredService<ReceivedRealTimeNotifications>();
+        _received = GetRequiredService<ReceivedNotificationDeliveries>();
     }
 
     [Fact]
-    public async Task Publishing_to_explicit_users_emits_a_realtime_eto_through_the_bus()
+    public async Task Publishing_to_explicit_users_emits_a_delivery_eto_through_the_bus()
     {
         var u1 = Guid.NewGuid();
         var u2 = Guid.NewGuid();

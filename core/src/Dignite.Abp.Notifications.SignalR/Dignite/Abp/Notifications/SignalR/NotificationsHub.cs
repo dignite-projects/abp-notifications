@@ -15,6 +15,6 @@ namespace Dignite.Abp.Notifications.SignalR;
 /// pushes via <c>Clients.Users(userIds)</c>, resolved through ABP's <c>AbpSignalRUserIdProvider</c> (ICurrentUser).
 /// </summary>
 [Authorize]
-public class NotificationsHub : AbpHub<INotificationClient>
+public class NotificationsHub : AbpHub<INotificationsClient>
 {
 }
