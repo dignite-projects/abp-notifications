@@ -133,7 +133,9 @@ public class DefaultNotificationDistributor : INotificationDistributor, ITransie
             userIds.ToArray())
         {
             Channels = channels,
-            TenantId = notification.TenantId
+            TenantId = notification.TenantId,
+            EntityTypeName = notification.EntityTypeName,
+            EntityId = notification.EntityId
         };
 
         return DistributedEventBus.PublishAsync(eto);
