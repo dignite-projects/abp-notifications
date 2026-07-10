@@ -163,7 +163,7 @@ public class ShopNotificationDefinitionProvider : NotificationDefinitionProvider
 await _publisher.PublishAsync(
     "Demo.OrderShipped",
     new OrderShippedNotificationData { OrderNumber = "SO-1001", ItemCount = 3 },
-    entityIdentifier: new NotificationEntityIdentifier(typeof(Order), "1001"),
+    entityIdentifier: new NotificationEntityIdentifier("Demo.Order", "1001"),
     severity: NotificationSeverity.Success,
     userIds: new[] { customerId });
 ```

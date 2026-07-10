@@ -28,6 +28,15 @@ Newtonsoft.Json anywhere in this pipeline.
 - Add a round-trip test for any new `NotificationData` subclass: publish → persist → deserialize on
   a "remote" client, and assert the JSON contains your discriminator string, not a CLR type name.
 
+**The same rule governs `EntityTypeName`.** `NotificationEntityIdentifier` takes a stable,
+caller-chosen string — `new NotificationEntityIdentifier("Demo.Order", orderId)`, never
+`typeof(Order)`. That value is persisted on `Notification` and `NotificationSubscription`, matched by
+plain string equality when `NotificationStore` resolves subscribers, returned over REST as
+`UserNotificationDto.EntityTypeName`, and used as the key of
+`NotificationCenterWebOptions.EntityLinkResolvers`. A `Type.FullName` there silently orphans every
+stored subscription and breaks every bell link the day someone renames a namespace — the same failure
+mode as above, on a different field.
+
 ## 2. DI lifetime discipline — never let a Singleton capture a Scoped dependency
 
 Before marking a service `ISingletonDependency`, check every constructor dependency (transitively)
