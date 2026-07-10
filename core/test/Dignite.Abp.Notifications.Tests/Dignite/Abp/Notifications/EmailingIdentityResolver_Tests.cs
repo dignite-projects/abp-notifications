@@ -16,7 +16,7 @@ using Xunit;
 
 namespace Dignite.Abp.Notifications;
 
-public class EmailingIdentityProvider_Tests
+public class EmailingIdentityResolver_Tests
 {
     [Fact]
     public async Task Resolves_email_from_identity_user()
@@ -25,31 +25,24 @@ public class EmailingIdentityProvider_Tests
         var repository = Substitute.For<IIdentityUserRepository>();
         repository.FindAsync(userId).Returns(new IdentityUser(userId, "test-user", "test@example.com"));
 
-        var provider = new IdentityEmailNotificationAddressProvider(repository);
+        var resolver = new IdentityEmailNotificationAddressResolver(repository);
 
-        var address = await provider.GetAddressOrNullAsync(CreateContext(userId));
-
-        address.ShouldNotBeNull();
-        address!.Address.ShouldBe("test@example.com");
+        (await resolver.GetEmailOrNullAsync(CreateContext(userId))).ShouldBe("test@example.com");
     }
 
     [Fact]
-    public async Task Claims_the_notification_and_sends_nothing_when_identity_user_does_not_exist()
+    public async Task Returns_null_when_identity_user_does_not_exist()
     {
         var repository = Substitute.For<IIdentityUserRepository>();
         repository.FindAsync(Arg.Any<Guid>()).Returns((IdentityUser?)null);
 
-        var provider = new IdentityEmailNotificationAddressProvider(repository);
+        var resolver = new IdentityEmailNotificationAddressResolver(repository);
 
-        // Last in the chain: "no address" is a claim (None), not a pass (null).
-        var address = await provider.GetAddressOrNullAsync(CreateContext(Guid.NewGuid()));
-
-        address.ShouldBeSameAs(EmailNotificationAddress.None);
-        address!.Address.ShouldBeNull();
+        (await resolver.GetEmailOrNullAsync(CreateContext(Guid.NewGuid()))).ShouldBeNull();
     }
 
     [Fact]
-    public async Task Claims_the_notification_and_sends_nothing_when_identity_user_has_no_email()
+    public async Task Returns_null_when_identity_user_has_no_email()
     {
         var userId = Guid.NewGuid();
         var user = new IdentityUser(userId, "test-user", "test@example.com");
@@ -58,19 +51,19 @@ public class EmailingIdentityProvider_Tests
         var repository = Substitute.For<IIdentityUserRepository>();
         repository.FindAsync(userId).Returns(user);
 
-        var provider = new IdentityEmailNotificationAddressProvider(repository);
+        var resolver = new IdentityEmailNotificationAddressResolver(repository);
 
-        (await provider.GetAddressOrNullAsync(CreateContext(userId))).ShouldBeSameAs(EmailNotificationAddress.None);
+        (await resolver.GetEmailOrNullAsync(CreateContext(userId))).ShouldBeNull();
     }
 
     [Fact]
-    public void Identity_provider_is_the_built_in_fallback()
+    public void Identity_resolver_is_the_built_in_fallback()
     {
-        new IdentityEmailNotificationAddressProvider(Substitute.For<IIdentityUserRepository>())
-            .Order.ShouldBe(EmailNotificationAddressProviderOrders.BuiltInFallback);
+        new IdentityEmailNotificationAddressResolver(Substitute.For<IIdentityUserRepository>())
+            .Order.ShouldBe(NotificationEmailProviderOrders.BuiltInFallback);
 
-        EmailNotificationAddressProviderOrders.BuiltInFallback
-            .ShouldBeGreaterThan(EmailNotificationAddressProviderOrders.Default);
+        NotificationEmailProviderOrders.BuiltInFallback
+            .ShouldBeGreaterThan(NotificationEmailProviderOrders.Default);
     }
 
     internal static EmailNotificationAddressResolveContext CreateContext(
@@ -100,16 +93,13 @@ public class EmailingIdentityDependency_Tests : AbpIntegratedTest<EmailingIdenti
     }
 
     [Fact]
-    public void Emailing_identity_module_contributes_the_built_in_fallback_provider()
+    public void Emailing_identity_module_contributes_the_built_in_fallback_resolver()
     {
-        // It no longer replaces IEmailNotificationAddressResolver; it joins the provider chain, so an application
-        // provider can coexist with it rather than having to displace it.
-        GetRequiredService<IEnumerable<IEmailNotificationAddressProvider>>()
-            .OfType<IdentityEmailNotificationAddressProvider>()
+        // It no longer replaces IEmailNotificationAddressResolver; it joins the chain, so an application resolver
+        // coexists with it rather than having to displace it.
+        GetRequiredService<IEnumerable<IEmailNotificationAddressResolver>>()
+            .OfType<IdentityEmailNotificationAddressResolver>()
             .ShouldHaveSingleItem();
-
-        GetRequiredService<IEmailNotificationAddressResolver>()
-            .ShouldBeOfType<DefaultEmailNotificationAddressResolver>();
     }
 }
 

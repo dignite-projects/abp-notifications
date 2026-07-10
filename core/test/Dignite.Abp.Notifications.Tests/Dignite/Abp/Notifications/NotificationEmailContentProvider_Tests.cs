@@ -85,11 +85,11 @@ public class NotificationEmailContentProvider_Tests
     [Fact]
     public void An_application_provider_outranks_the_built_in_fallbacks_by_default()
     {
-        new SpyProvider().Order.ShouldBe(NotificationEmailContentProviderOrders.Default);
+        new SpyProvider().Order.ShouldBe(NotificationEmailProviderOrders.Default);
         new MessageNotificationEmailContentProvider().Order
-            .ShouldBe(NotificationEmailContentProviderOrders.BuiltInFallback);
+            .ShouldBe(NotificationEmailProviderOrders.BuiltInFallback);
 
-        NotificationEmailContentProviderOrders.Default
-            .ShouldBeLessThan(NotificationEmailContentProviderOrders.BuiltInFallback);
+        NotificationEmailProviderOrders.Default
+            .ShouldBeLessThan(NotificationEmailProviderOrders.BuiltInFallback);
     }
 }

@@ -7,7 +7,7 @@ namespace Dignite.Abp.Notifications.Emailing;
 public class MessageNotificationEmailContentProvider
     : NotificationEmailContentProvider<MessageNotificationData>, ITransientDependency
 {
-    public override int Order => NotificationEmailContentProviderOrders.BuiltInFallback;
+    public override int Order => NotificationEmailProviderOrders.BuiltInFallback;
 
     protected override Task<NotificationEmail?> BuildOrNullAsync(
         NotificationEmailBuildContext context, MessageNotificationData data)

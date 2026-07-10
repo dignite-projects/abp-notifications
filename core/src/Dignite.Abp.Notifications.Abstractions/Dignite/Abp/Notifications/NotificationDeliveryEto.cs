@@ -27,7 +27,7 @@ public class NotificationDeliveryEto : IEventDataMayHaveTenantId
 
     /// <summary>
     /// Stable name of the entity type this notification is about, e.g. <c>"Demo.Order"</c> — never a CLR type name.
-    /// Lets a notifier fetch business context (see <c>IEmailNotificationAddressProvider</c>) and lets a client build
+    /// Lets a notifier fetch business context (see <c>IEmailNotificationAddressResolver</c>) and lets a client build
     /// an entity link without re-fetching. Null when the notification is not about a specific entity.
     /// </summary>
     public string? EntityTypeName { get; set; }

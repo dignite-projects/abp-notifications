@@ -22,8 +22,8 @@ namespace Dignite.Abp.Notifications.Emailing;
 public abstract class NotificationEmailContentProvider<TData> : INotificationEmailContentProvider
     where TData : NotificationData
 {
-    /// <summary>Defaults to <see cref="NotificationEmailContentProviderOrders.Default"/>, ahead of the built-ins.</summary>
-    public virtual int Order => NotificationEmailContentProviderOrders.Default;
+    /// <summary>Defaults to <see cref="NotificationEmailProviderOrders.Default"/>, ahead of the built-ins.</summary>
+    public virtual int Order => NotificationEmailProviderOrders.Default;
 
     /// <summary>
     /// Deliberately not virtual: overriding it would reintroduce the chance to drop the payload guard.

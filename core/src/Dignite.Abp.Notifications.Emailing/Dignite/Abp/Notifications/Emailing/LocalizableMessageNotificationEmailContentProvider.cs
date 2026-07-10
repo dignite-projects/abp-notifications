@@ -15,7 +15,7 @@ public class LocalizableMessageNotificationEmailContentProvider
 {
     protected IStringLocalizerFactory StringLocalizerFactory { get; }
 
-    public override int Order => NotificationEmailContentProviderOrders.BuiltInFallback;
+    public override int Order => NotificationEmailProviderOrders.BuiltInFallback;
 
     public LocalizableMessageNotificationEmailContentProvider(IStringLocalizerFactory stringLocalizerFactory)
     {
