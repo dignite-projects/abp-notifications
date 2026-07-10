@@ -67,6 +67,38 @@ public class EmailNotifier_Tests
     }
 
     [Fact]
+    public async Task Sends_one_email_per_recipient_even_when_their_addresses_collide()
+    {
+        var emailSender = Substitute.For<IEmailSender>();
+        var resolver = Substitute.For<IEmailNotificationAddressResolver>();
+        // Two users, one mailbox. ASP.NET Core Identity's UserOptions.RequireUniqueEmail defaults to false, so a
+        // shared team or family account is a legitimate configuration, not a misconfiguration.
+        resolver.GetEmailOrNullAsync(Arg.Any<EmailNotificationAddressResolveContext>()).Returns("shared@example.com");
+
+        var notifier = new EmailNotifier(
+            emailSender,
+            resolver,
+            CreateDefaultBuilder(),
+            NullLogger<EmailNotifier>.Instance);
+        var eto = new NotificationDeliveryEto(
+            Guid.NewGuid(), "order.shipped", new MessageNotificationData("Shipped!"),
+            NotificationSeverity.Info, DateTime.UtcNow,
+            new[] { Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid() })
+        {
+            Channels = new[] { EmailNotifier.ChannelName }
+        };
+
+        await notifier.HandleEventAsync(eto);
+
+        // Deliberately NOT deduplicated by address. The body is built per recipient
+        // (NotificationEmailBuildContext carries the UserId), so collapsing three recipients into one send would
+        // silently drop two personalized emails. A provider returning one address for every user is violating its
+        // contract; N loud duplicates point straight at it, whereas a silently dropped email does not.
+        await emailSender.Received(3).SendAsync(
+            "shared@example.com", Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>());
+    }
+
+    [Fact]
     public async Task Skips_when_the_email_channel_is_not_allowed()
     {
         var emailSender = Substitute.For<IEmailSender>();
