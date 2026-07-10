@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Volo.Abp.DependencyInjection;
 using Volo.Abp.Emailing;
 
@@ -28,15 +30,38 @@ public class EmailNotifier : INotificationNotifier<NotificationDeliveryEto>, ITr
 
     protected ILogger<EmailNotifier> Logger { get; }
 
+    protected NotificationEmailOptions EmailOptions { get; }
+
     public EmailNotifier(
         IEmailSender emailSender,
         IEnumerable<IEmailNotificationAddressResolver> addressResolvers,
         INotificationEmailBuilder emailBuilder,
         ILogger<EmailNotifier> logger)
+        : this(emailSender, addressResolvers, emailBuilder, logger, new NotificationEmailOptions())
+    {
+    }
+
+    public EmailNotifier(
+        IEmailSender emailSender,
+        IEnumerable<IEmailNotificationAddressResolver> addressResolvers,
+        INotificationEmailBuilder emailBuilder,
+        ILogger<EmailNotifier> logger,
+        IOptions<NotificationEmailOptions> emailOptions)
+        : this(emailSender, addressResolvers, emailBuilder, logger, emailOptions.Value)
+    {
+    }
+
+    private EmailNotifier(
+        IEmailSender emailSender,
+        IEnumerable<IEmailNotificationAddressResolver> addressResolvers,
+        INotificationEmailBuilder emailBuilder,
+        ILogger<EmailNotifier> logger,
+        NotificationEmailOptions emailOptions)
     {
         EmailSender = emailSender;
         EmailBuilder = emailBuilder;
         Logger = logger;
+        EmailOptions = emailOptions;
 
         // Same Order-then-FullName-Ordinal tiebreak DefaultNotificationEmailBuilder uses for content providers, so
         // which address a user receives never depends on DI registration order.
@@ -73,13 +98,37 @@ public class EmailNotifier : INotificationNotifier<NotificationDeliveryEto>, ITr
         {
             var context = new EmailNotificationAddressResolveContext(notification, userId, eventData.TenantId);
             var address = await ResolveAddressOrNullAsync(context);
-            if (string.IsNullOrWhiteSpace(address))
+            if (address == null)
             {
                 continue;
             }
 
-            var email = await EmailBuilder.BuildAsync(
-                new NotificationEmailBuildContext(notification, userId, address!, eventData.TenantId));
+            var culture = ResolveCulture(address.CultureName);
+            NotificationEmail? email;
+
+            // CultureInfo is backed by AsyncLocal. Set it only around this recipient's content build and always
+            // restore both values so the next recipient in this event cannot inherit the previous recipient's culture.
+            var previousCulture = CultureInfo.CurrentCulture;
+            var previousUICulture = CultureInfo.CurrentUICulture;
+            try
+            {
+                CultureInfo.CurrentCulture = culture;
+                CultureInfo.CurrentUICulture = culture;
+
+                email = await EmailBuilder.BuildAsync(
+                    new NotificationEmailBuildContext(
+                        notification,
+                        userId,
+                        address.Address,
+                        eventData.TenantId,
+                        culture.Name));
+            }
+            finally
+            {
+                CultureInfo.CurrentCulture = previousCulture;
+                CultureInfo.CurrentUICulture = previousUICulture;
+            }
+
             if (email == null)
             {
                 Logger.LogDebug(
@@ -89,22 +138,32 @@ public class EmailNotifier : INotificationNotifier<NotificationDeliveryEto>, ITr
                 continue;
             }
 
-            await EmailSender.SendAsync(address!, email.Subject, email.Body, email.IsBodyHtml);
+            await EmailSender.SendAsync(address.Address, email.Subject, email.Body, email.IsBodyHtml);
         }
     }
 
-    /// <summary>Walks the resolver chain and takes the first non-null address.</summary>
-    protected virtual async Task<string?> ResolveAddressOrNullAsync(EmailNotificationAddressResolveContext context)
+    /// <summary>Walks the resolver chain and takes the first non-null address result.</summary>
+    protected virtual async Task<EmailNotificationAddress?> ResolveAddressOrNullAsync(
+        EmailNotificationAddressResolveContext context)
     {
         foreach (var resolver in AddressResolvers)
         {
             var address = await resolver.GetEmailOrNullAsync(context);
-            if (!string.IsNullOrWhiteSpace(address))
+            if (address != null)
             {
                 return address;
             }
         }
 
         return null;
+    }
+
+    protected virtual CultureInfo ResolveCulture(string? cultureName)
+    {
+        var selectedCultureName = string.IsNullOrWhiteSpace(cultureName)
+            ? EmailOptions.DefaultCulture
+            : cultureName;
+
+        return CultureInfo.GetCultureInfo(selectedCultureName);
     }
 }

@@ -19,6 +19,8 @@ changes.
 
 - Changed email address resolution to use `EmailNotificationAddressResolveContext`, making
   `TenantId` explicit to local and remote resolver implementations.
+- Email address resolvers can now return an optional recipient culture; email content is built inside that culture
+  and falls back to `NotificationEmailOptions.DefaultCulture`.
 
 ## [10.0.0-preview.1] - 2026-07-09
 

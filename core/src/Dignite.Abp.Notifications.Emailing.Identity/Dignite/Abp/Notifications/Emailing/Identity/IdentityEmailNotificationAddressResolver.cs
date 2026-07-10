@@ -2,6 +2,8 @@ using System.Threading.Tasks;
 using Dignite.Abp.Notifications.Emailing;
 using Volo.Abp.DependencyInjection;
 using Volo.Abp.Identity;
+using Volo.Abp.Localization;
+using Volo.Abp.SettingManagement;
 
 namespace Dignite.Abp.Notifications.Emailing.Identity;
 
@@ -26,14 +28,38 @@ public class IdentityEmailNotificationAddressResolver : IEmailNotificationAddres
 
     protected IIdentityUserRepository UserRepository { get; }
 
-    public IdentityEmailNotificationAddressResolver(IIdentityUserRepository userRepository)
+    /// <summary>
+    /// Optional because the base Identity integration does not require ABP Setting Management. When it is installed,
+    /// its user-setting manager provides the complete user → tenant → global → configuration/default fallback.
+    /// </summary>
+    protected ISettingManager? SettingManager { get; }
+
+    public IdentityEmailNotificationAddressResolver(
+        IIdentityUserRepository userRepository,
+        ISettingManager? settingManager = null)
     {
         UserRepository = userRepository;
+        SettingManager = settingManager;
     }
 
-    public virtual async Task<string?> GetEmailOrNullAsync(EmailNotificationAddressResolveContext context)
+    public virtual async Task<EmailNotificationAddress?> GetEmailOrNullAsync(
+        EmailNotificationAddressResolveContext context)
     {
         var user = await UserRepository.FindAsync(context.UserId);
-        return string.IsNullOrWhiteSpace(user?.Email) ? null : user.Email;
+        if (string.IsNullOrWhiteSpace(user?.Email))
+        {
+            return null;
+        }
+
+        // ISettingProvider reads the ambient user. A distributed notification has several recipients, so use ABP's
+        // user-targeted setting-management API, which performs the complete fallback chain for this UserId.
+        var cultureName = SettingManager == null
+            ? null
+            : await SettingManager.GetOrNullForUserAsync(
+                LocalizationSettingNames.DefaultLanguage,
+                context.UserId,
+                fallback: true);
+
+        return EmailNotificationAddress.To(user.Email, cultureName);
     }
 }
