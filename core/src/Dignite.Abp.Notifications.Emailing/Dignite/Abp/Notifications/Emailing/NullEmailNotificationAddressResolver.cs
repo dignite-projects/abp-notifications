@@ -7,7 +7,7 @@ namespace Dignite.Abp.Notifications.Emailing;
 /// <summary>Default resolver: no address is known, so nothing is emailed until an app provides a real resolver.</summary>
 public class NullEmailNotificationAddressResolver : IEmailNotificationAddressResolver, ISingletonDependency
 {
-    public Task<string?> GetEmailOrNullAsync(Guid userId)
+    public Task<string?> GetEmailOrNullAsync(EmailNotificationAddressResolveContext context)
     {
         return Task.FromResult<string?>(null);
     }

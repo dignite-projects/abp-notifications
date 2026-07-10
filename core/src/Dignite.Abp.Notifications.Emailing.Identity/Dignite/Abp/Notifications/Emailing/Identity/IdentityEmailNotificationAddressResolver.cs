@@ -1,8 +1,8 @@
-using System;
 using System.Threading.Tasks;
 using Dignite.Abp.Notifications.Emailing;
 using Volo.Abp.DependencyInjection;
 using Volo.Abp.Identity;
+using Volo.Abp.MultiTenancy;
 
 namespace Dignite.Abp.Notifications.Emailing.Identity;
 
@@ -15,15 +15,22 @@ public class IdentityEmailNotificationAddressResolver : IEmailNotificationAddres
 {
     protected IIdentityUserRepository UserRepository { get; }
 
-    public IdentityEmailNotificationAddressResolver(IIdentityUserRepository userRepository)
+    protected ICurrentTenant CurrentTenant { get; }
+
+    public IdentityEmailNotificationAddressResolver(
+        IIdentityUserRepository userRepository,
+        ICurrentTenant currentTenant)
     {
         UserRepository = userRepository;
+        CurrentTenant = currentTenant;
     }
 
-    public virtual async Task<string?> GetEmailOrNullAsync(Guid userId)
+    public virtual async Task<string?> GetEmailOrNullAsync(EmailNotificationAddressResolveContext context)
     {
-        var user = await UserRepository.FindAsync(userId);
-        return string.IsNullOrWhiteSpace(user?.Email) ? null : user.Email;
+        using (CurrentTenant.Change(context.TenantId, null))
+        {
+            var user = await UserRepository.FindAsync(context.UserId);
+            return string.IsNullOrWhiteSpace(user?.Email) ? null : user.Email;
+        }
     }
 }
-
