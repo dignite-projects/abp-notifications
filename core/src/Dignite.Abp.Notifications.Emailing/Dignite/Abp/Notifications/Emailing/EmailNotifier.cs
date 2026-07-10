@@ -14,8 +14,12 @@ namespace Dignite.Abp.Notifications.Emailing;
 /// <summary>
 /// Relays notifications to email — the second notifier that stress-tests the framework's event contract. Unlike
 /// SignalR (which addresses users directly), email needs a UserId → address mapping, supplied by the
-/// <see cref="IEmailNotificationAddressResolver"/> chain. Idempotency across duplicate event delivery comes from the
-/// transactional inbox (roadmap C/P1). Honors channel routing via <see cref="NotificationChannels"/>.
+/// <see cref="IEmailNotificationAddressResolver"/> chain. Honors channel routing via <see cref="NotificationChannels"/>.
+/// <para>
+/// This notifier is not idempotent by itself: a redelivered event re-sends. Deduplication comes from ABP's
+/// transactional inbox, which the host must enable — on EF Core via <c>UseNotificationCenterEfCoreOutbox()</c>. The
+/// MongoDB provider wires no inbox, so a redelivery there sends a second email.
+/// </para>
 /// </summary>
 public class EmailNotifier : INotificationNotifier<NotificationDeliveryEto>, ITransientDependency
 {

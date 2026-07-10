@@ -36,7 +36,10 @@ public class DefaultNotificationDistributor : INotificationDistributor, ITransie
             return;
         }
 
-        // NOTE: store-write then event-publish is not yet atomic. The ABP Outbox will make it so (roadmap P1).
+        // These two commit together only when the host enables ABP's transactional outbox — with NotificationCenter
+        // on EF Core that is Configure<AbpDistributedEventBusOptions>(o => o.UseNotificationCenterEfCoreOutbox()).
+        // Without it, and always on the MongoDB provider (which wires no outbox), a crash between the two keeps the
+        // rows and drops the event. Notification_Outbox_Tests covers the case where the guarantee does hold.
         await SaveUserNotificationsAsync(notification, targetUserIds);
         if (channels != null)
         {
