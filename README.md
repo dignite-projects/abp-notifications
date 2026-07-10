@@ -33,6 +33,7 @@ them.
 | `Dignite.Abp.Notifications` | The core: definitions, the publish/distribute pipeline, the `INotificationStore` abstraction + `NullNotificationStore`. |
 | `Dignite.Abp.Notifications.SignalR` | Real-time push notifier (SignalR hub at `/signalr-hubs/notifications`). |
 | `Dignite.Abp.Notifications.Emailing` | Email notifier (ABP `IEmailSender`). |
+| `Dignite.Abp.Notifications.Emailing.Identity` | Optional ABP Identity-backed email address resolver for the Emailing notifier. |
 | `Dignite.Abp.Notifications.Identity` | Permission gating for notification definitions via ABP Identity. |
 
 **Optional Notification Center** (`notification-center/`) — persistence + REST API + UI, depends on
@@ -79,6 +80,8 @@ persistent per-user inbox, subscriptions, read/unread state, and the `/api/notif
 ```csharp
 [DependsOn(
     typeof(AbpNotificationsSignalRModule),                     // real-time channel
+    // typeof(AbpNotificationsEmailingModule),                  // optional: email channel
+    // typeof(AbpNotificationsEmailingIdentityModule),          // optional: UserId -> Email via ABP Identity
     typeof(AbpNotificationsIdentityModule),                    // optional: permission gating
     typeof(AbpNotificationCenterApplicationModule),            // inbox / subscription logic
     typeof(AbpNotificationCenterHttpApiModule),                // REST API at /api/notifications
@@ -179,7 +182,12 @@ enumeration and routing.
 - **SignalR** — clients connect to the hub at `/signalr-hubs/notifications` (an ABP `AbpHub`, mapped
   **automatically**; the host must *not* call `MapHub`) and receive a trimmed `NotificationDelivery`
   with the recipient list stripped, so siblings' user IDs never leak to each other.
-- **Emailing** — resolves each recipient's email address and sends via ABP's `IEmailSender`.
+- **Emailing** — resolves each recipient's email address and sends via ABP's `IEmailSender`. The
+  base Emailing package uses `NullEmailNotificationAddressResolver`, so no messages are sent until
+  the host provides an `IEmailNotificationAddressResolver`. If the host uses ABP Identity as the
+  email source, install `Dignite.Abp.Notifications.Emailing.Identity` and depend on
+  `AbpNotificationsEmailingIdentityModule`. The host still owns SMTP / `IEmailSender`
+  configuration; this module only resolves `UserId` to an email address.
 
 **Write your own** (Web Push, FCM, SMS, Webhook, …): create a project depending on
 `Dignite.Abp.Notifications.Abstractions` **only**, and handle the event:
@@ -333,7 +341,7 @@ The `angular/` workspace consumes the same API for the Angular demo.
 ## Repository layout
 
 ```
-core/                 core framework (Abstractions, Notifications, Identity, Emailing, SignalR) + tests
+core/                 core framework (Abstractions, Notifications, Identity, Emailing, Emailing.Identity, SignalR) + tests
 notification-center/  optional persistence + REST API + MVC UI + tests (EF Core & MongoDB)
 angular/              Angular UI library (projects/notification-center) + demo app   ── local dev only
 host/                 runnable ABP MVC demo host                                     ── local dev only

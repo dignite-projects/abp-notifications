@@ -30,6 +30,7 @@ abp-notifications/
 │   │   │                                             # subscription/user-notification managers. net10.0.
 │   │   ├── Dignite.Abp.Notifications.Identity/      # pluggable INotificationPermissionChecker via ABP Identity
 │   │   ├── Dignite.Abp.Notifications.Emailing/      # Email Notifier plugin
+│   │   ├── Dignite.Abp.Notifications.Emailing.Identity/ # Email address resolver via ABP Identity
 │   │   └── Dignite.Abp.Notifications.SignalR/       # SignalR Notifier plugin (real-time push)
 │   └── test/Dignite.Abp.Notifications.Tests/
 └── notification-center/
@@ -67,7 +68,8 @@ mirroring — match whichever convention the project you're editing already uses
 | `Notifications.Abstractions` | Data contracts + distributed-event contract shared by everyone | Nothing (in this repo) |
 | `Notifications` (Core) | Definitions, publish/distribute pipeline, `INotificationStore` abstraction | Abstractions |
 | `Notifications.Identity` | Permission-checker implementation | Core, ABP Identity |
-| `Notifications.Emailing` / `.SignalR` | Notifier plugins | Abstractions (SignalR); Core (Emailing — see note below) |
+| `Notifications.Emailing` / `.SignalR` | Notifier plugins | Abstractions + channel SDK |
+| `Notifications.Emailing.Identity` | Email address resolver implementation | Emailing, ABP Identity |
 | `NotificationCenter.Domain.Shared` | Constants, enums | Nothing |
 | `NotificationCenter.Domain` | Aggregates (`Notification`, `UserNotification`, `NotificationSubscription`) | Domain.Shared, Core (`Notifications`) |
 | `NotificationCenter.Application.Contracts` | DTOs, service interfaces | Domain.Shared, `Notifications.Abstractions` |
@@ -77,10 +79,9 @@ mirroring — match whichever convention the project you're editing already uses
 | `NotificationCenter.EntityFrameworkCore` / `.MongoDB` | `INotificationStore` implementations | Domain |
 
 > **Plugin boundary**: the design intent is that Notifiers depend on
-> **only** `Abstractions`, so any channel can be added without touching Core. `SignalR` follows
-> this. `Emailing` currently also depends on Core (`Notifications`) — be aware of this when adding
-> a new Notifier; prefer depending on Abstractions only unless you have a concrete reason to need
-> Core's types.
+> **only** `Abstractions` and their own channel SDK, so any channel can be added without touching Core.
+> Optional host-specific address mapping belongs in a separate integration package, as
+> `Notifications.Emailing.Identity` does for ABP Identity.
 
 ## Two operation modes — both must keep working
 

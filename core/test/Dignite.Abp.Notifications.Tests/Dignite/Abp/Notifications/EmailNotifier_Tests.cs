@@ -11,6 +11,7 @@ using Shouldly;
 using Volo.Abp.Emailing;
 using Volo.Abp.EventBus.Distributed;
 using Xunit;
+using Volo.Abp.MultiTenancy;
 
 namespace Dignite.Abp.Notifications;
 
@@ -23,6 +24,7 @@ public class EmailNotifier_Tests
             Substitute.For<IEmailSender>(),
             Substitute.For<IEmailNotificationAddressResolver>(),
             CreateDefaultBuilder(),
+            CreateCurrentTenant(),
             NullLogger<EmailNotifier>.Instance);
 
         ((INotificationNotifier)notifier).Name.ShouldBe(EmailNotifier.ChannelName);
@@ -40,7 +42,12 @@ public class EmailNotifier_Tests
         resolver.GetEmailOrNullAsync(userWithEmail).Returns("a@b.com");
         resolver.GetEmailOrNullAsync(userWithoutEmail).Returns((string?)null);
 
-        var notifier = new EmailNotifier(emailSender, resolver, CreateDefaultBuilder(), NullLogger<EmailNotifier>.Instance);
+        var notifier = new EmailNotifier(
+            emailSender,
+            resolver,
+            CreateDefaultBuilder(),
+            CreateCurrentTenant(),
+            NullLogger<EmailNotifier>.Instance);
         var eto = new NotificationDeliveryEto(
             Guid.NewGuid(), "order.shipped", new MessageNotificationData("Shipped!"),
             NotificationSeverity.Info, DateTime.UtcNow, new[] { userWithEmail, userWithoutEmail })
@@ -67,7 +74,12 @@ public class EmailNotifier_Tests
         var resolver = Substitute.For<IEmailNotificationAddressResolver>();
         resolver.GetEmailOrNullAsync(Arg.Any<Guid>()).Returns("a@b.com");
 
-        var notifier = new EmailNotifier(emailSender, resolver, CreateDefaultBuilder(), NullLogger<EmailNotifier>.Instance);
+        var notifier = new EmailNotifier(
+            emailSender,
+            resolver,
+            CreateDefaultBuilder(),
+            CreateCurrentTenant(),
+            NullLogger<EmailNotifier>.Instance);
         var eto = new NotificationDeliveryEto(
             Guid.NewGuid(), "test", new MessageNotificationData("x"),
             NotificationSeverity.Info, DateTime.UtcNow, new[] { Guid.NewGuid() })
@@ -91,6 +103,7 @@ public class EmailNotifier_Tests
             emailSender,
             resolver,
             CreateDefaultBuilder(),
+            CreateCurrentTenant(),
             NullLogger<EmailNotifier>.Instance);
 
         var eto = new NotificationDeliveryEto(
@@ -117,7 +130,12 @@ public class EmailNotifier_Tests
         resolver.GetEmailOrNullAsync(firstUserId).Returns("first@example.com");
         resolver.GetEmailOrNullAsync(secondUserId).Returns("second@example.com");
 
-        var notifier = new EmailNotifier(emailSender, resolver, builder, NullLogger<EmailNotifier>.Instance);
+        var notifier = new EmailNotifier(
+            emailSender,
+            resolver,
+            builder,
+            CreateCurrentTenant(),
+            NullLogger<EmailNotifier>.Instance);
         var eto = new NotificationDeliveryEto(
             Guid.NewGuid(), "test", new MessageNotificationData("x"),
             NotificationSeverity.Info, DateTime.UtcNow, new[] { firstUserId, secondUserId })
@@ -131,6 +149,42 @@ public class EmailNotifier_Tests
         builder.Contexts.Select(context => context.UserId).ShouldBe(new[] { firstUserId, secondUserId });
         builder.Contexts.Select(context => context.EmailAddress).ShouldBe(new[] { "first@example.com", "second@example.com" });
         builder.Contexts.ShouldAllBe(context => context.TenantId == eto.TenantId);
+    }
+
+    [Fact]
+    public async Task Resolves_addresses_inside_the_event_tenant_context()
+    {
+        var emailSender = Substitute.For<IEmailSender>();
+        var resolver = Substitute.For<IEmailNotificationAddressResolver>();
+        var currentTenant = new TestCurrentTenant();
+        var userId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
+        Guid? tenantSeenByResolver = null;
+
+        resolver.GetEmailOrNullAsync(userId).Returns(_ =>
+        {
+            tenantSeenByResolver = currentTenant.Id;
+            return Task.FromResult<string?>("tenant@example.com");
+        });
+
+        var notifier = new EmailNotifier(
+            emailSender,
+            resolver,
+            CreateDefaultBuilder(),
+            currentTenant,
+            NullLogger<EmailNotifier>.Instance);
+        var eto = new NotificationDeliveryEto(
+            Guid.NewGuid(), "test", new MessageNotificationData("x"),
+            NotificationSeverity.Info, DateTime.UtcNow, new[] { userId })
+        {
+            Channels = new[] { EmailNotifier.ChannelName },
+            TenantId = tenantId
+        };
+
+        await notifier.HandleEventAsync(eto);
+
+        tenantSeenByResolver.ShouldBe(tenantId);
+        currentTenant.Id.ShouldBeNull();
     }
 
     [Fact]
@@ -199,6 +253,11 @@ public class EmailNotifier_Tests
             new MessageNotificationEmailContentProvider(),
             new LocalizableMessageNotificationEmailContentProvider(new TestStringLocalizerFactory())
         });
+    }
+
+    private static ICurrentTenant CreateCurrentTenant()
+    {
+        return new TestCurrentTenant();
     }
 
     private static NotificationEmailBuildContext CreateContext(NotificationData data)
@@ -277,6 +336,43 @@ public class EmailNotifier_Tests
         public IEnumerable<LocalizedString> GetAllStrings(bool includeParentCultures)
         {
             return Enumerable.Empty<LocalizedString>();
+        }
+    }
+
+    private class TestCurrentTenant : ICurrentTenant
+    {
+        public bool IsAvailable => Id.HasValue;
+
+        public Guid? Id { get; private set; }
+
+        public string? Name { get; private set; }
+
+        public IDisposable Change(Guid? id, string? name = null)
+        {
+            var previousId = Id;
+            var previousName = Name;
+            Id = id;
+            Name = name;
+            return new DisposeAction(() =>
+            {
+                Id = previousId;
+                Name = previousName;
+            });
+        }
+    }
+
+    private class DisposeAction : IDisposable
+    {
+        private readonly Action _dispose;
+
+        public DisposeAction(Action dispose)
+        {
+            _dispose = dispose;
+        }
+
+        public void Dispose()
+        {
+            _dispose();
         }
     }
 }
