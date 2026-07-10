@@ -106,12 +106,63 @@ public class MyHostDbContext : AbpDbContext<MyHostDbContext>, INotificationCente
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
-        builder.ConfigureNotificationCenter();   // maps the three tables (+ event outbox/inbox)
+        builder.ConfigureNotificationCenter();   // maps the three tables
     }
 }
 ```
 
 Then add a migration in your host and update the database, exactly as for any other ABP module.
+
+#### Delivery guarantees — opt in to the transactional outbox
+
+Distributing a notification writes the per-user inbox rows **and** publishes `NotificationDeliveryEto`
+for the notifiers. Those two commit together only when the host enables ABP's transactional outbox;
+the same call enables the inbox, which deduplicates a redelivered event so a notifier does not send
+twice.
+
+| Setup | Persist + publish atomic | Redelivery deduplicated |
+|---|---|---|
+| EF Core, outbox enabled | yes | yes |
+| EF Core, outbox not enabled | no | no |
+| MongoDB | no | no |
+
+If you use the shipped `NotificationCenterDbContext`, one line enables both:
+
+```csharp
+Configure<AbpDistributedEventBusOptions>(options => options.UseNotificationCenterEfCoreOutbox());
+```
+
+If you folded the tables into your own `DbContext` as above, that extension points at the wrong
+context. Implement the two marker interfaces, map the event tables, and route the outbox to your own
+context instead:
+
+```csharp
+public class MyHostDbContext : AbpDbContext<MyHostDbContext>,
+    INotificationCenterDbContext, IHasEventInbox, IHasEventOutbox
+{
+    public DbSet<IncomingEventRecord> IncomingEvents { get; set; } = default!;
+    public DbSet<OutgoingEventRecord> OutgoingEvents { get; set; } = default!;
+    // ...the three notification DbSets
+
+    protected override void OnModelCreating(ModelBuilder builder)
+    {
+        base.OnModelCreating(builder);
+        builder.ConfigureEventInbox();
+        builder.ConfigureEventOutbox();
+        builder.ConfigureNotificationCenter();
+    }
+}
+
+Configure<AbpDistributedEventBusOptions>(options =>
+{
+    options.Outboxes.Configure(config => config.UseDbContext<MyHostDbContext>());
+    options.Inboxes.Configure(config => config.UseDbContext<MyHostDbContext>());
+});
+```
+
+The MongoDB provider wires no outbox or inbox. A crash between the store write and the publish leaves
+the notification in the inbox with no channel delivery, and a redelivered event makes the Email
+notifier send a second copy. Choose EF Core if those guarantees matter.
 
 ## Defining and publishing a notification
 

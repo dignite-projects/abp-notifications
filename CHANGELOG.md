@@ -10,6 +10,8 @@ changes.
 
 ## [Unreleased]
 
+## [10.0.0-preview.2] - 2026-07-10
+
 > `MAJOR` tracks the targeted ABP Framework version, so a breaking change to this module's own
 > contracts arrives in a `MINOR` bump. Entries below marked **Breaking** require action when
 > upgrading.
@@ -43,6 +45,9 @@ changes.
 - **Breaking.** Renamed `NotificationEmailContentProviderOrders` to `NotificationEmailProviderOrders`, which now
   orders both the content-provider and the address-resolver chains.
 - **Breaking.** `NotificationEmailBuildContext`'s constructor gained a `cultureName` parameter.
+- Documented that atomic persist-and-publish, and deduplication of a redelivered event, require the host to enable
+  ABP's transactional outbox — `UseNotificationCenterEfCoreOutbox()` on EF Core. The MongoDB provider wires neither.
+  No behaviour changed; the previous comments and README described a guarantee that was conditional.
 
 ### Fixed
 
