@@ -184,7 +184,8 @@ enumeration and routing.
   with the recipient list stripped, so siblings' user IDs never leak to each other.
 - **Emailing** — resolves each recipient's email address and sends via ABP's `IEmailSender`. Addresses
   come from an ordered `IEmailNotificationAddressResolver` chain: `EmailNotifier` takes the first
-  non-null address. The base Emailing package registers no resolver, so nothing is sent (and a warning
+  non-null address result. The result may also carry a recipient culture used while building that user's email.
+  The base Emailing package registers no resolver, so nothing is sent (and a warning
   is logged) until one exists. Install `Dignite.Abp.Notifications.Emailing.Identity` to get the account
   email as the built-in fallback, and register your own resolver at
   `NotificationEmailProviderOrders.Default` to claim specific notifications — for example, sending an
@@ -196,7 +197,7 @@ enumeration and routing.
   {
       public int Order => NotificationEmailProviderOrders.Default;
 
-      public async Task<string?> GetEmailOrNullAsync(EmailNotificationAddressResolveContext context)
+      public async Task<EmailNotificationAddress?> GetEmailOrNullAsync(EmailNotificationAddressResolveContext context)
       {
           if (context.Notification.NotificationName != "Demo.OrderShipped")
           {
@@ -204,13 +205,20 @@ enumeration and routing.
           }
 
           var contact = await _orders.FindContactAsync(context.Notification.EntityId!, context.UserId);
-          return contact?.Email;   // null also falls through
+          return contact == null
+              ? null   // no address — fall through
+              : EmailNotificationAddress.To(contact.Email, contact.CultureName);
       }
   }
   ```
 
   A resolver returns the address **for this user** in this entity context, never "the entity's
   address" — `EmailNotifier` builds the body for that same user and sends one email per recipient.
+  The optional `CultureName` on `EmailNotificationAddress` selects the culture for that recipient's content build;
+  when it is omitted, `NotificationEmailOptions.DefaultCulture` is used. Culture is scoped only around one
+  recipient's content build and is restored before the next recipient is processed. When ABP Setting Management is
+  installed, the Identity integration uses its user-targeted setting manager and fallback chain; otherwise the
+  configured `NotificationEmailOptions.DefaultCulture` is used.
   Never call `CurrentTenant.Change` in a resolver: ABP's event bus has already entered the
   notification's tenant. `context.TenantId` exists for resolvers that must forward the tenant across a
   boundary the ambient scope cannot cross, such as a remote user service. The host still owns SMTP /
@@ -317,6 +325,12 @@ Configure<NotificationOptions>(options =>
 {
     // Explicit recipients above this count distribute on a background job instead of inline. Default: 5.
     options.DirectDistributionUserThreshold = 10;
+});
+
+Configure<NotificationEmailOptions>(options =>
+{
+    // Used when an email address resolver does not supply a recipient culture.
+    options.DefaultCulture = "en-US";
 });
 
 // EF Core Notification Center hosts can opt in to ABP's transactional outbox so the persisted

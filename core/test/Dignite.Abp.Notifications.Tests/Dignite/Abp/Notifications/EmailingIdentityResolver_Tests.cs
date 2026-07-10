@@ -10,7 +10,9 @@ using Shouldly;
 using Volo.Abp;
 using Volo.Abp.Autofac;
 using Volo.Abp.Identity;
+using Volo.Abp.Localization;
 using Volo.Abp.Modularity;
+using Volo.Abp.SettingManagement;
 using Volo.Abp.Testing;
 using Xunit;
 
@@ -27,7 +29,7 @@ public class EmailingIdentityResolver_Tests
 
         var resolver = new IdentityEmailNotificationAddressResolver(repository);
 
-        (await resolver.GetEmailOrNullAsync(CreateContext(userId))).ShouldBe("test@example.com");
+        (await resolver.GetEmailOrNullAsync(CreateContext(userId)))!.Address.ShouldBe("test@example.com");
     }
 
     [Fact]
@@ -64,6 +66,52 @@ public class EmailingIdentityResolver_Tests
 
         NotificationEmailProviderOrders.BuiltInFallback
             .ShouldBeGreaterThan(NotificationEmailProviderOrders.Default);
+    }
+
+    [Fact]
+    public async Task Resolves_the_recipient_culture_from_the_user_setting()
+    {
+        var userId = Guid.NewGuid();
+        var repository = Substitute.For<IIdentityUserRepository>();
+        repository.FindAsync(userId).Returns(new IdentityUser(userId, "test-user", "test@example.com"));
+        var settingManager = Substitute.For<ISettingManager>();
+        settingManager.GetOrNullAsync(
+                LocalizationSettingNames.DefaultLanguage,
+                "U",
+                userId.ToString(),
+                true)
+            .Returns("zh-Hans");
+
+        var resolver = new IdentityEmailNotificationAddressResolver(repository, settingManager);
+
+        var address = await resolver.GetEmailOrNullAsync(CreateContext(userId));
+
+        address.ShouldNotBeNull();
+        address!.Address.ShouldBe("test@example.com");
+        address.CultureName.ShouldBe("zh-Hans");
+    }
+
+    [Fact]
+    public async Task Uses_the_setting_management_fallback_when_no_user_culture_exists()
+    {
+        var userId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
+        var repository = Substitute.For<IIdentityUserRepository>();
+        repository.FindAsync(userId).Returns(new IdentityUser(userId, "test-user", "test@example.com"));
+        var settingManager = Substitute.For<ISettingManager>();
+        settingManager.GetOrNullAsync(
+                LocalizationSettingNames.DefaultLanguage,
+                "U",
+                userId.ToString(),
+                true)
+            .Returns("en-GB");
+
+        var resolver = new IdentityEmailNotificationAddressResolver(repository, settingManager);
+
+        var address = await resolver.GetEmailOrNullAsync(CreateContext(userId, tenantId));
+
+        address.ShouldNotBeNull();
+        address!.CultureName.ShouldBe("en-GB");
     }
 
     internal static EmailNotificationAddressResolveContext CreateContext(

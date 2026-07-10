@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Dignite.Abp.Notifications.Emailing;
 using Microsoft.Extensions.Localization;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 using Shouldly;
 using Volo.Abp.Emailing;
@@ -38,9 +39,9 @@ public class EmailNotifier_Tests
         var userWithEmail = Guid.NewGuid();
         var userWithoutEmail = Guid.NewGuid();
         resolver.GetEmailOrNullAsync(Arg.Is<EmailNotificationAddressResolveContext>(
-            context => context.UserId == userWithEmail)).Returns("a@b.com");
+            context => context.UserId == userWithEmail)).Returns(EmailNotificationAddress.To("a@b.com"));
         resolver.GetEmailOrNullAsync(Arg.Is<EmailNotificationAddressResolveContext>(
-            context => context.UserId == userWithoutEmail)).Returns((string?)null);
+            context => context.UserId == userWithoutEmail)).Returns((EmailNotificationAddress?)null);
 
         var notifier = new EmailNotifier(
             emailSender,
@@ -73,7 +74,8 @@ public class EmailNotifier_Tests
         var resolver = Substitute.For<IEmailNotificationAddressResolver>();
         // Two users, one mailbox. ASP.NET Core Identity's UserOptions.RequireUniqueEmail defaults to false, so a
         // shared team or family account is a legitimate configuration, not a misconfiguration.
-        resolver.GetEmailOrNullAsync(Arg.Any<EmailNotificationAddressResolveContext>()).Returns("shared@example.com");
+        resolver.GetEmailOrNullAsync(Arg.Any<EmailNotificationAddressResolveContext>())
+            .Returns(EmailNotificationAddress.To("shared@example.com"));
 
         var notifier = new EmailNotifier(
             emailSender,
@@ -103,7 +105,8 @@ public class EmailNotifier_Tests
     {
         var emailSender = Substitute.For<IEmailSender>();
         var resolver = Substitute.For<IEmailNotificationAddressResolver>();
-        resolver.GetEmailOrNullAsync(Arg.Any<EmailNotificationAddressResolveContext>()).Returns("a@b.com");
+        resolver.GetEmailOrNullAsync(Arg.Any<EmailNotificationAddressResolveContext>())
+            .Returns(EmailNotificationAddress.To("a@b.com"));
 
         var notifier = new EmailNotifier(
             emailSender,
@@ -128,7 +131,8 @@ public class EmailNotifier_Tests
     {
         var emailSender = Substitute.For<IEmailSender>();
         var resolver = Substitute.For<IEmailNotificationAddressResolver>();
-        resolver.GetEmailOrNullAsync(Arg.Any<EmailNotificationAddressResolveContext>()).Returns("a@b.com");
+        resolver.GetEmailOrNullAsync(Arg.Any<EmailNotificationAddressResolveContext>())
+            .Returns(EmailNotificationAddress.To("a@b.com"));
         var notifier = new EmailNotifier(
             emailSender,
             new[] { resolver },
@@ -157,9 +161,9 @@ public class EmailNotifier_Tests
         var secondUserId = Guid.NewGuid();
         var builder = new CapturingEmailBuilder();
         resolver.GetEmailOrNullAsync(Arg.Is<EmailNotificationAddressResolveContext>(
-            context => context.UserId == firstUserId)).Returns("first@example.com");
+            context => context.UserId == firstUserId)).Returns(EmailNotificationAddress.To("first@example.com"));
         resolver.GetEmailOrNullAsync(Arg.Is<EmailNotificationAddressResolveContext>(
-            context => context.UserId == secondUserId)).Returns("second@example.com");
+            context => context.UserId == secondUserId)).Returns(EmailNotificationAddress.To("second@example.com"));
 
         var notifier = new EmailNotifier(
             emailSender,
@@ -182,6 +186,81 @@ public class EmailNotifier_Tests
     }
 
     [Fact]
+    public async Task Builds_email_content_under_each_recipient_culture_and_restores_the_previous_culture()
+    {
+        var emailSender = Substitute.For<IEmailSender>();
+        var resolver = Substitute.For<IEmailNotificationAddressResolver>();
+        var firstUserId = Guid.NewGuid();
+        var secondUserId = Guid.NewGuid();
+        var builder = new CapturingEmailBuilder();
+        resolver.GetEmailOrNullAsync(Arg.Is<EmailNotificationAddressResolveContext>(
+            context => context.UserId == firstUserId))
+            .Returns(EmailNotificationAddress.To("first@example.com", "fr-FR"));
+        resolver.GetEmailOrNullAsync(Arg.Is<EmailNotificationAddressResolveContext>(
+            context => context.UserId == secondUserId))
+            .Returns(EmailNotificationAddress.To("second@example.com", "ja-JP"));
+
+        var previousCulture = CultureInfo.CurrentCulture;
+        var previousUICulture = CultureInfo.CurrentUICulture;
+        var notifier = new EmailNotifier(
+            emailSender,
+            new[] { resolver },
+            builder,
+            NullLogger<EmailNotifier>.Instance);
+
+        await notifier.HandleEventAsync(CreateEto(firstUserId, secondUserId));
+
+        builder.Cultures.ShouldBe(new[] { "fr-FR", "ja-JP" });
+        builder.Contexts.Select(context => context.CultureName).ShouldBe(new[] { "fr-FR", "ja-JP" });
+        CultureInfo.CurrentCulture.ShouldBe(previousCulture);
+        CultureInfo.CurrentUICulture.ShouldBe(previousUICulture);
+    }
+
+    [Fact]
+    public async Task Uses_the_configured_default_culture_when_a_resolver_does_not_supply_one()
+    {
+        var emailSender = Substitute.For<IEmailSender>();
+        var resolver = Substitute.For<IEmailNotificationAddressResolver>();
+        var builder = new CapturingEmailBuilder();
+        resolver.GetEmailOrNullAsync(Arg.Any<EmailNotificationAddressResolveContext>())
+            .Returns(EmailNotificationAddress.To("default@example.com"));
+
+        var notifier = new EmailNotifier(
+            emailSender,
+            new[] { resolver },
+            builder,
+            NullLogger<EmailNotifier>.Instance,
+            Options.Create(new NotificationEmailOptions { DefaultCulture = "en-US" }));
+
+        await notifier.HandleEventAsync(CreateEto(Guid.NewGuid()));
+
+        builder.Cultures.ShouldBe(new[] { "en-US" });
+        builder.Contexts.Single().CultureName.ShouldBe("en-US");
+    }
+
+    [Fact]
+    public async Task Restores_the_previous_culture_when_content_building_fails()
+    {
+        var emailSender = Substitute.For<IEmailSender>();
+        var resolver = Substitute.For<IEmailNotificationAddressResolver>();
+        resolver.GetEmailOrNullAsync(Arg.Any<EmailNotificationAddressResolveContext>())
+            .Returns(EmailNotificationAddress.To("failure@example.com", "de-DE"));
+        var notifier = new EmailNotifier(
+            emailSender,
+            new[] { resolver },
+            new ThrowingEmailBuilder(),
+            NullLogger<EmailNotifier>.Instance);
+        var previousCulture = CultureInfo.CurrentCulture;
+        var previousUICulture = CultureInfo.CurrentUICulture;
+
+        await Should.ThrowAsync<InvalidOperationException>(
+            () => notifier.HandleEventAsync(CreateEto(Guid.NewGuid())));
+
+        CultureInfo.CurrentCulture.ShouldBe(previousCulture);
+        CultureInfo.CurrentUICulture.ShouldBe(previousUICulture);
+    }
+
+    [Fact]
     public async Task Passes_event_tenant_to_the_address_resolver()
     {
         var emailSender = Substitute.For<IEmailSender>();
@@ -193,7 +272,7 @@ public class EmailNotifier_Tests
         resolver.GetEmailOrNullAsync(Arg.Any<EmailNotificationAddressResolveContext>()).Returns(call =>
         {
             capturedContext = call.Arg<EmailNotificationAddressResolveContext>();
-            return Task.FromResult<string?>("tenant@example.com");
+            return Task.FromResult<EmailNotificationAddress?>(EmailNotificationAddress.To("tenant@example.com"));
         });
 
         var notifier = new EmailNotifier(
@@ -371,7 +450,7 @@ public class EmailNotifier_Tests
 
     private class StubAddressResolver : IEmailNotificationAddressResolver
     {
-        private readonly string? _address;
+        private readonly EmailNotificationAddress? _address;
 
         public int Order { get; }
 
@@ -380,10 +459,10 @@ public class EmailNotifier_Tests
         public StubAddressResolver(int order, string? address)
         {
             Order = order;
-            _address = address;
+            _address = address == null ? null : EmailNotificationAddress.To(address);
         }
 
-        public Task<string?> GetEmailOrNullAsync(EmailNotificationAddressResolveContext context)
+        public Task<EmailNotificationAddress?> GetEmailOrNullAsync(EmailNotificationAddressResolveContext context)
         {
             Calls++;
             return Task.FromResult(_address);
@@ -395,16 +474,16 @@ public class EmailNotifier_Tests
     {
         public int Order => NotificationEmailProviderOrders.Default;
 
-        public Task<string?> GetEmailOrNullAsync(EmailNotificationAddressResolveContext context)
-            => Task.FromResult<string?>("aaa@example.com");
+        public Task<EmailNotificationAddress?> GetEmailOrNullAsync(EmailNotificationAddressResolveContext context)
+            => Task.FromResult<EmailNotificationAddress?>(EmailNotificationAddress.To("aaa@example.com"));
     }
 
     private class ZzzAddressResolver : IEmailNotificationAddressResolver
     {
         public int Order => NotificationEmailProviderOrders.Default;
 
-        public Task<string?> GetEmailOrNullAsync(EmailNotificationAddressResolveContext context)
-            => Task.FromResult<string?>("zzz@example.com");
+        public Task<EmailNotificationAddress?> GetEmailOrNullAsync(EmailNotificationAddressResolveContext context)
+            => Task.FromResult<EmailNotificationAddress?>(EmailNotificationAddress.To("zzz@example.com"));
     }
 
     private static DefaultNotificationEmailBuilder CreateDefaultBuilder()
@@ -456,11 +535,22 @@ public class EmailNotifier_Tests
     {
         public List<NotificationEmailBuildContext> Contexts { get; } = new();
 
+        public List<string> Cultures { get; } = new();
+
         public Task<NotificationEmail?> BuildAsync(NotificationEmailBuildContext context)
         {
             Contexts.Add(context);
+            Cultures.Add(CultureInfo.CurrentUICulture.Name);
             return Task.FromResult<NotificationEmail?>(
                 new NotificationEmail(context.Notification.NotificationName, context.UserId.ToString()));
+        }
+    }
+
+    private sealed class ThrowingEmailBuilder : INotificationEmailBuilder
+    {
+        public Task<NotificationEmail?> BuildAsync(NotificationEmailBuildContext context)
+        {
+            throw new InvalidOperationException("content build failed");
         }
     }
 

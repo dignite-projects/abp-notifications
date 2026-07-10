@@ -3,8 +3,8 @@ using System.Threading.Tasks;
 namespace Dignite.Abp.Notifications.Emailing;
 
 /// <summary>
-/// Supplies the email address for one recipient of one notification. Resolvers form an ordered chain and the first
-/// non-null address wins, so an application resolver at <see cref="NotificationEmailProviderOrders.Default"/> can
+/// Supplies the email address and optional culture for one recipient of one notification. Resolvers form an ordered
+/// chain and the first non-null result wins, so an application resolver at <see cref="NotificationEmailProviderOrders.Default"/> can
 /// claim specific notifications while the built-in Identity resolver stays as the fallback.
 /// </summary>
 /// <remarks>
@@ -37,6 +37,6 @@ public interface IEmailNotificationAddressResolver
     /// <summary>Lower runs first. See <see cref="NotificationEmailProviderOrders"/>.</summary>
     int Order { get; }
 
-    /// <summary>The address to send to, or null to pass the recipient to the next resolver.</summary>
-    Task<string?> GetEmailOrNullAsync(EmailNotificationAddressResolveContext context);
+    /// <summary>The address and optional culture to use, or null to pass the recipient to the next resolver.</summary>
+    Task<EmailNotificationAddress?> GetEmailOrNullAsync(EmailNotificationAddressResolveContext context);
 }

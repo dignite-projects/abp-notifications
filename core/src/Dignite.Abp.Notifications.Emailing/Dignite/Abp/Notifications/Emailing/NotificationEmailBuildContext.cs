@@ -11,17 +11,22 @@ public class NotificationEmailBuildContext
 
     public string EmailAddress { get; }
 
+    /// <summary>The culture selected for this recipient's email content.</summary>
+    public string CultureName { get; }
+
     public Guid? TenantId { get; }
 
     public NotificationEmailBuildContext(
         NotificationDelivery notification,
         Guid userId,
         string emailAddress,
-        Guid? tenantId)
+        Guid? tenantId,
+        string cultureName = "en")
     {
         Notification = Check.NotNull(notification, nameof(notification));
         UserId = userId;
         EmailAddress = Check.NotNullOrWhiteSpace(emailAddress, nameof(emailAddress));
         TenantId = tenantId;
+        CultureName = Check.NotNullOrWhiteSpace(cultureName, nameof(cultureName));
     }
 }
