@@ -220,6 +220,27 @@ enumeration and routing.
   boundary the ambient scope cannot cross, such as a remote user service. The host still owns SMTP /
   `IEmailSender` configuration.
 
+  The **body** comes from the parallel `INotificationEmailContentProvider` chain. Derive from
+  `NotificationEmailContentProvider<TData>` and the payload is narrowed for you — forgetting the type
+  check would otherwise make your provider claim every notification in the system:
+
+  ```csharp
+  public class OrderShippedEmailContentProvider
+      : NotificationEmailContentProvider<OrderShippedNotificationData>, ITransientDependency
+  {
+      protected override Task<NotificationEmail?> BuildOrNullAsync(
+          NotificationEmailBuildContext context, OrderShippedNotificationData data)
+      {
+          return Task.FromResult<NotificationEmail?>(
+              new NotificationEmail($"Order {data.OrderNumber} shipped", RenderBody(data), isBodyHtml: true));
+      }
+  }
+  ```
+
+  Subclasses of `TData` match too, so a provider typed on a base payload keeps handling payloads derived
+  from it. Implement `INotificationEmailContentProvider` directly only for the rare provider that handles
+  two unrelated payload types.
+
 **Write your own** (Web Push, FCM, SMS, Webhook, …): create a project depending on
 `Dignite.Abp.Notifications.Abstractions` **only**, and handle the event:
 

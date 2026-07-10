@@ -6,24 +6,25 @@ using Volo.Abp.DependencyInjection;
 
 namespace Dignite.Abp.Notifications.Emailing;
 
-public class LocalizableMessageNotificationEmailContentProvider : INotificationEmailContentProvider, ITransientDependency
+/// <summary>
+/// Built-in fallback: localizes a <see cref="LocalizableMessageNotificationData"/> payload at send time, in the
+/// reader's culture rather than the publisher's.
+/// </summary>
+public class LocalizableMessageNotificationEmailContentProvider
+    : NotificationEmailContentProvider<LocalizableMessageNotificationData>, ITransientDependency
 {
     protected IStringLocalizerFactory StringLocalizerFactory { get; }
 
-    public int Order => NotificationEmailContentProviderOrders.BuiltInFallback;
+    public override int Order => NotificationEmailContentProviderOrders.BuiltInFallback;
 
     public LocalizableMessageNotificationEmailContentProvider(IStringLocalizerFactory stringLocalizerFactory)
     {
         StringLocalizerFactory = stringLocalizerFactory;
     }
 
-    public virtual Task<NotificationEmail?> BuildOrNullAsync(NotificationEmailBuildContext context)
+    protected override Task<NotificationEmail?> BuildOrNullAsync(
+        NotificationEmailBuildContext context, LocalizableMessageNotificationData data)
     {
-        if (context.Notification.Data is not LocalizableMessageNotificationData data)
-        {
-            return Task.FromResult<NotificationEmail?>(null);
-        }
-
         var localizer = data.ResourceName != null
             ? StringLocalizerFactory.CreateByResourceNameOrNull(data.ResourceName)
             : null;
