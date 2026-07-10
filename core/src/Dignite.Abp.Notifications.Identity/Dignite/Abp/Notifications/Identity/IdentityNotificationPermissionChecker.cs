@@ -11,6 +11,7 @@ namespace Dignite.Abp.Notifications.Identity;
 /// Real permission check backed by ABP Identity + authorization. Resolves the target user, builds their claims
 /// principal (roles + granted claims), and asks the permission checker. Registered transient and resolved from a
 /// fresh scope per call by the singleton definition manager, so no request-scoped service is captured (roadmap B).
+/// Does not switch tenants — see the tenant contract on <see cref="INotificationPermissionChecker"/>.
 /// </summary>
 [Dependency(ReplaceServices = true)]
 [ExposeServices(typeof(INotificationPermissionChecker))]
