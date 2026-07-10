@@ -239,6 +239,103 @@ public class EmailNotifier_Tests
     }
 
     [Fact]
+    public async Task Falls_back_to_the_default_culture_when_a_recipient_culture_name_is_invalid()
+    {
+        var emailSender = Substitute.For<IEmailSender>();
+        var resolver = Substitute.For<IEmailNotificationAddressResolver>();
+        var builder = new CapturingEmailBuilder();
+        resolver.GetEmailOrNullAsync(Arg.Any<EmailNotificationAddressResolveContext>())
+            .Returns(EmailNotificationAddress.To("invalid@example.com", "not a culture!"));
+
+        var notifier = new EmailNotifier(
+            emailSender,
+            new[] { resolver },
+            builder,
+            NullLogger<EmailNotifier>.Instance,
+            Options.Create(new NotificationEmailOptions { DefaultCulture = "en-US" }));
+
+        await notifier.HandleEventAsync(CreateEto(Guid.NewGuid()));
+
+        builder.Cultures.ShouldBe(new[] { "en-US" });
+        await emailSender.Received(1).SendAsync(
+            Arg.Is<string>(to => to == "invalid@example.com"),
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>());
+    }
+
+    [Fact]
+    public async Task Keeps_emailing_the_remaining_recipients_when_one_recipient_culture_name_is_invalid()
+    {
+        var emailSender = Substitute.For<IEmailSender>();
+        var resolver = Substitute.For<IEmailNotificationAddressResolver>();
+        var builder = new CapturingEmailBuilder();
+        var brokenUserId = Guid.NewGuid();
+        var laterUserId = Guid.NewGuid();
+        // Must be invalid on every platform. Windows rejects "english"; ICU on Linux accepts it as a language subtag
+        // and hands back a culture literally named "english" — see the silent-degradation note in #39. Only names with
+        // characters BCP-47 forbids, like the space and "!" here, throw everywhere.
+        resolver.GetEmailOrNullAsync(Arg.Is<EmailNotificationAddressResolveContext>(
+            context => context.UserId == brokenUserId))
+            .Returns(EmailNotificationAddress.To("broken@example.com", "not a culture!"));
+        resolver.GetEmailOrNullAsync(Arg.Is<EmailNotificationAddressResolveContext>(
+            context => context.UserId == laterUserId))
+            .Returns(EmailNotificationAddress.To("later@example.com", "ja-JP"));
+
+        var notifier = new EmailNotifier(
+            emailSender,
+            new[] { resolver },
+            builder,
+            NullLogger<EmailNotifier>.Instance,
+            Options.Create(new NotificationEmailOptions { DefaultCulture = "en-US" }));
+
+        // A bad culture on the first recipient must not abort the event: the recipients after it would get nothing,
+        // and a redelivery would re-mail the ones before it.
+        await notifier.HandleEventAsync(CreateEto(brokenUserId, laterUserId));
+
+        builder.Cultures.ShouldBe(new[] { "en-US", "ja-JP" });
+        await emailSender.Received(2).SendAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>());
+    }
+
+    [Fact]
+    public async Task Falls_back_to_the_ambient_culture_when_the_configured_default_culture_is_invalid()
+    {
+        var emailSender = Substitute.For<IEmailSender>();
+        var resolver = Substitute.For<IEmailNotificationAddressResolver>();
+        var builder = new CapturingEmailBuilder();
+        resolver.GetEmailOrNullAsync(Arg.Any<EmailNotificationAddressResolveContext>())
+            .Returns(EmailNotificationAddress.To("ambient@example.com"));
+
+        var notifier = new EmailNotifier(
+            emailSender,
+            new[] { resolver },
+            builder,
+            NullLogger<EmailNotifier>.Instance,
+            Options.Create(new NotificationEmailOptions { DefaultCulture = "not a culture!" }));
+
+        var previousCulture = CultureInfo.CurrentCulture;
+        var previousUICulture = CultureInfo.CurrentUICulture;
+        try
+        {
+            // Stand in for invariant globalization, where the ambient culture is the invariant one and no culture name
+            // resolves at all. Its Name is the empty string, which the build context must not reject as blank.
+            CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+            CultureInfo.CurrentUICulture = CultureInfo.InvariantCulture;
+
+            await notifier.HandleEventAsync(CreateEto(Guid.NewGuid()));
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = previousCulture;
+            CultureInfo.CurrentUICulture = previousUICulture;
+        }
+
+        builder.Cultures.ShouldBe(new[] { string.Empty });
+        builder.Contexts.Single().CultureName.ShouldBe(string.Empty);
+        await emailSender.Received(1).SendAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>());
+    }
+
+    [Fact]
     public async Task Restores_the_previous_culture_when_content_building_fails()
     {
         var emailSender = Substitute.For<IEmailSender>();

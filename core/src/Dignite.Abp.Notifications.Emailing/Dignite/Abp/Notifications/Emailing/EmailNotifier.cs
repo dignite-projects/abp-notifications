@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
@@ -158,12 +159,62 @@ public class EmailNotifier : INotificationNotifier<NotificationDeliveryEto>, ITr
         return null;
     }
 
+    /// <summary>
+    /// Falls back rather than throws. The culture name is untrusted input — a value out of the setting store, or
+    /// whatever an application resolver returned — and <see cref="CultureInfo.GetCultureInfo(string)"/> throws for a
+    /// name that is not well-formed, or for every real culture under invariant globalization. Letting that escape
+    /// would abort the whole event: the recipients after this one get no email, and a redelivery re-mails the ones
+    /// before it, because the transactional inbox deduplicates event delivery, not partial progress through the loop.
+    /// </summary>
     protected virtual CultureInfo ResolveCulture(string? cultureName)
     {
-        var selectedCultureName = string.IsNullOrWhiteSpace(cultureName)
-            ? EmailOptions.DefaultCulture
-            : cultureName;
+        if (TryGetCulture(cultureName, out var culture))
+        {
+            return culture;
+        }
 
-        return CultureInfo.GetCultureInfo(selectedCultureName);
+        if (!string.IsNullOrWhiteSpace(cultureName))
+        {
+            Logger.LogWarning(
+                "Recipient culture '{CultureName}' is not a valid culture name; falling back to '{DefaultCulture}'.",
+                cultureName,
+                EmailOptions.DefaultCulture);
+        }
+
+        if (TryGetCulture(EmailOptions.DefaultCulture, out var defaultCulture))
+        {
+            return defaultCulture;
+        }
+
+        // Also the invariant-globalization path, where no culture name resolves and there is nothing left to fall to.
+        Logger.LogWarning(
+            "{Options}.{Property} is '{DefaultCulture}', which is not a valid culture name; falling back to the "
+            + "ambient culture '{AmbientCulture}'.",
+            nameof(NotificationEmailOptions),
+            nameof(NotificationEmailOptions.DefaultCulture),
+            EmailOptions.DefaultCulture,
+            CultureInfo.CurrentUICulture.Name);
+
+        return CultureInfo.CurrentUICulture;
+    }
+
+    private static bool TryGetCulture(string? cultureName, [NotNullWhen(true)] out CultureInfo? culture)
+    {
+        if (string.IsNullOrWhiteSpace(cultureName))
+        {
+            culture = null;
+            return false;
+        }
+
+        try
+        {
+            culture = CultureInfo.GetCultureInfo(cultureName);
+            return true;
+        }
+        catch (CultureNotFoundException)
+        {
+            culture = null;
+            return false;
+        }
     }
 }
