@@ -4,7 +4,9 @@ using Microsoft.Extensions.Options;
 using NSubstitute;
 using Shouldly;
 using Volo.Abp.BackgroundJobs;
+using Volo.Abp.EventBus.Distributed;
 using Volo.Abp.Guids;
+using Volo.Abp.Localization;
 using Volo.Abp.MultiTenancy;
 using Volo.Abp.Timing;
 using Xunit;
@@ -72,30 +74,90 @@ public class DefaultNotificationPublisherTests
         await _distributor.DidNotReceiveWithAnyArgs().DistributeAsync(default!, default, default);
     }
 
+    /// <summary>
+    /// The background worker is the only context that has to restore a tenant: ABP's BackgroundJobExecuter only does
+    /// it for IMultiTenant job args, and NotificationDistributionJobArgs is not one. So these tests run the job over a
+    /// REAL DefaultNotificationDistributor, starting from no ambient tenant, and assert on what the pipeline actually
+    /// observed — substituting the distributor would only prove that Change() was called, not that it mattered.
+    /// </summary>
+    private sealed class JobPipeline
+    {
+        public TestCurrentTenant CurrentTenant { get; } = new();
+        public INotificationStore Store { get; } = Substitute.For<INotificationStore>();
+        public IDistributedEventBus EventBus { get; } = Substitute.For<IDistributedEventBus>();
+
+        public bool StoreWasCalled { get; private set; }
+        public Guid? TenantSeenByStore { get; private set; }
+        public Guid? TenantSeenByPublish { get; private set; }
+        public NotificationDeliveryEto? Published { get; private set; }
+
+        public NotificationDistributionJob CreateJob()
+        {
+            var definitionManager = Substitute.For<INotificationDefinitionManager>();
+            definitionManager.Get("test")
+                .Returns(new NotificationDefinition("test", new FixedLocalizableString("Test")).UseChannels("Test"));
+
+            Store.When(x => x.InsertNotificationAsync(Arg.Any<NotificationInfo>()))
+                .Do(_ =>
+                {
+                    StoreWasCalled = true;
+                    TenantSeenByStore = CurrentTenant.Id;
+                });
+            EventBus.WhenForAnyArgs(x => x.PublishAsync(Arg.Any<NotificationDeliveryEto>()))
+                .Do(ci =>
+                {
+                    TenantSeenByPublish = CurrentTenant.Id;
+                    Published = ci.Arg<NotificationDeliveryEto>();
+                });
+
+            return new NotificationDistributionJob(
+                new DefaultNotificationDistributor(Store, definitionManager, EventBus),
+                CurrentTenant);
+        }
+
+        public Task ExecuteAsync(Guid? notificationTenantId)
+        {
+            return CreateJob().ExecuteAsync(new NotificationDistributionJobArgs(
+                new NotificationInfo
+                {
+                    Id = Guid.NewGuid(),
+                    NotificationName = "test",
+                    TenantId = notificationTenantId
+                },
+                new[] { Guid.NewGuid() },
+                null));
+        }
+    }
+
     [Fact]
-    public async Task Distribution_job_runs_inside_the_notification_tenant_scope()
+    public async Task Distribution_job_restores_the_notification_tenant_on_the_background_worker()
     {
         var tenantId = Guid.NewGuid();
-        var distributor = Substitute.For<INotificationDistributor>();
-        var currentTenant = Substitute.For<ICurrentTenant>();
-        var tenantScope = Substitute.For<IDisposable>();
-        currentTenant.Change(tenantId, null).Returns(tenantScope);
+        var pipeline = new JobPipeline();
 
-        var job = new NotificationDistributionJob(distributor, currentTenant);
-        var args = new NotificationDistributionJobArgs(
-            new NotificationInfo
-            {
-                Id = Guid.NewGuid(),
-                NotificationName = "test",
-                TenantId = tenantId
-            },
-            new[] { Guid.NewGuid() },
-            null);
+        // A worker thread picked the job off the queue: no ambient tenant.
+        pipeline.CurrentTenant.Id.ShouldBeNull();
 
-        await job.ExecuteAsync(args);
+        await pipeline.ExecuteAsync(tenantId);
 
-        currentTenant.Received(1).Change(tenantId, null);
-        await distributor.Received(1).DistributeAsync(args.Notification, args.UserIds, args.ExcludedUserIds);
-        tenantScope.Received(1).Dispose();
+        pipeline.TenantSeenByStore.ShouldBe(tenantId);
+        pipeline.TenantSeenByPublish.ShouldBe(tenantId);
+        pipeline.Published.ShouldNotBeNull();
+        pipeline.Published!.TenantId.ShouldBe(tenantId);
+        pipeline.CurrentTenant.Id.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Distribution_job_stays_on_the_host_when_the_notification_has_no_tenant()
+    {
+        var pipeline = new JobPipeline();
+
+        await pipeline.ExecuteAsync(notificationTenantId: null);
+
+        pipeline.StoreWasCalled.ShouldBeTrue();
+        pipeline.TenantSeenByStore.ShouldBeNull();
+        pipeline.TenantSeenByPublish.ShouldBeNull();
+        pipeline.Published.ShouldNotBeNull();
+        pipeline.Published!.TenantId.ShouldBeNull();
     }
 }

@@ -52,7 +52,9 @@ public class DefaultNotificationDistributorTests
         eventTenantId.ShouldBe(tenantId);
 
         await store.Received(1).InsertNotificationAsync(Arg.Any<NotificationInfo>());
-        await store.Received(2).InsertUserNotificationAsync(Arg.Any<UserNotificationInfo>());
+        // The distributor never switches tenants; it just carries the notification's tenant onto every row it writes
+        // and onto the ETO. Restoring the tenant is NotificationDistributionJob's job on the background path.
+        await store.Received(2).InsertUserNotificationAsync(Arg.Is<UserNotificationInfo>(x => x.TenantId == tenantId));
     }
 
     [Fact]
