@@ -52,8 +52,8 @@ public class DefaultNotificationPublisher : INotificationPublisher, ITransientDe
             Id = GuidGenerator.Create(),
             NotificationName = notificationName,
             Data = data,
-            EntityTypeName = entityIdentifier?.EntityType.FullName,
-            EntityId = entityIdentifier?.EntityId.ToString(),
+            EntityTypeName = entityIdentifier?.EntityTypeName,
+            EntityId = entityIdentifier?.EntityId,
             Severity = severity,
             CreationTime = Clock.Now,
             TenantId = CurrentTenant.Id

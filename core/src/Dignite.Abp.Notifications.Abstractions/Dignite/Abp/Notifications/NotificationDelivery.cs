@@ -18,6 +18,15 @@ public class NotificationDelivery
 
     public DateTime CreationTime { get; set; }
 
+    /// <summary>
+    /// Stable name of the entity type this notification is about, e.g. <c>"Demo.Order"</c> — never a CLR type name.
+    /// Null when the notification is not about a specific entity.
+    /// </summary>
+    public string? EntityTypeName { get; set; }
+
+    /// <summary>The entity's identifier, rendered as a string. Null when <see cref="EntityTypeName"/> is null.</summary>
+    public string? EntityId { get; set; }
+
     public NotificationDelivery()
     {
     }
@@ -30,7 +39,9 @@ public class NotificationDelivery
             NotificationName = eto.NotificationName,
             Data = eto.Data,
             Severity = eto.Severity,
-            CreationTime = eto.CreationTime
+            CreationTime = eto.CreationTime,
+            EntityTypeName = eto.EntityTypeName,
+            EntityId = eto.EntityId
         };
     }
 }

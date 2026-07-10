@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Dignite.Abp.Notifications.Emailing;
 using Dignite.Abp.Notifications.Emailing.Identity;
@@ -54,7 +56,18 @@ public class EmailingIdentityResolver_Tests
         (await resolver.GetEmailOrNullAsync(CreateContext(userId))).ShouldBeNull();
     }
 
-    private static EmailNotificationAddressResolveContext CreateContext(Guid userId, Guid? tenantId = null)
+    [Fact]
+    public void Identity_resolver_is_the_built_in_fallback()
+    {
+        new IdentityEmailNotificationAddressResolver(Substitute.For<IIdentityUserRepository>())
+            .Order.ShouldBe(NotificationEmailProviderOrders.BuiltInFallback);
+
+        NotificationEmailProviderOrders.BuiltInFallback
+            .ShouldBeGreaterThan(NotificationEmailProviderOrders.Default);
+    }
+
+    internal static EmailNotificationAddressResolveContext CreateContext(
+        Guid userId, Guid? tenantId = null, string? entityTypeName = null, string? entityId = null)
     {
         return new EmailNotificationAddressResolveContext(
             new NotificationDelivery
@@ -63,7 +76,9 @@ public class EmailingIdentityResolver_Tests
                 NotificationName = "test.notification",
                 Data = new MessageNotificationData("test"),
                 Severity = NotificationSeverity.Info,
-                CreationTime = DateTime.UtcNow
+                CreationTime = DateTime.UtcNow,
+                EntityTypeName = entityTypeName,
+                EntityId = entityId
             },
             userId,
             tenantId);
@@ -78,10 +93,13 @@ public class EmailingIdentityDependency_Tests : AbpIntegratedTest<EmailingIdenti
     }
 
     [Fact]
-    public void Emailing_identity_module_replaces_the_null_address_resolver()
+    public void Emailing_identity_module_contributes_the_built_in_fallback_resolver()
     {
-        GetRequiredService<IEmailNotificationAddressResolver>()
-            .ShouldBeOfType<IdentityEmailNotificationAddressResolver>();
+        // It no longer replaces IEmailNotificationAddressResolver; it joins the chain, so an application resolver
+        // coexists with it rather than having to displace it.
+        GetRequiredService<IEnumerable<IEmailNotificationAddressResolver>>()
+            .OfType<IdentityEmailNotificationAddressResolver>()
+            .ShouldHaveSingleItem();
     }
 }
 

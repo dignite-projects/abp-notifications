@@ -105,7 +105,7 @@ public override void ConfigureServices(ServiceConfigurationContext context)
 `NotificationCenterDbContext` always defines the outbox/inbox tables
 (`IncomingEventRecord`/`OutgoingEventRecord`); whether an app actually routes distributed events
 through them is an ABP-level, app-side opt-in. This is what makes "persist the notification" +
-"publish `RealTimeNotifyEto`" atomic — see invariant §1/§5 in `notifications-invariants.md`.
+"publish `NotificationDeliveryEto`" atomic — see invariant §1/§5 in `notifications-invariants.md`.
 Don't remove these interfaces when touching the DbContext.
 
 ## Testing

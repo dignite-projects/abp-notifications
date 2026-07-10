@@ -25,6 +25,16 @@ public class NotificationDeliveryEto : IEventDataMayHaveTenantId
 
     public Guid[] UserIds { get; set; } = Array.Empty<Guid>();
 
+    /// <summary>
+    /// Stable name of the entity type this notification is about, e.g. <c>"Demo.Order"</c> — never a CLR type name.
+    /// Lets a notifier fetch business context (see <c>IEmailNotificationAddressResolver</c>) and lets a client build
+    /// an entity link without re-fetching. Null when the notification is not about a specific entity.
+    /// </summary>
+    public string? EntityTypeName { get; set; }
+
+    /// <summary>The entity's identifier, rendered as a string. Null when <see cref="EntityTypeName"/> is null.</summary>
+    public string? EntityId { get; set; }
+
     /// <summary>Notifier channels this notification may be delivered on (by name). Null/empty = no external channel.</summary>
     public string[]? Channels { get; set; }
 

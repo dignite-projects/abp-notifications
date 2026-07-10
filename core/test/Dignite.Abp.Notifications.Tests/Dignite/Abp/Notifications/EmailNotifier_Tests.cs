@@ -21,7 +21,7 @@ public class EmailNotifier_Tests
     {
         var notifier = new EmailNotifier(
             Substitute.For<IEmailSender>(),
-            Substitute.For<IEmailNotificationAddressResolver>(),
+            new[] { Substitute.For<IEmailNotificationAddressResolver>() },
             CreateDefaultBuilder(),
             NullLogger<EmailNotifier>.Instance);
 
@@ -44,7 +44,7 @@ public class EmailNotifier_Tests
 
         var notifier = new EmailNotifier(
             emailSender,
-            resolver,
+            new[] { resolver },
             CreateDefaultBuilder(),
             NullLogger<EmailNotifier>.Instance);
         var eto = new NotificationDeliveryEto(
@@ -67,6 +67,38 @@ public class EmailNotifier_Tests
     }
 
     [Fact]
+    public async Task Sends_one_email_per_recipient_even_when_their_addresses_collide()
+    {
+        var emailSender = Substitute.For<IEmailSender>();
+        var resolver = Substitute.For<IEmailNotificationAddressResolver>();
+        // Two users, one mailbox. ASP.NET Core Identity's UserOptions.RequireUniqueEmail defaults to false, so a
+        // shared team or family account is a legitimate configuration, not a misconfiguration.
+        resolver.GetEmailOrNullAsync(Arg.Any<EmailNotificationAddressResolveContext>()).Returns("shared@example.com");
+
+        var notifier = new EmailNotifier(
+            emailSender,
+            new[] { resolver },
+            CreateDefaultBuilder(),
+            NullLogger<EmailNotifier>.Instance);
+        var eto = new NotificationDeliveryEto(
+            Guid.NewGuid(), "order.shipped", new MessageNotificationData("Shipped!"),
+            NotificationSeverity.Info, DateTime.UtcNow,
+            new[] { Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid() })
+        {
+            Channels = new[] { EmailNotifier.ChannelName }
+        };
+
+        await notifier.HandleEventAsync(eto);
+
+        // Deliberately NOT deduplicated by address. The body is built per recipient
+        // (NotificationEmailBuildContext carries the UserId), so collapsing three recipients into one send would
+        // silently drop two personalized emails. A provider returning one address for every user is violating its
+        // contract; N loud duplicates point straight at it, whereas a silently dropped email does not.
+        await emailSender.Received(3).SendAsync(
+            "shared@example.com", Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>());
+    }
+
+    [Fact]
     public async Task Skips_when_the_email_channel_is_not_allowed()
     {
         var emailSender = Substitute.For<IEmailSender>();
@@ -75,7 +107,7 @@ public class EmailNotifier_Tests
 
         var notifier = new EmailNotifier(
             emailSender,
-            resolver,
+            new[] { resolver },
             CreateDefaultBuilder(),
             NullLogger<EmailNotifier>.Instance);
         var eto = new NotificationDeliveryEto(
@@ -99,7 +131,7 @@ public class EmailNotifier_Tests
         resolver.GetEmailOrNullAsync(Arg.Any<EmailNotificationAddressResolveContext>()).Returns("a@b.com");
         var notifier = new EmailNotifier(
             emailSender,
-            resolver,
+            new[] { resolver },
             CreateDefaultBuilder(),
             NullLogger<EmailNotifier>.Instance);
 
@@ -131,7 +163,7 @@ public class EmailNotifier_Tests
 
         var notifier = new EmailNotifier(
             emailSender,
-            resolver,
+            new[] { resolver },
             builder,
             NullLogger<EmailNotifier>.Instance);
         var eto = new NotificationDeliveryEto(
@@ -166,7 +198,7 @@ public class EmailNotifier_Tests
 
         var notifier = new EmailNotifier(
             emailSender,
-            resolver,
+            new[] { resolver },
             CreateDefaultBuilder(),
             NullLogger<EmailNotifier>.Instance);
         var eto = new NotificationDeliveryEto(
@@ -189,7 +221,7 @@ public class EmailNotifier_Tests
     public async Task Default_builder_uses_provider_order_and_allows_business_providers_before_built_in_fallbacks()
     {
         var businessProvider = new StaticEmailContentProvider(
-            NotificationEmailContentProviderOrders.Default,
+            NotificationEmailProviderOrders.Default,
             _ => new NotificationEmail("business", "custom"));
         var builder = new DefaultNotificationEmailBuilder(new INotificationEmailContentProvider[]
         {
@@ -242,6 +274,137 @@ public class EmailNotifier_Tests
         email.ShouldNotBeNull();
         email.Subject.ShouldBe("test.notification");
         email.Body.ShouldBe("OrderShipped");
+    }
+
+    // ---- the address resolver chain, which EmailNotifier now owns rather than a separate aggregate service ----
+
+    [Fact]
+    public async Task Lower_order_resolver_wins_and_later_ones_are_not_consulted()
+    {
+        var emailSender = Substitute.For<IEmailSender>();
+        var business = new StubAddressResolver(NotificationEmailProviderOrders.Default, "order@example.com");
+        var fallback = new StubAddressResolver(NotificationEmailProviderOrders.BuiltInFallback, "account@example.com");
+
+        // Registration order deliberately reversed: Order, not DI order, decides.
+        var notifier = new EmailNotifier(
+            emailSender,
+            new IEmailNotificationAddressResolver[] { fallback, business },
+            CreateDefaultBuilder(),
+            NullLogger<EmailNotifier>.Instance);
+
+        await notifier.HandleEventAsync(CreateEto(Guid.NewGuid()));
+
+        await emailSender.Received(1).SendAsync(
+            "order@example.com", Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>());
+        business.Calls.ShouldBe(1);
+        fallback.Calls.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task A_null_address_passes_to_the_next_resolver()
+    {
+        var emailSender = Substitute.For<IEmailSender>();
+        var passes = new StubAddressResolver(NotificationEmailProviderOrders.Default, null);
+        var fallback = new StubAddressResolver(NotificationEmailProviderOrders.BuiltInFallback, "account@example.com");
+
+        var notifier = new EmailNotifier(
+            emailSender,
+            new IEmailNotificationAddressResolver[] { passes, fallback },
+            CreateDefaultBuilder(),
+            NullLogger<EmailNotifier>.Instance);
+
+        await notifier.HandleEventAsync(CreateEto(Guid.NewGuid()));
+
+        await emailSender.Received(1).SendAsync(
+            "account@example.com", Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>());
+        passes.Calls.ShouldBe(1);
+        fallback.Calls.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task An_empty_resolver_chain_sends_nothing()
+    {
+        var emailSender = Substitute.For<IEmailSender>();
+
+        var notifier = new EmailNotifier(
+            emailSender,
+            Array.Empty<IEmailNotificationAddressResolver>(),
+            CreateDefaultBuilder(),
+            NullLogger<EmailNotifier>.Instance);
+
+        await notifier.HandleEventAsync(CreateEto(Guid.NewGuid()));
+
+        await emailSender.DidNotReceiveWithAnyArgs().SendAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>());
+    }
+
+    [Fact]
+    public async Task Resolvers_of_equal_order_are_broken_by_type_name_so_the_chain_is_deterministic()
+    {
+        // Which mailbox a user receives mail at must not depend on module load order.
+        foreach (var chain in new[]
+                 {
+                     new IEmailNotificationAddressResolver[] { new AaaAddressResolver(), new ZzzAddressResolver() },
+                     new IEmailNotificationAddressResolver[] { new ZzzAddressResolver(), new AaaAddressResolver() }
+                 })
+        {
+            var emailSender = Substitute.For<IEmailSender>();
+            var notifier = new EmailNotifier(
+                emailSender, chain, CreateDefaultBuilder(), NullLogger<EmailNotifier>.Instance);
+
+            await notifier.HandleEventAsync(CreateEto(Guid.NewGuid()));
+
+            await emailSender.Received(1).SendAsync(
+                "aaa@example.com", Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>());
+        }
+    }
+
+    private static NotificationDeliveryEto CreateEto(params Guid[] userIds)
+    {
+        return new NotificationDeliveryEto(
+            Guid.NewGuid(), "order.shipped", new MessageNotificationData("Shipped!"),
+            NotificationSeverity.Info, DateTime.UtcNow, userIds)
+        {
+            Channels = new[] { EmailNotifier.ChannelName }
+        };
+    }
+
+    private class StubAddressResolver : IEmailNotificationAddressResolver
+    {
+        private readonly string? _address;
+
+        public int Order { get; }
+
+        public int Calls { get; private set; }
+
+        public StubAddressResolver(int order, string? address)
+        {
+            Order = order;
+            _address = address;
+        }
+
+        public Task<string?> GetEmailOrNullAsync(EmailNotificationAddressResolveContext context)
+        {
+            Calls++;
+            return Task.FromResult(_address);
+        }
+    }
+
+    // Two distinct types at the same Order: "AaaAddressResolver" sorts before "ZzzAddressResolver" by FullName.
+    private class AaaAddressResolver : IEmailNotificationAddressResolver
+    {
+        public int Order => NotificationEmailProviderOrders.Default;
+
+        public Task<string?> GetEmailOrNullAsync(EmailNotificationAddressResolveContext context)
+            => Task.FromResult<string?>("aaa@example.com");
+    }
+
+    private class ZzzAddressResolver : IEmailNotificationAddressResolver
+    {
+        public int Order => NotificationEmailProviderOrders.Default;
+
+        public Task<string?> GetEmailOrNullAsync(EmailNotificationAddressResolveContext context)
+            => Task.FromResult<string?>("zzz@example.com");
     }
 
     private static DefaultNotificationEmailBuilder CreateDefaultBuilder()

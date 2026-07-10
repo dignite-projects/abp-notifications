@@ -3,18 +3,16 @@ using Volo.Abp.DependencyInjection;
 
 namespace Dignite.Abp.Notifications.Emailing;
 
-public class MessageNotificationEmailContentProvider : INotificationEmailContentProvider, ITransientDependency
+/// <summary>Built-in fallback: emails a <see cref="MessageNotificationData"/> payload's pre-formatted text.</summary>
+public class MessageNotificationEmailContentProvider
+    : NotificationEmailContentProvider<MessageNotificationData>, ITransientDependency
 {
-    public int Order => NotificationEmailContentProviderOrders.BuiltInFallback;
+    public override int Order => NotificationEmailProviderOrders.BuiltInFallback;
 
-    public virtual Task<NotificationEmail?> BuildOrNullAsync(NotificationEmailBuildContext context)
+    protected override Task<NotificationEmail?> BuildOrNullAsync(
+        NotificationEmailBuildContext context, MessageNotificationData data)
     {
-        if (context.Notification.Data is not MessageNotificationData message)
-        {
-            return Task.FromResult<NotificationEmail?>(null);
-        }
-
         return Task.FromResult<NotificationEmail?>(
-            new NotificationEmail(context.Notification.NotificationName, message.Message));
+            new NotificationEmail(context.Notification.NotificationName, data.Message));
     }
 }

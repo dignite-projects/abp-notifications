@@ -143,6 +143,42 @@ public class DefaultNotificationDistributorTests
         await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<NotificationDeliveryEto>());
     }
 
+    [Fact]
+    public async Task Carries_entity_identity_onto_the_delivery_event_and_the_per_user_view()
+    {
+        var store = Substitute.For<INotificationStore>();
+        var definitionManager = Substitute.For<INotificationDefinitionManager>();
+        var eventBus = Substitute.For<IDistributedEventBus>();
+        definitionManager.Get("test").Returns(DefinitionWithChannels());
+
+        NotificationDeliveryEto? published = null;
+        eventBus.WhenForAnyArgs(x => x.PublishAsync(Arg.Any<NotificationDeliveryEto>()))
+            .Do(ci => published = ci.Arg<NotificationDeliveryEto>());
+
+        var distributor = new DefaultNotificationDistributor(store, definitionManager, eventBus);
+
+        await distributor.DistributeAsync(
+            new NotificationInfo
+            {
+                Id = Guid.NewGuid(),
+                NotificationName = "test",
+                EntityTypeName = "Demo.Order",
+                EntityId = "1001"
+            },
+            new[] { Guid.NewGuid(), Guid.NewGuid() });
+
+        // Without this, a notifier cannot tell which entity a notification is about.
+        published.ShouldNotBeNull();
+        published!.EntityTypeName.ShouldBe("Demo.Order");
+        published.EntityId.ShouldBe("1001");
+
+        // The per-user view forwards entity identity but must still drop the recipient list (invariants §4).
+        var delivery = NotificationDelivery.FromEto(published);
+        delivery.EntityTypeName.ShouldBe("Demo.Order");
+        delivery.EntityId.ShouldBe("1001");
+        typeof(NotificationDelivery).GetProperty("UserIds").ShouldBeNull();
+    }
+
     private static NotificationDefinition DefinitionWithChannels()
     {
         return new NotificationDefinition("test", new FixedLocalizableString("Test")).UseChannels("Test");

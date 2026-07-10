@@ -22,7 +22,7 @@ abp-notifications/
 ├── core/
 │   ├── src/
 │   │   ├── Dignite.Abp.Notifications.Abstractions/  # contracts shared by everything: NotificationData,
-│   │   │                                             # RealTimeNotifyEto, INotificationNotifier, registries.
+│   │   │                                             # NotificationDeliveryEto, INotificationNotifier, registries.
 │   │   │                                             # Multi-targeted (netstandard2.0/2.1/net10.0) — Notifiers
 │   │   │                                             # and remote consumers depend on ONLY this.
 │   │   ├── Dignite.Abp.Notifications/               # the core: definitions, publishing, distribution,
@@ -108,7 +108,7 @@ core publish/distribute logic has to work with `NullNotificationStore` too.
 **A new Notifier** (new channel, e.g. WebPush/FCM/SMS):
 1. New project `Dignite.Abp.Notifications.<Channel>` under `core/src/`, depending on
    `Notifications.Abstractions` (only, if possible).
-2. Implement `IDistributedEventHandler<RealTimeNotifyEto>` (and prefer the explicit
+2. Implement `IDistributedEventHandler<NotificationDeliveryEto>` (and prefer the explicit
    `INotificationNotifier` contract where one exists) to relay to the channel's SDK.
 3. Module class with `[DependsOn(typeof(AbpNotificationsAbstractionsModule), ...)]`.
 

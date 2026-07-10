@@ -163,7 +163,7 @@ public class ShopNotificationDefinitionProvider : NotificationDefinitionProvider
 await _publisher.PublishAsync(
     "Demo.OrderShipped",
     new OrderShippedNotificationData { OrderNumber = "SO-1001", ItemCount = 3 },
-    entityIdentifier: new NotificationEntityIdentifier(typeof(Order), "1001"),
+    entityIdentifier: new NotificationEntityIdentifier("Demo.Order", "1001"),
     severity: NotificationSeverity.Success,
     userIds: new[] { customerId });
 ```
@@ -182,15 +182,60 @@ enumeration and routing.
 - **SignalR** — clients connect to the hub at `/signalr-hubs/notifications` (an ABP `AbpHub`, mapped
   **automatically**; the host must *not* call `MapHub`) and receive a trimmed `NotificationDelivery`
   with the recipient list stripped, so siblings' user IDs never leak to each other.
-- **Emailing** — resolves each recipient's email address and sends via ABP's `IEmailSender`. The
-  base Emailing package uses `NullEmailNotificationAddressResolver`, so no messages are sent until
-  the host provides an `IEmailNotificationAddressResolver`. If the host uses ABP Identity as the
-  email source, install `Dignite.Abp.Notifications.Emailing.Identity` and depend on
-  `AbpNotificationsEmailingIdentityModule`. The host still owns SMTP / `IEmailSender`
-  configuration; this module only resolves `UserId` to an email address. Address resolvers receive
-  an `EmailNotificationAddressResolveContext` with the notification and `TenantId`; local
-  repository-backed resolvers can switch tenant internally, while remote/microservice-backed
-  resolvers should pass that tenant explicitly across their service boundary.
+- **Emailing** — resolves each recipient's email address and sends via ABP's `IEmailSender`. Addresses
+  come from an ordered `IEmailNotificationAddressResolver` chain: `EmailNotifier` takes the first
+  non-null address. The base Emailing package registers no resolver, so nothing is sent (and a warning
+  is logged) until one exists. Install `Dignite.Abp.Notifications.Emailing.Identity` to get the account
+  email as the built-in fallback, and register your own resolver at
+  `NotificationEmailProviderOrders.Default` to claim specific notifications — for example, sending an
+  *order shipped* mail to the contact address recorded on the order rather than the account address:
+
+  ```csharp
+  public class OrderEmailNotificationAddressResolver
+      : IEmailNotificationAddressResolver, ITransientDependency
+  {
+      public int Order => NotificationEmailProviderOrders.Default;
+
+      public async Task<string?> GetEmailOrNullAsync(EmailNotificationAddressResolveContext context)
+      {
+          if (context.Notification.NotificationName != "Demo.OrderShipped")
+          {
+              return null;  // not mine — fall through to the Identity fallback
+          }
+
+          var contact = await _orders.FindContactAsync(context.Notification.EntityId!, context.UserId);
+          return contact?.Email;   // null also falls through
+      }
+  }
+  ```
+
+  A resolver returns the address **for this user** in this entity context, never "the entity's
+  address" — `EmailNotifier` builds the body for that same user and sends one email per recipient.
+  Never call `CurrentTenant.Change` in a resolver: ABP's event bus has already entered the
+  notification's tenant. `context.TenantId` exists for resolvers that must forward the tenant across a
+  boundary the ambient scope cannot cross, such as a remote user service. The host still owns SMTP /
+  `IEmailSender` configuration.
+
+  The **body** comes from the parallel `INotificationEmailContentProvider` chain. Derive from
+  `NotificationEmailContentProvider<TData>` and the payload is narrowed for you — forgetting the type
+  check would otherwise make your provider claim every notification in the system:
+
+  ```csharp
+  public class OrderShippedEmailContentProvider
+      : NotificationEmailContentProvider<OrderShippedNotificationData>, ITransientDependency
+  {
+      protected override Task<NotificationEmail?> BuildOrNullAsync(
+          NotificationEmailBuildContext context, OrderShippedNotificationData data)
+      {
+          return Task.FromResult<NotificationEmail?>(
+              new NotificationEmail($"Order {data.OrderNumber} shipped", RenderBody(data), isBodyHtml: true));
+      }
+  }
+  ```
+
+  Subclasses of `TData` match too, so a provider typed on a base payload keeps handling payloads derived
+  from it. Implement `INotificationEmailContentProvider` directly only for the rare provider that handles
+  two unrelated payload types.
 
 **Write your own** (Web Push, FCM, SMS, Webhook, …): create a project depending on
 `Dignite.Abp.Notifications.Abstractions` **only**, and handle the event:

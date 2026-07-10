@@ -49,7 +49,7 @@ public class DemoNotificationAppService : HostAppService
                 ItemCount = 2,
                 ImageUrl = "https://placehold.co/60x60"
             },
-            new NotificationEntityIdentifier(typeof(global::Demo.Order), orderId),
+            new NotificationEntityIdentifier("Demo.Order", orderId),
             NotificationSeverity.Success,
             new[] { CurrentUser.GetId() });
     }

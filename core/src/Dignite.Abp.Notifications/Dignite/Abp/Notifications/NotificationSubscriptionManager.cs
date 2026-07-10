@@ -97,6 +97,6 @@ public class NotificationSubscriptionManager : INotificationSubscriptionManager,
     {
         return identifier == null
             ? (null, null)
-            : (identifier.EntityType.FullName, identifier.EntityId.ToString());
+            : (identifier.EntityTypeName, identifier.EntityId);
     }
 }

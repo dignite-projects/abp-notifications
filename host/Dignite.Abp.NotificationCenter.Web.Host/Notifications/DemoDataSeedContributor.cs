@@ -58,7 +58,7 @@ public class DemoDataSeedContributor : IDataSeedContributor, ITransientDependenc
                 ItemCount = 3,
                 ImageUrl = "https://placehold.co/60x60"
             },
-            new NotificationEntityIdentifier(typeof(global::Demo.Order), "1001"),
+            new NotificationEntityIdentifier("Demo.Order", "1001"),
             NotificationSeverity.Success,
             recipients);
 

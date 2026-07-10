@@ -18,7 +18,7 @@ paths:
 ## This repo's actual dependency graph (two trees)
 
 ```
-Notifications.Abstractions               (contracts: NotificationData, RealTimeNotifyEto, registries)
+Notifications.Abstractions               (contracts: NotificationData, NotificationDeliveryEto, registries)
         │
         ▼
 Notifications (Core)                     (definitions, publish/distribute, INotificationStore abstraction)
@@ -36,8 +36,8 @@ NotificationCenter.Domain.Shared ──▶ NotificationCenter.Domain
      NotificationCenter.Application ──▶ HttpApi / HttpApi.Client
 
 Notifiers (SignalR / Emailing / future WebPush, FCM, SMS, Webhook):
-  depend on Abstractions only where possible (SignalR does; see notifications-invariants.md §3
-  for the one current exception) — never on NotificationCenter.
+  depend on Abstractions + their own channel SDK only, no exceptions
+  (see notifications-invariants.md §3) — never on Core or NotificationCenter.
 ```
 
 Central rule specific to this repo: **`NotificationCenter` is an optional application of `Notifications`

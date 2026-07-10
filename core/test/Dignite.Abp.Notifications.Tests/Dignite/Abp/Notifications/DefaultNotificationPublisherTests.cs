@@ -61,6 +61,25 @@ public class DefaultNotificationPublisherTests
     }
 
     [Fact]
+    public async Task Publishes_the_caller_supplied_entity_type_name_verbatim()
+    {
+        var publisher = CreatePublisher(threshold: 3);
+
+        await publisher.PublishAsync(
+            "test",
+            entityIdentifier: new NotificationEntityIdentifier("Demo.Order", "1001"),
+            userIds: new[] { Guid.NewGuid() });
+
+        // EntityTypeName is persisted, matched by string equality against stored subscriptions, returned over REST
+        // and used as the EntityLinkResolvers key. It must be the caller's stable string, never a CLR type name —
+        // notifications-invariants.md §1.
+        await _distributor.Received(1).DistributeAsync(
+            Arg.Is<NotificationInfo>(n => n.EntityTypeName == "Demo.Order" && n.EntityId == "1001"),
+            Arg.Any<Guid[]?>(),
+            Arg.Any<Guid[]?>());
+    }
+
+    [Fact]
     public async Task Enqueues_background_job_when_above_threshold()
     {
         var tenantId = Guid.NewGuid();

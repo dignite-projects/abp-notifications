@@ -28,6 +28,15 @@ Newtonsoft.Json anywhere in this pipeline.
 - Add a round-trip test for any new `NotificationData` subclass: publish → persist → deserialize on
   a "remote" client, and assert the JSON contains your discriminator string, not a CLR type name.
 
+**The same rule governs `EntityTypeName`.** `NotificationEntityIdentifier` takes a stable,
+caller-chosen string — `new NotificationEntityIdentifier("Demo.Order", orderId)`, never
+`typeof(Order)`. That value is persisted on `Notification` and `NotificationSubscription`, matched by
+plain string equality when `NotificationStore` resolves subscribers, returned over REST as
+`UserNotificationDto.EntityTypeName`, and used as the key of
+`NotificationCenterWebOptions.EntityLinkResolvers`. A `Type.FullName` there silently orphans every
+stored subscription and breaks every bell link the day someone renames a namespace — the same failure
+mode as above, on a different field.
+
 ## 2. DI lifetime discipline — never let a Singleton capture a Scoped dependency
 
 Before marking a service `ISingletonDependency`, check every constructor dependency (transitively)
@@ -46,16 +55,21 @@ constructor injection).
 
 ## 3. Notifiers are plugins — depend on `Abstractions`, not Core or Center
 
-A Notifier (SignalR, Email, future WebPush/FCM/SMS/Webhook) should reference
-`Dignite.Abp.Notifications.Abstractions` and its own channel SDK — nothing else in this repo if
-avoidable. It reacts to `RealTimeNotifyEto` (an `IDistributedEventHandler<RealTimeNotifyEto>`);
-it should not need `INotificationStore`, EF Core, or MongoDB. This is what lets a channel be
-added, removed, or deployed independently without touching Core. (`Emailing` is a known exception
-today — see `template/app.md`; don't take it as precedent without a real reason.)
+A Notifier (SignalR, Email, future WebPush/FCM/SMS/Webhook) references
+`Dignite.Abp.Notifications.Abstractions` and its own channel SDK — nothing else in this repo. It
+reacts to `NotificationDeliveryEto` (an `IDistributedEventHandler<NotificationDeliveryEto>`); it
+should not need `INotificationStore`, EF Core, or MongoDB. This is what lets a channel be added,
+removed, or deployed independently without touching Core.
+
+There is **no exception left** — `Emailing` used to be one and no longer is; its `.csproj` has a
+single `ProjectReference`, to `Abstractions`. Don't reintroduce one. Host-specific address or
+identity lookups belong in a separate integration package, as `Notifications.Emailing.Identity` does
+for ABP Identity. Everything a Notifier needs about the notification — including the entity it
+concerns (`EntityTypeName` / `EntityId`) — rides on the ETO.
 
 ## 4. Don't leak other recipients through the distributed event
 
-`RealTimeNotifyEto` currently carries the full `Guid[] UserIds` of every recipient of a
+`NotificationDeliveryEto` currently carries the full `Guid[] UserIds` of every recipient of a
 notification. A Notifier that relays the ETO payload as-is to each user's client will leak sibling
 recipients' user IDs to each other. When writing or touching a Notifier, deliver a per-recipient
 view (or at least strip `UserIds` down before it reaches the client), don't forward the raw ETO.
