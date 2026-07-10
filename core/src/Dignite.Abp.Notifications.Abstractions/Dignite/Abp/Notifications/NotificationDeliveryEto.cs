@@ -28,7 +28,12 @@ public class NotificationDeliveryEto : IEventDataMayHaveTenantId
     /// <summary>Notifier channels this notification may be delivered on (by name). Null/empty = no external channel.</summary>
     public string[]? Channels { get; set; }
 
-    /// <summary>The tenant that owns this notification. Null means host-side/no tenant.</summary>
+    /// <summary>
+    /// The tenant that owns this notification, captured by <c>INotificationPublisher</c> at publish time. ABP's event
+    /// bus enters this tenant before invoking a notifier, so a notifier never has to switch tenants itself. When it
+    /// is null, <see cref="IEventDataMayHaveTenantId.IsMultiTenant"/> returns false and the bus leaves the ambient
+    /// tenant alone — which, for an out-of-process consumer, is host.
+    /// </summary>
     public Guid? TenantId { get; set; }
 
     public NotificationDeliveryEto()

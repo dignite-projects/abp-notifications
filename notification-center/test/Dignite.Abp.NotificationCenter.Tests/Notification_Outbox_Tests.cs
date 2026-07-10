@@ -4,6 +4,7 @@ using Dignite.Abp.Notifications;
 using Shouldly;
 using Volo.Abp.Domain.Repositories;
 using Volo.Abp.EntityFrameworkCore.DistributedEvents;
+using Volo.Abp.MultiTenancy;
 using Volo.Abp.Uow;
 using Xunit;
 
@@ -45,6 +46,38 @@ public class Notification_Outbox_Tests : NotificationCenterTestBase<AbpNotificat
             ((int)await GetRequiredService<IRepository<OutgoingEventRecord, Guid>>().GetCountAsync())
                 .ShouldBeGreaterThan(0);
         });
+    }
+
+    /// <summary>
+    /// The in-process half of the tenant story: distribution on the caller's thread inherits the caller's tenant, so
+    /// nothing in the pipeline has to switch. The store's `notification.TenantId ?? CurrentTenant.Id` fallback is what
+    /// stamps the row when the caller left TenantId unset. (The background half lives in DefaultNotificationPublisherTests.)
+    /// </summary>
+    [Fact]
+    public async Task Inline_distribution_persists_into_the_ambient_tenant()
+    {
+        var notificationId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
+
+        using (GetRequiredService<ICurrentTenant>().Change(tenantId, "tenant"))
+        {
+            await WithUnitOfWorkAsync(async () =>
+            {
+                await GetRequiredService<INotificationDistributor>()
+                    .DistributeAsync(NewNotification(notificationId), new[] { Guid.NewGuid() });
+            });
+
+            await WithUnitOfWorkAsync(async () =>
+            {
+                var notification = await GetRequiredService<IRepository<Notification, Guid>>()
+                    .FindAsync(notificationId);
+
+                notification.ShouldNotBeNull();
+                notification!.TenantId.ShouldBe(tenantId);
+                ((int)await GetRequiredService<IRepository<OutgoingEventRecord, Guid>>().GetCountAsync())
+                    .ShouldBeGreaterThan(0);
+            });
+        }
     }
 
     [Fact]

@@ -2,35 +2,33 @@ using System.Threading.Tasks;
 using Dignite.Abp.Notifications.Emailing;
 using Volo.Abp.DependencyInjection;
 using Volo.Abp.Identity;
-using Volo.Abp.MultiTenancy;
 
 namespace Dignite.Abp.Notifications.Emailing.Identity;
 
 /// <summary>
 /// Resolves notification email recipients from ABP Identity users.
 /// </summary>
+/// <remarks>
+/// Queries Identity under the ambient tenant and never switches tenants itself. A notifier is an
+/// <c>IDistributedEventHandler&lt;NotificationDeliveryEto&gt;</c>, and ABP's <c>EventBusBase</c> already enters
+/// <c>NotificationDeliveryEto.TenantId</c> before invoking it — in-process and across a message broker alike.
+/// Resolvers that reach a user directory outside this process (a remote user service) need the tenant on the wire
+/// instead, which is why <see cref="EmailNotificationAddressResolveContext.TenantId"/> still carries it explicitly.
+/// </remarks>
 [Dependency(ReplaceServices = true)]
 [ExposeServices(typeof(IEmailNotificationAddressResolver))]
 public class IdentityEmailNotificationAddressResolver : IEmailNotificationAddressResolver, ITransientDependency
 {
     protected IIdentityUserRepository UserRepository { get; }
 
-    protected ICurrentTenant CurrentTenant { get; }
-
-    public IdentityEmailNotificationAddressResolver(
-        IIdentityUserRepository userRepository,
-        ICurrentTenant currentTenant)
+    public IdentityEmailNotificationAddressResolver(IIdentityUserRepository userRepository)
     {
         UserRepository = userRepository;
-        CurrentTenant = currentTenant;
     }
 
     public virtual async Task<string?> GetEmailOrNullAsync(EmailNotificationAddressResolveContext context)
     {
-        using (CurrentTenant.Change(context.TenantId, null))
-        {
-            var user = await UserRepository.FindAsync(context.UserId);
-            return string.IsNullOrWhiteSpace(user?.Email) ? null : user.Email;
-        }
+        var user = await UserRepository.FindAsync(context.UserId);
+        return string.IsNullOrWhiteSpace(user?.Email) ? null : user.Email;
     }
 }
