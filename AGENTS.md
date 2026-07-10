@@ -30,7 +30,7 @@ solely to run/demo the whole stack end-to-end. A real consuming application stil
 One `.slnx` solution — **`Dignite.Abp.Notifications.slnx`** — aggregates both module trees:
 
 - **`core/`** — the core framework: `core/src/{Abstractions, Notifications, Notifications.Identity,
-  Notifications.Emailing, Notifications.SignalR}` + `core/test`.
+  Notifications.Emailing, Notifications.Emailing.Identity, Notifications.SignalR}` + `core/test`.
 - **`notification-center/`** — optional persistence + REST API + MVC UI, depends on Core:
   `notification-center/src/{Domain.Shared, Domain, Application.Contracts, Application, HttpApi,
   HttpApi.Client, EntityFrameworkCore, MongoDB, Web}` + `notification-center/test`. `Web` is the MVC UI

@@ -10,6 +10,11 @@ changes.
 
 ## [Unreleased]
 
+### Added
+
+- Added `Dignite.Abp.Notifications.Emailing.Identity`, an optional ABP Identity-backed
+  `IEmailNotificationAddressResolver` for the Emailing notifier.
+
 ## [10.0.0-preview.1] - 2026-07-09
 
 ### Added
