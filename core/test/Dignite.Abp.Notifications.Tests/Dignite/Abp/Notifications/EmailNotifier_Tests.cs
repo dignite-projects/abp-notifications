@@ -270,9 +270,12 @@ public class EmailNotifier_Tests
         var builder = new CapturingEmailBuilder();
         var brokenUserId = Guid.NewGuid();
         var laterUserId = Guid.NewGuid();
+        // Must be invalid on every platform. Windows rejects "english"; ICU on Linux accepts it as a language subtag
+        // and hands back a culture literally named "english" — see the silent-degradation note in #39. Only names with
+        // characters BCP-47 forbids, like the space and "!" here, throw everywhere.
         resolver.GetEmailOrNullAsync(Arg.Is<EmailNotificationAddressResolveContext>(
             context => context.UserId == brokenUserId))
-            .Returns(EmailNotificationAddress.To("broken@example.com", "english"));
+            .Returns(EmailNotificationAddress.To("broken@example.com", "not a culture!"));
         resolver.GetEmailOrNullAsync(Arg.Is<EmailNotificationAddressResolveContext>(
             context => context.UserId == laterUserId))
             .Returns(EmailNotificationAddress.To("later@example.com", "ja-JP"));
@@ -307,7 +310,7 @@ public class EmailNotifier_Tests
             new[] { resolver },
             builder,
             NullLogger<EmailNotifier>.Instance,
-            Options.Create(new NotificationEmailOptions { DefaultCulture = "english" }));
+            Options.Create(new NotificationEmailOptions { DefaultCulture = "not a culture!" }));
 
         var previousCulture = CultureInfo.CurrentCulture;
         var previousUICulture = CultureInfo.CurrentUICulture;
