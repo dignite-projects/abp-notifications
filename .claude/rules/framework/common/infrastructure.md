@@ -112,9 +112,9 @@ public class OrderCreatedEtoHandler : IDistributedEventHandler<OrderCreatedEto>,
 await _distributedEventBus.PublishAsync(new OrderCreatedEto { ... });
 ```
 
-**This repo's own distributed event is `RealTimeNotifyEto`** (`Dignite.Abp.Notifications.RealTimeNotify`)
+**This repo's own distributed event is `NotificationDeliveryEto`** (`Dignite.Abp.Notifications.NotificationDelivery`)
 — the boundary between Core and every Notifier. Every Notifier is
-`IDistributedEventHandler<RealTimeNotifyEto>, ITransientDependency`. Before touching it, read
+`IDistributedEventHandler<NotificationDeliveryEto>, ITransientDependency`. Before touching it, read
 `framework/common/notifications-invariants.md` §1 (serialization) and §4 (don't leak other
 recipients' `UserIds`).
 
