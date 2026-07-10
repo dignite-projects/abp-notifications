@@ -1,5 +1,9 @@
 name: CI
 
+# `build-and-test` is a required status check on main (with enforce_admins), so the pull_request
+# trigger must not filter by path: a docs-only PR would never start this workflow, the check would
+# never report, and the PR could never be merged by anyone. The push trigger is informational and
+# keeps its filter.
 on:
   push:
     branches: [ main ]
@@ -8,9 +12,6 @@ on:
       - '.claude/**'
   pull_request:
     branches: [ main ]
-    paths-ignore:
-      - '**.md'
-      - '.claude/**'
 
 jobs:
   build-and-test:

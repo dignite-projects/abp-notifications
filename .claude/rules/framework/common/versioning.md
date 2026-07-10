@@ -30,7 +30,7 @@ just the version shape.
 
 ## Mechanics
 
-- `<Version>` lives in root `Directory.Build.props`, applies to all 14 packable projects — there
+- `<Version>` lives in root `Directory.Build.props`, applies to all 15 packable projects — there
   is no per-project versioning in this repo.
 - `<AssemblyVersion>` is pinned separately (`1.0.0.0`) and never bumped in lockstep with
   `<Version>` — see `notifications-invariants.md` §1 for why assembly-version churn is dangerous
