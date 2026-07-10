@@ -10,17 +10,52 @@ changes.
 
 ## [Unreleased]
 
+> `MAJOR` tracks the targeted ABP Framework version, so a breaking change to this module's own
+> contracts arrives in a `MINOR` bump. Entries below marked **Breaking** require action when
+> upgrading.
+
 ### Added
 
 - Added `Dignite.Abp.Notifications.Emailing.Identity`, an optional ABP Identity-backed
   `IEmailNotificationAddressResolver` for the Emailing notifier.
+- `NotificationDeliveryEto` and `NotificationDelivery` now carry the notification's `EntityTypeName` and
+  `EntityId`, so a notifier can identify the business entity a notification is about without depending on
+  Core.
+- Added `NotificationEmailContentProvider<TData>`, a base class that narrows `NotificationData` once so an
+  implementer cannot forget the type guard and accidentally claim every notification.
+- Email address resolvers can now return an optional recipient culture; email content is built inside that culture
+  and falls back to `NotificationEmailOptions.DefaultCulture`.
 
 ### Changed
 
 - Changed email address resolution to use `EmailNotificationAddressResolveContext`, making
   `TenantId` explicit to local and remote resolver implementations.
-- Email address resolvers can now return an optional recipient culture; email content is built inside that culture
-  and falls back to `NotificationEmailOptions.DefaultCulture`.
+- **Breaking.** `NotificationEntityIdentifier` now takes `(string entityTypeName, string entityId)` instead of
+  `(Type entityType, object entityId)` — pass a short, stable name such as `"Demo.Order"`. Persisted
+  `EntityTypeName` values are therefore no longer `Type.FullName`, so subscription rows and
+  `NotificationCenterWebOptions.EntityLinkResolvers` keys written in the old format stop matching.
+- **Breaking.** `IEmailNotificationAddressResolver` gained an `Order` member, and `GetEmailOrNullAsync` returns
+  `Task<EmailNotificationAddress?>` rather than `Task<string?>`. Resolvers now form an ordered chain in which the
+  first non-null address wins.
+- **Breaking.** `IdentityEmailNotificationAddressResolver` no longer declares `[Dependency(ReplaceServices = true)]`.
+  It joins the chain at `NotificationEmailProviderOrders.BuiltInFallback`, so an application resolver composes with
+  it rather than displacing it.
+- **Breaking.** Renamed `NotificationEmailContentProviderOrders` to `NotificationEmailProviderOrders`, which now
+  orders both the content-provider and the address-resolver chains.
+- **Breaking.** `NotificationEmailBuildContext`'s constructor gained a `cultureName` parameter.
+
+### Fixed
+
+- `EmailNotifier` no longer aborts the whole delivery when a recipient's culture name cannot be parsed. It falls
+  back to `NotificationEmailOptions.DefaultCulture` and then to the ambient culture, logging a warning for each
+  rejected value. Previously a single malformed per-user language setting threw out of the event handler, so every
+  recipient after it received nothing and a redelivery re-mailed the ones before it. As part of this,
+  `NotificationEmailBuildContext.CultureName` now accepts the empty string, which is the invariant culture.
+
+### Removed
+
+- **Breaking.** Removed `NullEmailNotificationAddressResolver` — an empty resolver chain already resolves no
+  address.
 
 ## [10.0.0-preview.1] - 2026-07-09
 
