@@ -11,7 +11,6 @@ using Shouldly;
 using Volo.Abp.Emailing;
 using Volo.Abp.EventBus.Distributed;
 using Xunit;
-using Volo.Abp.MultiTenancy;
 
 namespace Dignite.Abp.Notifications;
 
@@ -24,7 +23,6 @@ public class EmailNotifier_Tests
             Substitute.For<IEmailSender>(),
             Substitute.For<IEmailNotificationAddressResolver>(),
             CreateDefaultBuilder(),
-            CreateCurrentTenant(),
             NullLogger<EmailNotifier>.Instance);
 
         ((INotificationNotifier)notifier).Name.ShouldBe(EmailNotifier.ChannelName);
@@ -39,14 +37,15 @@ public class EmailNotifier_Tests
         var resolver = Substitute.For<IEmailNotificationAddressResolver>();
         var userWithEmail = Guid.NewGuid();
         var userWithoutEmail = Guid.NewGuid();
-        resolver.GetEmailOrNullAsync(userWithEmail).Returns("a@b.com");
-        resolver.GetEmailOrNullAsync(userWithoutEmail).Returns((string?)null);
+        resolver.GetEmailOrNullAsync(Arg.Is<EmailNotificationAddressResolveContext>(
+            context => context.UserId == userWithEmail)).Returns("a@b.com");
+        resolver.GetEmailOrNullAsync(Arg.Is<EmailNotificationAddressResolveContext>(
+            context => context.UserId == userWithoutEmail)).Returns((string?)null);
 
         var notifier = new EmailNotifier(
             emailSender,
             resolver,
             CreateDefaultBuilder(),
-            CreateCurrentTenant(),
             NullLogger<EmailNotifier>.Instance);
         var eto = new NotificationDeliveryEto(
             Guid.NewGuid(), "order.shipped", new MessageNotificationData("Shipped!"),
@@ -72,13 +71,12 @@ public class EmailNotifier_Tests
     {
         var emailSender = Substitute.For<IEmailSender>();
         var resolver = Substitute.For<IEmailNotificationAddressResolver>();
-        resolver.GetEmailOrNullAsync(Arg.Any<Guid>()).Returns("a@b.com");
+        resolver.GetEmailOrNullAsync(Arg.Any<EmailNotificationAddressResolveContext>()).Returns("a@b.com");
 
         var notifier = new EmailNotifier(
             emailSender,
             resolver,
             CreateDefaultBuilder(),
-            CreateCurrentTenant(),
             NullLogger<EmailNotifier>.Instance);
         var eto = new NotificationDeliveryEto(
             Guid.NewGuid(), "test", new MessageNotificationData("x"),
@@ -98,12 +96,11 @@ public class EmailNotifier_Tests
     {
         var emailSender = Substitute.For<IEmailSender>();
         var resolver = Substitute.For<IEmailNotificationAddressResolver>();
-        resolver.GetEmailOrNullAsync(Arg.Any<Guid>()).Returns("a@b.com");
+        resolver.GetEmailOrNullAsync(Arg.Any<EmailNotificationAddressResolveContext>()).Returns("a@b.com");
         var notifier = new EmailNotifier(
             emailSender,
             resolver,
             CreateDefaultBuilder(),
-            CreateCurrentTenant(),
             NullLogger<EmailNotifier>.Instance);
 
         var eto = new NotificationDeliveryEto(
@@ -127,14 +124,15 @@ public class EmailNotifier_Tests
         var firstUserId = Guid.NewGuid();
         var secondUserId = Guid.NewGuid();
         var builder = new CapturingEmailBuilder();
-        resolver.GetEmailOrNullAsync(firstUserId).Returns("first@example.com");
-        resolver.GetEmailOrNullAsync(secondUserId).Returns("second@example.com");
+        resolver.GetEmailOrNullAsync(Arg.Is<EmailNotificationAddressResolveContext>(
+            context => context.UserId == firstUserId)).Returns("first@example.com");
+        resolver.GetEmailOrNullAsync(Arg.Is<EmailNotificationAddressResolveContext>(
+            context => context.UserId == secondUserId)).Returns("second@example.com");
 
         var notifier = new EmailNotifier(
             emailSender,
             resolver,
             builder,
-            CreateCurrentTenant(),
             NullLogger<EmailNotifier>.Instance);
         var eto = new NotificationDeliveryEto(
             Guid.NewGuid(), "test", new MessageNotificationData("x"),
@@ -152,18 +150,17 @@ public class EmailNotifier_Tests
     }
 
     [Fact]
-    public async Task Resolves_addresses_inside_the_event_tenant_context()
+    public async Task Passes_event_tenant_to_the_address_resolver()
     {
         var emailSender = Substitute.For<IEmailSender>();
         var resolver = Substitute.For<IEmailNotificationAddressResolver>();
-        var currentTenant = new TestCurrentTenant();
         var userId = Guid.NewGuid();
         var tenantId = Guid.NewGuid();
-        Guid? tenantSeenByResolver = null;
+        EmailNotificationAddressResolveContext? capturedContext = null;
 
-        resolver.GetEmailOrNullAsync(userId).Returns(_ =>
+        resolver.GetEmailOrNullAsync(Arg.Any<EmailNotificationAddressResolveContext>()).Returns(call =>
         {
-            tenantSeenByResolver = currentTenant.Id;
+            capturedContext = call.Arg<EmailNotificationAddressResolveContext>();
             return Task.FromResult<string?>("tenant@example.com");
         });
 
@@ -171,7 +168,6 @@ public class EmailNotifier_Tests
             emailSender,
             resolver,
             CreateDefaultBuilder(),
-            currentTenant,
             NullLogger<EmailNotifier>.Instance);
         var eto = new NotificationDeliveryEto(
             Guid.NewGuid(), "test", new MessageNotificationData("x"),
@@ -183,8 +179,10 @@ public class EmailNotifier_Tests
 
         await notifier.HandleEventAsync(eto);
 
-        tenantSeenByResolver.ShouldBe(tenantId);
-        currentTenant.Id.ShouldBeNull();
+        capturedContext.ShouldNotBeNull();
+        capturedContext!.UserId.ShouldBe(userId);
+        capturedContext.TenantId.ShouldBe(tenantId);
+        capturedContext.Notification.NotificationName.ShouldBe("test");
     }
 
     [Fact]
@@ -253,11 +251,6 @@ public class EmailNotifier_Tests
             new MessageNotificationEmailContentProvider(),
             new LocalizableMessageNotificationEmailContentProvider(new TestStringLocalizerFactory())
         });
-    }
-
-    private static ICurrentTenant CreateCurrentTenant()
-    {
-        return new TestCurrentTenant();
     }
 
     private static NotificationEmailBuildContext CreateContext(NotificationData data)
@@ -336,43 +329,6 @@ public class EmailNotifier_Tests
         public IEnumerable<LocalizedString> GetAllStrings(bool includeParentCultures)
         {
             return Enumerable.Empty<LocalizedString>();
-        }
-    }
-
-    private class TestCurrentTenant : ICurrentTenant
-    {
-        public bool IsAvailable => Id.HasValue;
-
-        public Guid? Id { get; private set; }
-
-        public string? Name { get; private set; }
-
-        public IDisposable Change(Guid? id, string? name = null)
-        {
-            var previousId = Id;
-            var previousName = Name;
-            Id = id;
-            Name = name;
-            return new DisposeAction(() =>
-            {
-                Id = previousId;
-                Name = previousName;
-            });
-        }
-    }
-
-    private class DisposeAction : IDisposable
-    {
-        private readonly Action _dispose;
-
-        public DisposeAction(Action dispose)
-        {
-            _dispose = dispose;
-        }
-
-        public void Dispose()
-        {
-            _dispose();
         }
     }
 }

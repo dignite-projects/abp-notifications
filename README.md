@@ -187,7 +187,10 @@ enumeration and routing.
   the host provides an `IEmailNotificationAddressResolver`. If the host uses ABP Identity as the
   email source, install `Dignite.Abp.Notifications.Emailing.Identity` and depend on
   `AbpNotificationsEmailingIdentityModule`. The host still owns SMTP / `IEmailSender`
-  configuration; this module only resolves `UserId` to an email address.
+  configuration; this module only resolves `UserId` to an email address. Address resolvers receive
+  an `EmailNotificationAddressResolveContext` with the notification and `TenantId`; local
+  repository-backed resolvers can switch tenant internally, while remote/microservice-backed
+  resolvers should pass that tenant explicitly across their service boundary.
 
 **Write your own** (Web Push, FCM, SMS, Webhook, …): create a project depending on
 `Dignite.Abp.Notifications.Abstractions` **only**, and handle the event:

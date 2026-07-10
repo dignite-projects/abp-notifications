@@ -15,6 +15,11 @@ changes.
 - Added `Dignite.Abp.Notifications.Emailing.Identity`, an optional ABP Identity-backed
   `IEmailNotificationAddressResolver` for the Emailing notifier.
 
+### Changed
+
+- Changed email address resolution to use `EmailNotificationAddressResolveContext`, making
+  `TenantId` explicit to local and remote resolver implementations.
+
 ## [10.0.0-preview.1] - 2026-07-09
 
 ### Added
