@@ -1,7 +1,7 @@
 import { AuthService } from '@abp/ng.core';
 import { NavItemsService } from '@abp/ng.theme.shared';
 import { inject, provideAppInitializer } from '@angular/core';
-import { NotificationBellComponent } from '@dignite-abp/notification-center';
+import { NotificationBellComponent } from '@dignite/abp-notification-center';
 
 /**
  * Puts the notification bell into the host's toolbar/navbar on every page (via LeptonX's
