@@ -3,7 +3,7 @@ import { RestService } from '@abp/ng.core';
 import { RouterLink } from '@angular/router';
 
 /**
- * Demo page consuming the @dignite/abp-notification-center library components against the host API.
+ * Demo page consuming the @dignite/abp.ng.notification-center library components against the host API.
  * The toolbar bell is registered globally by provideNotificationCenterConfig() and refreshes from SignalR.
  * The "Send order shipped notification" button publishes explicitly to the current user (bypasses
  * subscriptions, always arrives) with the host's Demo.OrderShipped payload so the bell uses a custom

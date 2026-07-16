@@ -69,7 +69,7 @@ safe to upgrade, which is the opposite of what this project's positioning needs.
 | Property | Segments | Purpose |
 |----------|----------|---------|
 | `<Version>` in [`Directory.Build.props`](./Directory.Build.props) | 3-segment SemVer (+ optional pre-release suffix) | The NuGet package version for all 15 packable projects, and the value a `v*` tag must match. **This is the release version.** |
-| `version` in [`angular/projects/notification-center/package.json`](./angular/projects/notification-center/package.json) | Same value as `<Version>` | The npm package version for `@dignite/abp-notification-center`; CI and the release workflow fail when it drifts from the NuGet version. |
+| `version` in [`angular/projects/notification-center/package.json`](./angular/projects/notification-center/package.json) | Same value as `<Version>` | The npm package version for `@dignite/abp.ng.notification-center`; CI and the release workflow fail when it drifts from the NuGet version. |
 | `<AssemblyVersion>` | 4-segment | Kept coarse and stable (`1.0.0.0`); not moved on every MINOR/PATCH, to avoid assembly-binding churn — see [`.claude/rules/framework/common/notifications-invariants.md`](.claude/rules/framework/common/notifications-invariants.md) §1. |
 | Git tag | `vX.Y.Z[-suffix]` | Created on the release commit; the release workflow reads `<Version>` from `Directory.Build.props` and fails if the tag doesn't match — tags do not drive the version number. |
 | `## [x.y.z]` heading in [`CHANGELOG.md`](./CHANGELOG.md) | 3-segment SemVer (+ optional pre-release suffix) | Human-facing release notes, extracted verbatim into the GitHub Release body. |

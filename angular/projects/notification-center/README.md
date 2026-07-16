@@ -1,4 +1,4 @@
-# @dignite/abp-notification-center
+# @dignite/abp.ng.notification-center
 
 Angular UI library for the **Dignite ABP Notification Center** — a notification **bell** (unread
 badge + dropdown) and a **subscriptions** management component, plus the ABP-generated API proxy
@@ -7,7 +7,7 @@ Angular consumers and is packaged like ABP's own `@abp/ng.*` libraries: a main e
 `/config` secondary entry point.
 
 ```bash
-npm install @dignite/abp-notification-center@10.0.0-rc.1
+npm install @dignite/abp.ng.notification-center@10.0.0-rc.2
 ```
 
 The npm package version stays in lockstep with the repository's NuGet package version.
@@ -16,15 +16,15 @@ The npm package version stays in lockstep with the repository's NuGet package ve
 
 | Import | Contents |
 |---|---|
-| `@dignite/abp-notification-center` | `NotificationBellComponent` (`<abp-notification-bell>`), `NotificationSubscriptionsComponent`, and the `NotificationsService` proxy + DTOs/enums. |
-| `@dignite/abp-notification-center/config` | `provideNotificationCenterConfig()` — registers the navigation-menu entry into the host — plus the `eNotificationCenterRouteNames` route-name enum. Call the provider once in `app.config.ts`. |
+| `@dignite/abp.ng.notification-center` | `NotificationBellComponent` (`<abp-notification-bell>`), `NotificationSubscriptionsComponent`, and the `NotificationsService` proxy + DTOs/enums. |
+| `@dignite/abp.ng.notification-center/config` | `provideNotificationCenterConfig()` — registers the navigation-menu entry into the host — plus the `eNotificationCenterRouteNames` route-name enum. Call the provider once in `app.config.ts`. |
 
 ## Usage
 
 Register the menu contribution in the host's `app.config.ts` (mirrors `provideIdentityConfig()` etc.):
 
 ```ts
-import { provideNotificationCenterConfig } from '@dignite/abp-notification-center/config';
+import { provideNotificationCenterConfig } from '@dignite/abp.ng.notification-center/config';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -37,7 +37,7 @@ export const appConfig: ApplicationConfig = {
 Use the subscriptions component in a page:
 
 ```ts
-import { NotificationSubscriptionsComponent } from '@dignite/abp-notification-center';
+import { NotificationSubscriptionsComponent } from '@dignite/abp.ng.notification-center';
 
 @Component({
   imports: [NotificationSubscriptionsComponent],
@@ -66,7 +66,7 @@ the bell marks it as read and navigates through Angular Router so the SPA is not
 
 ```ts
 import { inject, provideAppInitializer } from '@angular/core';
-import { NotificationEntityLinksService } from '@dignite/abp-notification-center';
+import { NotificationEntityLinksService } from '@dignite/abp.ng.notification-center';
 
 provideAppInitializer(() => {
   inject(NotificationEntityLinksService).register('MyApp.Order', notification => [
