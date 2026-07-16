@@ -32,7 +32,8 @@ them.
 | `10.0.0-rc.1` | `10.5.x` (built against `10.5.0`) | .NET 10 | `10.0.0-rc.1` | Angular `^21.2.0` |
 
 The NuGet and npm packages always use the same version. Pre-release npm packages use the `next`
-dist-tag; stable releases use `latest`.
+dist-tag; stable releases use `latest`. npm requires every package to have a `latest` tag, so until
+the first stable version exists the initial pre-release is necessarily also exposed as `latest`.
 
 **Core framework** (`core/`):
 

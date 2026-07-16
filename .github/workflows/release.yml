@@ -5,9 +5,8 @@
 # Tagged releases are public: NuGet packages go to NuGet.org through Trusted Publishing (GitHub
 # OIDC -> short-lived API key), and the Angular package goes to npm (`next` for a pre-release,
 # `latest` for a stable release). Pre-release NuGet packages are also mirrored to GitHub Packages.
-# workflow_dispatch remains a private preview build by default: it packs and smoke-tests everything,
-# then pushes a pre-release to GitHub Packages only. Its optional reconciliation input only repairs
-# an npm `latest` tag that incorrectly points to a pre-release.
+# workflow_dispatch remains a private preview build: it packs and smoke-tests everything, then
+# pushes a pre-release to GitHub Packages only.
 #
 # Triggers: push a v* tag (e.g. v10.0.0-preview.1 or v10.0.0) or use workflow_dispatch. For churny
 # pre-release builds prefer workflow_dispatch: no tag, no draft Release - just bump <Version> in
@@ -20,12 +19,6 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
-    inputs:
-      reconcile_npm_dist_tags:
-        description: Remove npm latest when it points to a pre-release
-        required: false
-        default: false
-        type: boolean
 
 jobs:
   release:
@@ -195,27 +188,6 @@ jobs:
             --access public \
             --tag '${{ steps.channel.outputs.npm-tag }}' \
             --provenance
-
-      # npm assigns `latest` during the very first package publish even when `--tag next` is used.
-      # Remove that accidental tag without disturbing a later stable version that owns `latest`.
-      - name: Ensure npm latest does not point to a pre-release
-        if: ${{ steps.channel.outputs.channel == 'prerelease' && (startsWith(github.ref, 'refs/tags/v') || inputs.reconcile_npm_dist_tags) }}
-        shell: bash
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          if [ -z "$NODE_AUTH_TOKEN" ]; then
-            echo "::error::NPM_TOKEN is required to reconcile npm dist-tags."
-            exit 1
-          fi
-
-          PACKAGE_NAME=$(node -p "require('./angular/dist/notification-center/package.json').name")
-          LATEST=$(npm view "$PACKAGE_NAME" dist-tags.latest --json 2>/dev/null | tr -d '"' || true)
-          if [[ "$LATEST" == *-* ]]; then
-            npm dist-tag rm "$PACKAGE_NAME" latest
-          else
-            echo "::notice::npm latest is '$LATEST'; no pre-release tag repair is needed."
-          fi
 
       # Extract this version's section from CHANGELOG.md as the draft release body.
       - name: Extract release notes from CHANGELOG
