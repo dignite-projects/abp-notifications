@@ -10,6 +10,22 @@ changes.
 
 ## [Unreleased]
 
+## [10.0.0-rc.1] - 2026-07-16
+
+### Added
+
+- Added CI coverage for the Angular library and production demo build.
+- Added isolated consumption smoke tests for all 15 packed NuGet packages and both Angular package
+  entry points.
+
+### Changed
+
+- Synchronized the Angular package version with the NuGet release version.
+- Tagged pre-releases are now published publicly to NuGet.org and npm in addition to the existing
+  GitHub Packages preview feed.
+- Expanded the README with package installation commands, a compatibility table, and migration
+  guidance for legacy 3.x consumers.
+
 ## [10.0.0-preview.2] - 2026-07-10
 
 > `MAJOR` tracks the targeted ABP Framework version, so a breaking change to this module's own

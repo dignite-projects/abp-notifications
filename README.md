@@ -25,6 +25,15 @@ Requirements: the **.NET 10 SDK** and an ABP **10.5.0** host application. Contra
 multi-target `netstandard2.0;netstandard2.1;net10.0` so remote and older consumers can reference
 them.
 
+### Compatibility
+
+| Dignite release | ABP Framework | Runtime | Angular library | Angular peer range |
+|---|---|---|---|---|
+| `10.0.0-rc.1` | `10.5.x` (built against `10.5.0`) | .NET 10 | `10.0.0-rc.1` | Angular `^21.2.0` |
+
+The NuGet and npm packages always use the same version. Pre-release npm packages use the `next`
+dist-tag; stable releases use `latest`.
+
 **Core framework** (`core/`):
 
 | Package | Purpose |
@@ -55,6 +64,76 @@ Core:
 > Core keeps working with `NullNotificationStore` alone. The `host/` (runnable ABP MVC demo) and
 > `angular/` (demo Angular app) folders are **local-dev demos only**; they are not packaged or
 > published.
+
+## Install
+
+The commands below show all packages installed into one host project for clarity. In a layered ABP
+solution, add each package to the matching layer and put the corresponding `[DependsOn]` entry in
+that layer's module.
+
+### Stateless forwarding
+
+Install Core plus at least one external delivery channel. This example uses SignalR:
+
+```bash
+dotnet add path/to/MyApp.csproj package Dignite.Abp.Notifications --version 10.0.0-rc.1
+dotnet add path/to/MyApp.csproj package Dignite.Abp.Notifications.SignalR --version 10.0.0-rc.1
+```
+
+Email is optional:
+
+```bash
+dotnet add path/to/MyApp.csproj package Dignite.Abp.Notifications.Emailing --version 10.0.0-rc.1
+dotnet add path/to/MyApp.csproj package Dignite.Abp.Notifications.Emailing.Identity --version 10.0.0-rc.1
+```
+
+### Full Notification Center with EF Core
+
+```bash
+dotnet add path/to/MyApp.csproj package Dignite.Abp.Notifications.SignalR --version 10.0.0-rc.1
+dotnet add path/to/MyApp.csproj package Dignite.Abp.NotificationCenter.Application --version 10.0.0-rc.1
+dotnet add path/to/MyApp.csproj package Dignite.Abp.NotificationCenter.HttpApi --version 10.0.0-rc.1
+dotnet add path/to/MyApp.csproj package Dignite.Abp.NotificationCenter.EntityFrameworkCore --version 10.0.0-rc.1
+dotnet add path/to/MyApp.csproj package Dignite.Abp.NotificationCenter.Web --version 10.0.0-rc.1
+```
+
+`Dignite.Abp.NotificationCenter.Web` is optional. For MongoDB, replace
+`Dignite.Abp.NotificationCenter.EntityFrameworkCore` with
+`Dignite.Abp.NotificationCenter.MongoDB`. Permission gating through
+`Dignite.Abp.Notifications.Identity` is also optional.
+
+For an Angular host, install the version-matched UI library:
+
+```bash
+npm install @dignite-abp/notification-center@10.0.0-rc.1
+```
+
+Then follow [The two operation modes](#the-two-operation-modes) for the module dependencies and
+[Defining and publishing a notification](#defining-and-publishing-a-notification) for the first
+end-to-end notification.
+
+## Upgrading from legacy 3.x
+
+`10.x` is a from-scratch rewrite of the legacy `Dignite.Abp.Notifications*` and
+`Dignite.Abp.NotificationCenter*` packages, not an in-place compatible upgrade. The major version
+tracks the targeted ABP Framework major and also ensures that this implementation supersedes the
+legacy `3.8.2` packages on NuGet.org.
+
+Before changing an existing application from 3.x:
+
+1. Treat the change as a module replacement and review every package/module dependency; legacy UI
+   and notifier package names do not map one-for-one to this repository.
+2. Give every custom `NotificationData` type a stable `[NotificationDataType("...")]` discriminator
+   and register it through `NotificationDataOptions`.
+3. Generate a new host-owned database migration for the three Notification Center aggregates. This
+   repository does not ship a migration or an automated legacy-data converter.
+4. Plan any migration of historical notifications and subscriptions explicitly before pointing the
+   new module at a production database.
+5. Regenerate or replace legacy clients with the new REST/C#/Angular clients and verify custom
+   rendering and entity links.
+
+Keep the application pinned to 3.8.2 until that migration has been tested; installing 10.x over a
+legacy production database without a migration plan is unsupported.
 
 ## The two operation modes
 

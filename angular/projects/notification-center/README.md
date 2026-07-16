@@ -6,6 +6,12 @@ badge + dropdown) and a **subscriptions** management component, plus the ABP-gen
 Angular consumers and is packaged like ABP's own `@abp/ng.*` libraries: a main entry point plus a
 `/config` secondary entry point.
 
+```bash
+npm install @dignite-abp/notification-center@10.0.0-rc.1
+```
+
+The npm package version stays in lockstep with the repository's NuGet package version.
+
 ## Entry points
 
 | Import | Contents |
@@ -111,7 +117,7 @@ the host app.
 
 ### Publishing
 
-```bash
-cd dist/notification-center
-npm publish
-```
+Tagged repository releases build, smoke-test, and publish this package automatically. Pre-releases
+use npm's `next` dist-tag and stable releases use `latest`; do not publish a different npm version
+manually. For a local package inspection, run `npm pack ./dist/notification-center` from the
+`angular/` workspace after building.

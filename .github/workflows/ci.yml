@@ -26,6 +26,20 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: npm
+          cache-dependency-path: angular/package-lock.json
+
+      - name: Verify NuGet and npm version lockstep
+        id: version
+        shell: pwsh
+        run: |
+          $version = & ./.github/scripts/verify-version-lockstep.ps1
+          "version=$version" >> $env:GITHUB_OUTPUT
+
       - name: Restore
         run: dotnet restore Dignite.Abp.Notifications.slnx
 
@@ -46,3 +60,39 @@ jobs:
       # MongoDB install needed.
       - name: Run NotificationCenter (MongoDB) tests
         run: dotnet test notification-center/test/Dignite.Abp.NotificationCenter.MongoDB.Tests/Dignite.Abp.NotificationCenter.MongoDB.Tests.csproj --no-build --configuration Release --verbosity normal
+
+      - name: Pack NuGet packages
+        run: dotnet pack Dignite.Abp.Notifications.slnx --no-build --configuration Release --output ./artifacts-ci/nuget
+
+      - name: Smoke-test packed NuGet packages
+        shell: pwsh
+        run: ./.github/scripts/smoke-test-nuget-packages.ps1 ./artifacts-ci/nuget '${{ steps.version.outputs.version }}'
+
+      - name: Install Angular dependencies
+        working-directory: angular
+        run: npm ci
+
+      - name: Build Angular library
+        working-directory: angular
+        run: npm run build:lib
+
+      - name: Build Angular demo
+        working-directory: angular
+        run: npm run build:prod
+
+      - name: Pack Angular library
+        shell: pwsh
+        working-directory: angular
+        run: |
+          New-Item -ItemType Directory -Force ../artifacts-ci/npm | Out-Null
+          npm pack ./dist/notification-center --pack-destination ../artifacts-ci/npm
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Smoke-test packed Angular library
+        shell: pwsh
+        run: |
+          $tarballs = @(Get-ChildItem ./artifacts-ci/npm/*.tgz)
+          if ($tarballs.Count -ne 1) {
+            throw "Expected one Angular package tarball, found $($tarballs.Count)."
+          }
+          node ./.github/scripts/smoke-test-angular-package.mjs $tarballs[0].FullName '${{ steps.version.outputs.version }}'
