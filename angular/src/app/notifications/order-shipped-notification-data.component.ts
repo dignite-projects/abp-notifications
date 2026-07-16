@@ -1,5 +1,5 @@
 import { Component, Input } from '@angular/core';
-import { NotificationData } from '@dignite/abp-notification-center';
+import { NotificationData } from '@dignite/abp.ng.notification-center';
 
 @Component({
   selector: 'app-order-shipped-notification-data',

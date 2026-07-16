@@ -47,7 +47,7 @@ try {
         version: '0.0.0',
         dependencies: {
           ...workspacePackage.dependencies,
-          '@dignite/abp-notification-center': pathToFileURL(tarballPath).href,
+          '@dignite/abp.ng.notification-center': pathToFileURL(tarballPath).href,
         },
         devDependencies: {
           typescript: workspacePackage.devDependencies.typescript,
@@ -83,11 +83,11 @@ try {
   NotificationBellComponent,
   NotificationSubscriptionsComponent,
   NotificationsService,
-} from '@dignite/abp-notification-center';
+} from '@dignite/abp.ng.notification-center';
 import {
   eNotificationCenterRouteNames,
   provideNotificationCenterConfig,
-} from '@dignite/abp-notification-center/config';
+} from '@dignite/abp.ng.notification-center/config';
 
 export const packageSurface = {
   NotificationBellComponent,
@@ -111,7 +111,7 @@ export const packageSurface = {
     tempRoot,
     'node_modules',
     '@dignite',
-    'abp-notification-center',
+    'abp.ng.notification-center',
     'package.json',
   );
   const installedPackage = JSON.parse(readFileSync(installedPackageJsonPath, 'utf8'));

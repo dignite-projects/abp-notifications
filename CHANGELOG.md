@@ -12,6 +12,8 @@ changes.
 
 ### Changed
 
+- Renamed the Angular package to `@dignite/abp.ng.notification-center`, making the UI framework
+  explicit and leaving room for parallel React or other client packages.
 - Clarified that npm requires every package to have a `latest` dist-tag, so a package whose first
   public version is a pre-release temporarily exposes that version as both `next` and `latest`.
 
