@@ -23,6 +23,8 @@ changes.
 - Synchronized the Angular package version with the NuGet release version.
 - Tagged pre-releases are now published publicly to NuGet.org and npm in addition to the existing
   GitHub Packages preview feed.
+- Replaced the long-lived NuGet API key with NuGet.org Trusted Publishing and a short-lived OIDC
+  credential issued to the tagged release workflow.
 - Expanded the README with package installation commands, a compatibility table, and migration
   guidance for legacy 3.x consumers.
 
