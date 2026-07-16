@@ -2,10 +2,11 @@
 # library package.json are kept in lockstep; a pushed v* tag must match both, but tags do not drive
 # the number.
 #
-# Tagged releases are public: NuGet packages go to NuGet.org and the Angular package goes to npm
-# (`next` for a pre-release, `latest` for a stable release). Pre-release NuGet packages are also
-# mirrored to GitHub Packages. workflow_dispatch remains a private preview build: it packs and
-# smoke-tests everything, then pushes a pre-release to GitHub Packages only.
+# Tagged releases are public: NuGet packages go to NuGet.org through Trusted Publishing (GitHub
+# OIDC -> short-lived API key), and the Angular package goes to npm (`next` for a pre-release,
+# `latest` for a stable release). Pre-release NuGet packages are also mirrored to GitHub Packages.
+# workflow_dispatch remains a private preview build: it packs and smoke-tests everything, then
+# pushes a pre-release to GitHub Packages only.
 #
 # Triggers: push a v* tag (e.g. v10.0.0-preview.1 or v10.0.0) or use workflow_dispatch. For churny
 # pre-release builds prefer workflow_dispatch: no tag, no draft Release - just bump <Version> in
@@ -26,7 +27,7 @@ jobs:
     permissions:
       contents: write # Required by softprops/action-gh-release to create a draft Release
       packages: write # Required to push pre-release NuGet packages to GitHub Packages
-      id-token: write # npm provenance for tagged public releases
+      id-token: write # NuGet Trusted Publishing and npm provenance for tagged public releases
 
     steps:
       - name: Checkout
@@ -144,19 +145,32 @@ jobs:
               --skip-duplicate
           done
 
-      - name: Push tagged release to NuGet.org
+      - name: Validate NuGet Trusted Publishing identity
         if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
         env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+          NUGET_USER: ${{ vars.NUGET_USER }}
         run: |
-          if [ -z "$NUGET_API_KEY" ]; then
-            echo "::error::NUGET_API_KEY is required for a tagged public release."
+          if [ -z "$NUGET_USER" ]; then
+            echo "::error::The NUGET_USER repository variable is required for Trusted Publishing."
             exit 1
           fi
+
+      - name: Sign in to NuGet.org with Trusted Publishing
+        if: startsWith(github.ref, 'refs/tags/v')
+        id: nuget-login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ vars.NUGET_USER }}
+
+      - name: Push tagged release to NuGet.org
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
           for package in ./artifacts/*.nupkg; do
             [[ "$package" == *.snupkg ]] && continue
             dotnet nuget push "$package" \
-              --api-key "$NUGET_API_KEY" \
+              --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}" \
               --source https://api.nuget.org/v3/index.json \
               --skip-duplicate
           done

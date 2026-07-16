@@ -92,3 +92,7 @@ safe to upgrade, which is the opposite of what this project's positioning needs.
 5. Tagged releases publish the NuGet packages to NuGet.org and the Angular library to npm. Pre-release
    npm versions use the `next` dist-tag; stable versions use `latest`. `workflow_dispatch` remains a
    private preview build and does not publish to either public registry.
+6. NuGet.org publishing uses Trusted Publishing rather than a stored API key. The NuGet.org policy
+   must select the intended package owner and match GitHub repository `dignite-projects/abp-notifications`
+   plus workflow file `release.yml`. Set the repository variable `NUGET_USER` to the NuGet profile
+   name used by `NuGet/login@v1`; never use an email address for this value.
