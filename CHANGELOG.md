@@ -27,6 +27,8 @@ changes.
   GitHub Packages preview feed.
 - Replaced the long-lived NuGet API key with NuGet.org Trusted Publishing and a short-lived OIDC
   credential issued to the tagged release workflow.
+- Added a release guard that removes npm's automatically assigned `latest` tag when a package's
+  first public version is a pre-release.
 - Expanded the README with package installation commands, a compatibility table, and migration
   guidance for legacy 3.x consumers.
 
