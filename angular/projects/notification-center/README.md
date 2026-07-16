@@ -118,6 +118,7 @@ the host app.
 ### Publishing
 
 Tagged repository releases build, smoke-test, and publish this package automatically. Pre-releases
-use npm's `next` dist-tag and stable releases use `latest`; do not publish a different npm version
-manually. For a local package inspection, run `npm pack ./dist/notification-center` from the
-`angular/` workspace after building.
+use npm's `next` dist-tag and stable releases use `latest`. npm requires every package to have a
+`latest` tag, so the initial pre-release temporarily owns both tags until the first stable release.
+Do not publish a different npm version manually. For a local package inspection, run
+`npm pack ./dist/notification-center` from the `angular/` workspace after building.
