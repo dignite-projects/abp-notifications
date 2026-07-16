@@ -1,19 +1,15 @@
-# Release workflow. The version is read from <Version> in Directory.Build.props (the single
-# source of truth); a pushed v* tag must match it (guard step below), but tags do not drive the
-# number.
+# Release workflow. The NuGet version in Directory.Build.props and the npm version in the Angular
+# library package.json are kept in lockstep; a pushed v* tag must match both, but tags do not drive
+# the number.
 #
-# Routing by channel, derived from the SemVer pre-release suffix in <Version>:
-#   - Pre-release (e.g. 10.0.0-preview.2) -> NuGet packages pushed to GitHub Packages only.
-#   - Stable      (e.g. 10.0.0)           -> NuGet pushed to NuGet.org.
+# Tagged releases are public: NuGet packages go to NuGet.org and the Angular package goes to npm
+# (`next` for a pre-release, `latest` for a stable release). Pre-release NuGet packages are also
+# mirrored to GitHub Packages. workflow_dispatch remains a private preview build: it packs and
+# smoke-tests everything, then pushes a pre-release to GitHub Packages only.
 #
 # Triggers: push a v* tag (e.g. v10.0.0-preview.1 or v10.0.0) or use workflow_dispatch. For churny
 # pre-release builds prefer workflow_dispatch: no tag, no draft Release - just bump <Version> in
 # Directory.Build.props, run, and the packages land in GitHub Packages.
-#
-# The Angular library (angular/projects/notification-center) is not published by this workflow
-# yet - it is out of scope for this repo's first release pass. When that changes, mirror the
-# npm build/pack/publish steps from https://github.com/dignite-projects/vault-extract's
-# release.yml, and add the npm-version lockstep check to the guard step below.
 
 name: Release
 
@@ -30,40 +26,48 @@ jobs:
     permissions:
       contents: write # Required by softprops/action-gh-release to create a draft Release
       packages: write # Required to push pre-release NuGet packages to GitHub Packages
+      id-token: write # npm provenance for tagged public releases
 
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
-      # Fail fast when the tag and Directory.Build.props <Version> disagree.
-      - name: Verify tag and version lockstep
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          VERSION=$(sed -n 's/.*<Version>\(.*\)<\/Version>.*/\1/p' Directory.Build.props | head -n1)
-          TAG="${GITHUB_REF#refs/tags/}"
-          if [ "v$VERSION" != "$TAG" ]; then
-            echo "::error::Tag $TAG does not match <Version>$VERSION</Version> in Directory.Build.props."
-            exit 1
-          fi
-
-      # Derive the release channel from the SemVer pre-release suffix. Runs on every trigger.
-      - name: Determine release channel
-        id: channel
-        run: |
-          VERSION=$(sed -n 's/.*<Version>\(.*\)<\/Version>.*/\1/p' Directory.Build.props | head -n1)
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          if [[ "$VERSION" == *-* ]]; then
-            echo "channel=preview" >> "$GITHUB_OUTPUT"
-            echo "::notice::Version $VERSION is a pre-release -> GitHub Packages only."
-          else
-            echo "channel=stable" >> "$GITHUB_OUTPUT"
-            echo "::notice::Version $VERSION is stable -> NuGet.org."
-          fi
-
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: npm
+          cache-dependency-path: angular/package-lock.json
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Verify tag, NuGet, and npm version lockstep
+        id: version
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: |
+          $version = & ./.github/scripts/verify-version-lockstep.ps1 -Tag $env:RELEASE_TAG
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Determine release channel
+        id: channel
+        shell: bash
+        run: |
+          VERSION='${{ steps.version.outputs.version }}'
+          if [[ "$VERSION" == *-* ]]; then
+            echo "channel=prerelease" >> "$GITHUB_OUTPUT"
+            echo "npm-tag=next" >> "$GITHUB_OUTPUT"
+            echo "::notice::Version $VERSION is a pre-release."
+          else
+            echo "channel=stable" >> "$GITHUB_OUTPUT"
+            echo "npm-tag=latest" >> "$GITHUB_OUTPUT"
+            echo "::notice::Version $VERSION is stable."
+          fi
 
       - name: Restore
         run: dotnet restore Dignite.Abp.Notifications.slnx
@@ -81,42 +85,95 @@ jobs:
         run: dotnet test notification-center/test/Dignite.Abp.NotificationCenter.MongoDB.Tests/Dignite.Abp.NotificationCenter.MongoDB.Tests.csproj --no-build --configuration Release --verbosity normal
 
       # Projects with IsPackable=false (host/ and the 4 test projects) are skipped automatically.
-      # Only the 14 packable projects under core/src and notification-center/src are produced.
-      - name: Pack
+      # Only the 15 packable projects under core/src and notification-center/src are produced.
+      - name: Pack NuGet packages
         run: dotnet pack Dignite.Abp.Notifications.slnx --no-build --configuration Release -o ./artifacts
 
-      - name: Upload NuGet packages
+      - name: Smoke-test packed NuGet packages
+        shell: pwsh
+        run: ./.github/scripts/smoke-test-nuget-packages.ps1 ./artifacts '${{ steps.version.outputs.version }}'
+
+      - name: Install Angular dependencies
+        working-directory: angular
+        run: npm ci
+
+      - name: Build Angular library
+        working-directory: angular
+        run: npm run build:lib
+
+      - name: Build Angular demo
+        working-directory: angular
+        run: npm run build:prod
+
+      - name: Pack Angular library
+        shell: pwsh
+        working-directory: angular
+        run: |
+          New-Item -ItemType Directory -Force ../artifacts/npm | Out-Null
+          npm pack ./dist/notification-center --pack-destination ../artifacts/npm
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Smoke-test packed Angular library
+        shell: pwsh
+        run: |
+          $tarballs = @(Get-ChildItem ./artifacts/npm/*.tgz)
+          if ($tarballs.Count -ne 1) {
+            throw "Expected one Angular package tarball, found $($tarballs.Count)."
+          }
+          node ./.github/scripts/smoke-test-angular-package.mjs $tarballs[0].FullName '${{ steps.version.outputs.version }}'
+
+      - name: Upload release packages
         uses: actions/upload-artifact@v4
         with:
-          name: nuget-packages
-          path: artifacts/*.nupkg
+          name: release-packages
+          path: |
+            artifacts/*.nupkg
+            artifacts/*.snupkg
+            artifacts/npm/*.tgz
           if-no-files-found: error
 
-      # Pre-release builds go to GitHub Packages only (private to the org, authenticated with the
-      # workflow's built-in GITHUB_TOKEN).
+      # Keep the existing authenticated GitHub Packages preview feed for every pre-release trigger.
       - name: Push to GitHub Packages (pre-release)
-        if: steps.channel.outputs.channel == 'preview'
+        if: steps.channel.outputs.channel == 'prerelease'
         run: |
-          dotnet nuget push ./artifacts/*.nupkg \
-            --api-key "${{ secrets.GITHUB_TOKEN }}" \
-            --source https://nuget.pkg.github.com/dignite-projects/index.json \
-            --skip-duplicate
+          for package in ./artifacts/*.nupkg; do
+            [[ "$package" == *.snupkg ]] && continue
+            dotnet nuget push "$package" \
+              --api-key "${{ secrets.GITHUB_TOKEN }}" \
+              --source https://nuget.pkg.github.com/dignite-projects/index.json \
+              --skip-duplicate
+          done
 
-      # Stable builds go to public NuGet.org. Secrets can't be referenced directly in `if:`, so
-      # inject through env and check in the shell; skip the push (not fail) when unconfigured.
-      - name: Push to NuGet.org (stable)
-        if: steps.channel.outputs.channel == 'stable'
+      - name: Push tagged release to NuGet.org
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
         run: |
           if [ -z "$NUGET_API_KEY" ]; then
-            echo "::notice::NUGET_API_KEY secret is not configured; skipping NuGet.org push (packages were uploaded as workflow artifacts)."
-            exit 0
+            echo "::error::NUGET_API_KEY is required for a tagged public release."
+            exit 1
           fi
-          dotnet nuget push ./artifacts/*.nupkg \
-            --api-key "$NUGET_API_KEY" \
-            --source https://api.nuget.org/v3/index.json \
-            --skip-duplicate
+          for package in ./artifacts/*.nupkg; do
+            [[ "$package" == *.snupkg ]] && continue
+            dotnet nuget push "$package" \
+              --api-key "$NUGET_API_KEY" \
+              --source https://api.nuget.org/v3/index.json \
+              --skip-duplicate
+          done
+
+      - name: Publish tagged Angular package to npm
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::error::NPM_TOKEN is required for a tagged public release."
+            exit 1
+          fi
+          npm publish ./artifacts/npm/*.tgz \
+            --access public \
+            --tag '${{ steps.channel.outputs.npm-tag }}' \
+            --provenance
 
       # Extract this version's section from CHANGELOG.md as the draft release body.
       - name: Extract release notes from CHANGELOG
@@ -137,6 +194,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           draft: true
-          prerelease: ${{ steps.channel.outputs.channel == 'preview' }}
+          prerelease: ${{ steps.channel.outputs.channel == 'prerelease' }}
           body_path: release-notes.md
-          files: artifacts/*
+          files: |
+            artifacts/*.nupkg
+            artifacts/*.snupkg
+            artifacts/npm/*.tgz

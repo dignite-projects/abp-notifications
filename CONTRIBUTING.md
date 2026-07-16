@@ -69,6 +69,7 @@ safe to upgrade, which is the opposite of what this project's positioning needs.
 | Property | Segments | Purpose |
 |----------|----------|---------|
 | `<Version>` in [`Directory.Build.props`](./Directory.Build.props) | 3-segment SemVer (+ optional pre-release suffix) | The NuGet package version for all 15 packable projects, and the value a `v*` tag must match. **This is the release version.** |
+| `version` in [`angular/projects/notification-center/package.json`](./angular/projects/notification-center/package.json) | Same value as `<Version>` | The npm package version for `@dignite-abp/notification-center`; CI and the release workflow fail when it drifts from the NuGet version. |
 | `<AssemblyVersion>` | 4-segment | Kept coarse and stable (`1.0.0.0`); not moved on every MINOR/PATCH, to avoid assembly-binding churn — see [`.claude/rules/framework/common/notifications-invariants.md`](.claude/rules/framework/common/notifications-invariants.md) §1. |
 | Git tag | `vX.Y.Z[-suffix]` | Created on the release commit; the release workflow reads `<Version>` from `Directory.Build.props` and fails if the tag doesn't match — tags do not drive the version number. |
 | `## [x.y.z]` heading in [`CHANGELOG.md`](./CHANGELOG.md) | 3-segment SemVer (+ optional pre-release suffix) | Human-facing release notes, extracted verbatim into the GitHub Release body. |
@@ -76,8 +77,9 @@ safe to upgrade, which is the opposite of what this project's positioning needs.
 ### Cutting a release
 
 1. Move the CHANGELOG `[Unreleased]` section to `## [x.y.z] - YYYY-MM-DD`.
-2. Confirm `<Version>` in `Directory.Build.props` matches the intended release (tags do not drive
-   the version — the release workflow reads it from `Directory.Build.props`).
+2. Confirm `<Version>` in `Directory.Build.props` and `version` in
+   `angular/projects/notification-center/package.json` both match the intended release (tags do not
+   drive the version — the release workflow reads and compares both files).
 3. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`. The release workflow
    (`.github/workflows/release.yml`) triggers on `v*` tags; `workflow_dispatch` only builds and
    packs artifacts and does not create a GitHub Release.
@@ -87,5 +89,6 @@ safe to upgrade, which is the opposite of what this project's positioning needs.
    `Directory.Build.props` (not the tag), leaving it on the just-released value means the next
    `workflow_dispatch` build would re-emit artifacts that collide with the already-published
    package.
-5. The Angular library (`angular/projects/notification-center`) is not published as part of this
-   workflow yet — see the header comment in `release.yml` for the current scope.
+5. Tagged releases publish the NuGet packages to NuGet.org and the Angular library to npm. Pre-release
+   npm versions use the `next` dist-tag; stable versions use `latest`. `workflow_dispatch` remains a
+   private preview build and does not publish to either public registry.
