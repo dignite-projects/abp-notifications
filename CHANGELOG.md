@@ -10,6 +10,8 @@ changes.
 
 ## [Unreleased]
 
+## [10.0.0-rc.2] - 2026-07-16
+
 ### Changed
 
 - Renamed the Angular package to `@dignite/abp.ng.notification-center`, making the UI framework
