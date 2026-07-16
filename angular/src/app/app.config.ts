@@ -20,8 +20,8 @@ import { OrderShippedNotificationDataComponent } from './notifications/order-shi
 import {
   NotificationDataComponentsService,
   NotificationEntityLinksService,
-} from '@dignite-abp/notification-center';
-import { provideNotificationCenterConfig } from '@dignite-abp/notification-center/config';
+} from '@dignite/abp-notification-center';
+import { provideNotificationCenterConfig } from '@dignite/abp-notification-center/config';
 
 const DIGNITE_REPO_URL = 'https://github.com/dignite-projects/abp-notifications';
 

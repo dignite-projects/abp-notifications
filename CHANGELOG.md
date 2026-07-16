@@ -21,6 +21,8 @@ changes.
 ### Changed
 
 - Synchronized the Angular package version with the NuGet release version.
+- Renamed the Angular package to `@dignite/abp-notification-center` so all Dignite npm packages
+  share the `@dignite` organization scope.
 - Tagged pre-releases are now published publicly to NuGet.org and npm in addition to the existing
   GitHub Packages preview feed.
 - Replaced the long-lived NuGet API key with NuGet.org Trusted Publishing and a short-lived OIDC

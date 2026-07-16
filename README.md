@@ -105,7 +105,7 @@ dotnet add path/to/MyApp.csproj package Dignite.Abp.NotificationCenter.Web --ver
 For an Angular host, install the version-matched UI library:
 
 ```bash
-npm install @dignite-abp/notification-center@10.0.0-rc.1
+npm install @dignite/abp-notification-center@10.0.0-rc.1
 ```
 
 Then follow [The two operation modes](#the-two-operation-modes) for the module dependencies and
