@@ -5,6 +5,7 @@ using Dignite.Abp.Notifications.Emailing;
 using Dignite.Abp.Notifications.SignalR;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 using Shouldly;
 using Volo.Abp.EventBus.Distributed;
@@ -110,7 +111,8 @@ public class NotificationChannelRouting_Tests
                 currentTenant,
                 NullLogger<DefaultNotificationRecipientEligibilityEvaluator>.Instance),
             currentTenant,
-            NullLogger<DefaultNotificationDistributor>.Instance);
+            NullLogger<DefaultNotificationDistributor>.Instance,
+            new NotificationDataTypeRegistry(Options.Create(new NotificationDataOptions())));
         await distributor.DistributeAsync(
             new NotificationInfo { Id = Guid.NewGuid(), NotificationName = "test" }, new[] { Guid.NewGuid() });
 

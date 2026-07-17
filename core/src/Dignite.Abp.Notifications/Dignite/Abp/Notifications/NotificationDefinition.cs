@@ -74,7 +74,8 @@ public class NotificationDefinition
 
     /// <summary>
     /// Requires payloads registered under the stable discriminator declared by <typeparamref name="TData"/>'s
-    /// <see cref="NotificationDataTypeAttribute"/>.
+    /// <see cref="NotificationDataTypeAttribute"/>. Repeating the same contract is idempotent; a conflicting
+    /// discriminator or CLR registration mapping is rejected.
     /// </summary>
     public NotificationDefinition WithPayload<TData>() where TData : NotificationData
     {
@@ -85,22 +86,24 @@ public class NotificationDefinition
                 "before it can be used by a notification definition.",
                 nameof(TData));
 
-        PayloadDiscriminator = discriminator;
-        PayloadType = dataType;
-        return this;
+        return SetPayloadContract(discriminator, dataType);
     }
 
-    /// <summary>Requires payloads registered under the supplied stable discriminator.</summary>
+    /// <summary>
+    /// Requires payloads registered under the supplied stable discriminator. Repeating the same contract is
+    /// idempotent and cannot weaken a preceding type-safe declaration.
+    /// </summary>
     public NotificationDefinition WithPayload(string discriminator)
     {
-        PayloadDiscriminator = Check.NotNullOrWhiteSpace(discriminator, nameof(discriminator));
-        PayloadType = null;
-        return this;
+        return SetPayloadContract(
+            Check.NotNullOrWhiteSpace(discriminator, nameof(discriminator)),
+            payloadType: null);
     }
 
     /// <summary>
     /// Declares the entity-identity contract. An expected entity type, when supplied, is a stable caller-chosen name
-    /// such as <c>"Demo.Order"</c>, never a CLR <see cref="Type.FullName"/>.
+    /// such as <c>"Demo.Order"</c>, never a CLR <see cref="Type.FullName"/>. Repeating the same contract is
+    /// idempotent; a conflicting repetition is rejected.
     /// </summary>
     public NotificationDefinition WithEntityContract(
         NotificationEntityRequirement requirement,
@@ -121,10 +124,54 @@ public class NotificationDefinition
                 nameof(expectedEntityTypeName));
         }
 
-        EntityRequirement = requirement;
-        ExpectedEntityTypeName = expectedEntityTypeName == null
+        var normalizedEntityTypeName = expectedEntityTypeName == null
             ? null
             : Check.NotNullOrWhiteSpace(expectedEntityTypeName, nameof(expectedEntityTypeName));
+        if (EntityRequirement != NotificationEntityRequirement.Unspecified)
+        {
+            if (EntityRequirement != requirement ||
+                !StringComparer.Ordinal.Equals(ExpectedEntityTypeName, normalizedEntityTypeName))
+            {
+                throw new InvalidOperationException(
+                    $"Notification definition '{Name}' already has entity contract " +
+                    $"'{EntityRequirement}:{ExpectedEntityTypeName ?? "<any>"}' and cannot be changed to " +
+                    $"'{requirement}:{normalizedEntityTypeName ?? "<any>"}'.");
+            }
+
+            return this;
+        }
+
+        EntityRequirement = requirement;
+        ExpectedEntityTypeName = normalizedEntityTypeName;
+        return this;
+    }
+
+    private NotificationDefinition SetPayloadContract(string discriminator, Type? payloadType)
+    {
+        if (PayloadDiscriminator == null)
+        {
+            PayloadDiscriminator = discriminator;
+            PayloadType = payloadType;
+            return this;
+        }
+
+        if (!StringComparer.Ordinal.Equals(PayloadDiscriminator, discriminator))
+        {
+            throw new InvalidOperationException(
+                $"Notification definition '{Name}' already requires payload discriminator " +
+                $"'{PayloadDiscriminator}' and cannot be changed to '{discriminator}'.");
+        }
+
+        if (PayloadType != null && payloadType != null && PayloadType != payloadType)
+        {
+            throw new InvalidOperationException(
+                $"Notification definition '{Name}' already binds payload discriminator '{PayloadDiscriminator}' " +
+                $"to CLR type '{PayloadType.FullName}' and cannot bind it to '{payloadType.FullName}'.");
+        }
+
+        // A same-discriminator string repeat must not erase a prior type-safe declaration. Conversely, a later
+        // generic repeat may safely tighten a string-only declaration with its intended CLR registration mapping.
+        PayloadType ??= payloadType;
         return this;
     }
 

@@ -328,7 +328,7 @@ Definitions can opt into publish-time contracts independently for payload and en
 
 | Declaration | Publish-time rule |
 |---|---|
-| no `WithPayload(...)` | Legacy compatibility: any or no registered payload is accepted |
+| no `WithPayload(...)` | Legacy compatibility: no definition-level payload check; normal serializer registration still applies |
 | `WithPayload<TData>()` | A payload is required and its registered stable discriminator must exactly match `TData` |
 | no `WithEntityContract(...)` | Legacy compatibility: an entity identity may be present or absent |
 | `Forbidden` | Entity identity must be absent |
@@ -339,14 +339,17 @@ Definitions can opt into publish-time contracts independently for payload and en
 wire or persistence contract. Host startup fails if that discriminator is not registered in
 `NotificationDataOptions` or maps to a different CLR type. A string overload is available when a module knows
 only the stable discriminator. Entity type constraints such as `"Demo.Order"` are likewise caller-chosen stable
-names and compare ordinally/case-sensitively—they are never converted to or from a CLR `Type`.
+names and compare ordinally/case-sensitively—they are never converted to or from a CLR `Type`. Repeating the
+same contract is idempotent; conflicting repetitions fail immediately, and a same-discriminator string call
+cannot erase the CLR registration check established by `WithPayload<TData>()`.
 
-The publisher validates opted-in contracts before creating durable notification work, enqueueing a background
-job, writing an inbox row, or publishing an external event. The trusted-recipient eligibility bypass does not
-bypass payload/entity contracts. An explicitly empty `userIds` array remains a true no-op and returns before
-definition resolution. Existing definitions are unchanged until they opt into either contract, so applications
-can migrate definition by definition: register the payload first, add `WithPayload<TData>()`, then declare the
-entity requirement that matches existing publisher call sites.
+The publisher validates opted-in contracts before creating durable notification work or enqueueing a background
+job, and the distributor validates again before writing an inbox row or publishing an external event. This
+second boundary also protects direct distributor calls and replayed jobs. The trusted-recipient eligibility
+bypass does not bypass payload/entity contracts. An explicitly empty `userIds` array remains a true no-op and
+returns before definition resolution. Existing definitions are unchanged until they opt into either contract,
+so applications can migrate definition by definition: register the payload first, add `WithPayload<TData>()`,
+then declare the entity requirement that matches existing publisher call sites.
 
 **4. Publish** from your business code via `INotificationPublisher`:
 
@@ -386,7 +389,9 @@ partition.
 `INotificationPublisher` records `CurrentTenant.Id` automatically. Code that calls `INotificationDistributor`
 directly must populate `NotificationInfo.TenantId` for tenant notifications. That value is authoritative for
 subscription lookup, eligibility, inbox persistence, and event/outbox publication; `null` explicitly means
-**host**, even when the direct caller currently has an ambient tenant.
+**host**, even when the direct caller currently has an ambient tenant. Direct callers must also populate
+`NotificationInfo.EntityTypeName` and `EntityId` together or leave both null when the definition has opted into
+an entity contract; contract validation rejects a partial raw entity identity before any store or event side effect.
 
 Trusted infrastructure has a deliberately conspicuous, explicit-recipient-only escape hatch:
 

@@ -38,6 +38,34 @@ internal static class NotificationDefinitionContractValidator
         NotificationEntityIdentifier? entityIdentifier,
         INotificationDataTypeRegistry dataTypeRegistry)
     {
+        Validate(
+            definition,
+            data,
+            entityIdentifier?.EntityTypeName,
+            entityIdentifier?.EntityId,
+            dataTypeRegistry);
+    }
+
+    public static void ValidateDistribution(
+        NotificationDefinition definition,
+        NotificationInfo notification,
+        INotificationDataTypeRegistry dataTypeRegistry)
+    {
+        Validate(
+            definition,
+            notification.Data,
+            notification.EntityTypeName,
+            notification.EntityId,
+            dataTypeRegistry);
+    }
+
+    private static void Validate(
+        NotificationDefinition definition,
+        NotificationData? data,
+        string? entityTypeName,
+        string? entityId,
+        INotificationDataTypeRegistry dataTypeRegistry)
+    {
         ValidateRegistration(definition, dataTypeRegistry);
 
         if (definition.PayloadDiscriminator != null)
@@ -65,25 +93,36 @@ internal static class NotificationDefinitionContractValidator
             }
         }
 
+        if (definition.EntityRequirement == NotificationEntityRequirement.Unspecified)
+        {
+            return;
+        }
+
+        if ((entityTypeName == null) != (entityId == null))
+        {
+            throw new AbpException(
+                $"Notification '{definition.Name}' has an incomplete entity identity. EntityTypeName and EntityId " +
+                "must either both be supplied or both be null.");
+        }
+
+        var hasEntity = entityTypeName != null;
         switch (definition.EntityRequirement)
         {
-            case NotificationEntityRequirement.Unspecified:
-                return;
-            case NotificationEntityRequirement.Forbidden when entityIdentifier != null:
+            case NotificationEntityRequirement.Forbidden when hasEntity:
                 throw new AbpException(
                     $"Notification '{definition.Name}' forbids an entity identity, but received " +
-                    $"'{entityIdentifier.EntityTypeName}:{entityIdentifier.EntityId}'.");
-            case NotificationEntityRequirement.Required when entityIdentifier == null:
+                    $"'{entityTypeName}:{entityId}'.");
+            case NotificationEntityRequirement.Required when !hasEntity:
                 throw new AbpException(
                     $"Notification '{definition.Name}' requires an entity identity, but none was supplied.");
         }
 
-        if (entityIdentifier != null && definition.ExpectedEntityTypeName != null &&
-            !StringComparer.Ordinal.Equals(definition.ExpectedEntityTypeName, entityIdentifier.EntityTypeName))
+        if (hasEntity && definition.ExpectedEntityTypeName != null &&
+            !StringComparer.Ordinal.Equals(definition.ExpectedEntityTypeName, entityTypeName))
         {
             throw new AbpException(
                 $"Notification '{definition.Name}' requires entity type '{definition.ExpectedEntityTypeName}', " +
-                $"but received '{entityIdentifier.EntityTypeName}'. Stable entity type names use ordinal, " +
+                $"but received '{entityTypeName}'. Stable entity type names use ordinal, " +
                 "case-sensitive comparison.");
         }
     }

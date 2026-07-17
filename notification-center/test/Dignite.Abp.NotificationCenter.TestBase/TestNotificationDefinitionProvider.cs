@@ -10,6 +10,7 @@ public class TestNotificationDefinitionProvider : NotificationDefinitionProvider
     public override void Define(INotificationDefinitionContext context)
     {
         context.Add(new NotificationDefinition("order.shipped", new FixedLocalizableString("Order Shipped"))
+            .WithPayload<MessageNotificationData>()
             .UseChannels(TestChannel));
     }
 }

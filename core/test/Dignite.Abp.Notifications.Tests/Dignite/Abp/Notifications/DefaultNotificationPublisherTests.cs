@@ -443,7 +443,8 @@ public class DefaultNotificationPublisherTests
                         CurrentTenant,
                         NullLogger<DefaultNotificationRecipientEligibilityEvaluator>.Instance),
                     CurrentTenant,
-                    NullLogger<DefaultNotificationDistributor>.Instance),
+                    NullLogger<DefaultNotificationDistributor>.Instance,
+                    new NotificationDataTypeRegistry(Options.Create(new NotificationDataOptions()))),
                 CurrentTenant);
         }
 
