@@ -12,13 +12,20 @@ public class NotificationDataTypeRegistry : INotificationDataTypeRegistry, ISing
 
     public NotificationDataTypeRegistry(IOptions<NotificationDataOptions> options)
     {
-        _byDiscriminator = new Dictionary<string, Type>();
+        _byDiscriminator = new Dictionary<string, Type>(StringComparer.Ordinal);
         _byType = new Dictionary<Type, string>();
 
         foreach (var pair in options.Value.DataTypes)
         {
-            _byDiscriminator[pair.Key] = pair.Value;
-            _byType[pair.Value] = pair.Key;
+            if (_byType.TryGetValue(pair.Value, out var registeredDiscriminator))
+            {
+                throw new InvalidOperationException(
+                    $"Notification data CLR type '{pair.Value.FullName ?? pair.Value.Name}' is registered with " +
+                    $"conflicting discriminators '{registeredDiscriminator}' and '{pair.Key}'.");
+            }
+
+            _byDiscriminator.Add(pair.Key, pair.Value);
+            _byType.Add(pair.Value, pair.Key);
         }
     }
 

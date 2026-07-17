@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Volo.Abp.Localization;
 using Volo.Abp.Modularity;
 
@@ -10,6 +11,8 @@ public class AbpNotificationsAbstractionsModule : AbpModule
 {
     public override void ConfigureServices(ServiceConfigurationContext context)
     {
+        context.Services.AddOptions<NotificationDataOptions>().ValidateOnStart();
+
         Configure<NotificationDataOptions>(options =>
         {
             options.Add<MessageNotificationData>();

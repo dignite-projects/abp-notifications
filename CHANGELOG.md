@@ -12,6 +12,9 @@ changes.
 
 ### Fixed
 
+- Notification definition names and `NotificationData` discriminators now use explicit ordinal,
+  case-sensitive registration and lookup. Conflicting registrations fail during application startup
+  with both providers or CLR mappings identified instead of silently replacing an earlier value.
 - Defined consistent explicit-recipient semantics across inline and background distribution: `null`
   resolves subscriptions, an empty list is a no-op, and duplicate explicit user IDs are normalized
   before threshold selection, persistence, and channel delivery.

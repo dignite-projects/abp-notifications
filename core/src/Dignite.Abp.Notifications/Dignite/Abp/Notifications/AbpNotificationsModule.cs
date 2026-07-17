@@ -29,6 +29,8 @@ public class AbpNotificationsModule : AbpModule
 
     public override void ConfigureServices(ServiceConfigurationContext context)
     {
+        context.Services.AddOptions<NotificationOptions>().ValidateOnStart();
+
         // Make NotificationData serialize/deserialize polymorphically (stable discriminator) everywhere ABP's
         // System.Text.Json is used — distributed event bus, HTTP API, etc. — not just via INotificationDataSerializer.
         context.Services
