@@ -26,6 +26,21 @@ public class NotificationSubscriptionScopeDto : IValidatableObject
             yield return new ValidationResult(
                 "EntityTypeName and EntityId must either both be supplied or both be null.",
                 new[] { nameof(EntityTypeName), nameof(EntityId) });
+            yield break;
+        }
+
+        if (EntityTypeName != null && string.IsNullOrWhiteSpace(EntityTypeName))
+        {
+            yield return new ValidationResult(
+                "EntityTypeName cannot be empty or whitespace when an entity scope is supplied.",
+                new[] { nameof(EntityTypeName) });
+        }
+
+        if (EntityId != null && string.IsNullOrWhiteSpace(EntityId))
+        {
+            yield return new ValidationResult(
+                "EntityId cannot be empty or whitespace when an entity scope is supplied.",
+                new[] { nameof(EntityId) });
         }
     }
 }

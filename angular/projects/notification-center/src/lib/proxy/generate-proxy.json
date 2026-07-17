@@ -4001,7 +4001,7 @@
               "uniqueName": "SubscribeScopedAsyncByInput",
               "name": "SubscribeScopedAsync",
               "httpMethod": "POST",
-              "url": "api/notifications/subscriptions/scoped",
+              "url": "api/notifications/subscription-scopes",
               "supportedVersions": [],
               "parametersOnMethod": [
                 {
@@ -4050,7 +4050,7 @@
               "uniqueName": "UnsubscribeScopedAsyncByInput",
               "name": "UnsubscribeScopedAsync",
               "httpMethod": "DELETE",
-              "url": "api/notifications/subscriptions/scoped",
+              "url": "api/notifications/subscription-scopes",
               "supportedVersions": [],
               "parametersOnMethod": [
                 {

@@ -83,7 +83,7 @@ export class NotificationsService {
   subscribeScoped = (input: NotificationSubscriptionScopeDto, config?: Partial<Rest.Config>) =>
     this.restService.request<any, void>({
       method: 'POST',
-      url: '/api/notifications/subscriptions/scoped',
+      url: '/api/notifications/subscription-scopes',
       body: input,
     },
     { apiName: this.apiName,...config });
@@ -100,7 +100,7 @@ export class NotificationsService {
   unsubscribeScoped = (input: NotificationSubscriptionScopeDto, config?: Partial<Rest.Config>) =>
     this.restService.request<any, void>({
       method: 'DELETE',
-      url: '/api/notifications/subscriptions/scoped',
+      url: '/api/notifications/subscription-scopes',
       params: { notificationName: input.notificationName, entityTypeName: input.entityTypeName, entityId: input.entityId },
     },
     { apiName: this.apiName,...config });

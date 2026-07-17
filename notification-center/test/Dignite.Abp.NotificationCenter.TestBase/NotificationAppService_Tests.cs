@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Threading.Tasks;
 using Dignite.Abp.Notifications;
@@ -176,5 +178,29 @@ public abstract class NotificationAppService_Tests<TStartupModule> : Notificatio
                 rows.ShouldNotContain(subscription => subscription.EntityId == "42");
             });
         }
+    }
+
+    [Theory]
+    [InlineData(null, "42")]
+    [InlineData("Demo.Order", null)]
+    [InlineData("", "")]
+    [InlineData("   ", "42")]
+    [InlineData("Demo.Order", "   ")]
+    public void Scoped_subscription_contract_rejects_partial_or_blank_entity_identity(
+        string? entityTypeName,
+        string? entityId)
+    {
+        var input = new NotificationSubscriptionScopeDto
+        {
+            NotificationName = "order.shipped",
+            EntityTypeName = entityTypeName,
+            EntityId = entityId
+        };
+        var validationResults = new List<ValidationResult>();
+
+        Validator.TryValidateObject(input, new ValidationContext(input), validationResults, true).ShouldBeFalse();
+        validationResults.ShouldContain(result => result.MemberNames.Any(member =>
+            member == nameof(NotificationSubscriptionScopeDto.EntityTypeName)
+            || member == nameof(NotificationSubscriptionScopeDto.EntityId)));
     }
 }

@@ -87,14 +87,14 @@ public class NotificationsController : AbpControllerBase, INotificationAppServic
     }
 
     [HttpPost]
-    [Route("subscriptions/scoped")]
+    [Route("subscription-scopes")]
     public virtual Task SubscribeScopedAsync([FromBody] NotificationSubscriptionScopeDto input)
     {
         return NotificationAppService.SubscribeScopedAsync(input);
     }
 
     [HttpDelete]
-    [Route("subscriptions/scoped")]
+    [Route("subscription-scopes")]
     public virtual Task UnsubscribeScopedAsync([FromQuery] NotificationSubscriptionScopeDto input)
     {
         return NotificationAppService.UnsubscribeScopedAsync(input);

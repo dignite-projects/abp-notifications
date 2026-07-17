@@ -209,8 +209,9 @@ that:
    `GetNotificationNameKey`, and `GetScopeKey` with its existing natural values;
 3. removes or repairs legacy rows with only one entity field and resolves any pre-existing duplicate
    identities before adding the unique index;
-4. makes the keys required and replaces the old nullable natural-value indexes with the indexes from
-   `ConfigureNotificationCenter` or `ConfigureNotificationCenterMongoDb`.
+4. makes the keys required and replaces the old nullable natural-value indexes with the EF Core indexes
+   from `ConfigureNotificationCenter`, or the equivalent MongoDB indexes declared by
+   `NotificationCenterMongoDbContext.CreateModel`.
 
 Do not add required keys with a shared empty-string default: existing rows would collide and the value
 would not preserve ordinal identity. This repository intentionally ships no migration because the
@@ -472,8 +473,8 @@ that mode.
 | `GET /api/notifications/subscriptions` | List the caller's subscriptions |
 | `POST /api/notifications/subscriptions` | Subscribe to all entities for a notification name (compatibility endpoint) |
 | `DELETE /api/notifications/subscriptions/{name}` | Unsubscribe from all entities for a name (compatibility endpoint) |
-| `POST /api/notifications/subscriptions/scoped` | Subscribe to the definition-wide or exact entity scope in the JSON body |
-| `DELETE /api/notifications/subscriptions/scoped` | Unsubscribe only the definition-wide or exact entity scope in the query |
+| `POST /api/notifications/subscription-scopes` | Subscribe to the definition-wide or exact entity scope in the JSON body |
+| `DELETE /api/notifications/subscription-scopes` | Unsubscribe only the definition-wide or exact entity scope in the query |
 
 Every endpoint is scoped to the authenticated caller. Use `...HttpApi.Client` for a typed C# proxy,
 or the Angular `NotificationsService` proxy in the browser.
