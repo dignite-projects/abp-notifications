@@ -161,7 +161,7 @@ public sealed class NotificationDataJsonConverter : JsonConverter<NotificationDa
                     payload = _evolutionRegistry.Upcast(discriminator, schemaVersion, payload);
                     EnsureNoReservedEnvelopeMembers(payload);
                 }
-                catch (Exception exception)
+                catch (Exception exception) when (IsRecoverableReadException(exception))
                 {
                     return HandleFailure(
                         UnsupportedNotificationDataReason.UpcastFailed,
@@ -189,11 +189,7 @@ public sealed class NotificationDataJsonConverter : JsonConverter<NotificationDa
                 data.SchemaVersion = currentVersion;
                 return data;
             }
-            catch (Exception exception) when (
-                exception is JsonException ||
-                exception is NotSupportedException ||
-                exception is InvalidOperationException ||
-                exception is ArgumentException)
+            catch (Exception exception) when (IsRecoverableReadException(exception))
             {
                 return HandleFailure(
                     UnsupportedNotificationDataReason.MalformedPayload,
@@ -303,6 +299,18 @@ public sealed class NotificationDataJsonConverter : JsonConverter<NotificationDa
     {
         return string.Equals(propertyName, DiscriminatorPropertyName, StringComparison.OrdinalIgnoreCase) ||
                string.Equals(propertyName, SchemaVersionPropertyName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsRecoverableReadException(Exception exception)
+    {
+        return exception is not OperationCanceledException &&
+               exception is not OutOfMemoryException &&
+               exception is not StackOverflowException &&
+               exception is not AccessViolationException &&
+               exception is not AppDomainUnloadedException &&
+               exception is not BadImageFormatException &&
+               exception is not CannotUnloadAppDomainException &&
+               exception is not InvalidProgramException;
     }
 
     /// <summary>

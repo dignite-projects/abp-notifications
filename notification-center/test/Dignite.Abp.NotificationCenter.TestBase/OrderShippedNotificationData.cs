@@ -1,3 +1,4 @@
+using System;
 using Dignite.Abp.Notifications;
 
 namespace Dignite.Abp.NotificationCenter;
@@ -6,7 +7,21 @@ namespace Dignite.Abp.NotificationCenter;
 [NotificationDataType("Test.OrderShipped")]
 public class OrderShippedNotificationData : NotificationData
 {
-    public string OrderNumber { get; set; } = default!;
+    private string _orderNumber = default!;
+
+    public string OrderNumber
+    {
+        get => _orderNumber;
+        set
+        {
+            if (string.Equals(value, "THROW-FORMAT", StringComparison.Ordinal))
+            {
+                throw new FormatException("The historical order number is invalid.");
+            }
+
+            _orderNumber = value;
+        }
+    }
 
     public int ItemCount { get; set; }
 }

@@ -65,11 +65,7 @@ public class NotificationDataSerializer :
 
             return data;
         }
-        catch (Exception exception) when (
-            exception is JsonException ||
-            exception is NotSupportedException ||
-            exception is InvalidOperationException ||
-            exception is ArgumentException)
+        catch (Exception exception) when (IsRecoverableReadException(exception))
         {
             return new UnsupportedNotificationData
             {
@@ -77,5 +73,17 @@ public class NotificationDataSerializer :
                 RawJson = json!
             };
         }
+    }
+
+    private static bool IsRecoverableReadException(Exception exception)
+    {
+        return exception is not OperationCanceledException &&
+               exception is not OutOfMemoryException &&
+               exception is not StackOverflowException &&
+               exception is not AccessViolationException &&
+               exception is not AppDomainUnloadedException &&
+               exception is not BadImageFormatException &&
+               exception is not CannotUnloadAppDomainException &&
+               exception is not InvalidProgramException;
     }
 }

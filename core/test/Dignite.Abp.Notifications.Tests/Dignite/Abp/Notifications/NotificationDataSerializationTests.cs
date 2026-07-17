@@ -156,6 +156,23 @@ public class NotificationDataSerializationTests
     }
 
     [Fact]
+    public void Ordinary_model_materialization_exceptions_are_typed_or_tolerated_without_failing_a_batch()
+    {
+        const string json =
+            "{\"type\":\"Test.ThrowingSetter\",\"schemaVersion\":1,\"value\":\"bad\"}";
+        var serializer = NotificationTestObjects.CreateSerializer(typeof(ThrowingSetterNotificationData));
+
+        var exception = Should.Throw<NotificationDataReadException>(() => serializer.Deserialize(json));
+        exception.Reason.ShouldBe(UnsupportedNotificationDataReason.MalformedPayload);
+        exception.InnerException.ShouldBeOfType<FormatException>();
+
+        var unsupported = Tolerant(serializer, json).ShouldBeOfType<UnsupportedNotificationData>();
+        unsupported.Reason.ShouldBe(UnsupportedNotificationDataReason.MalformedPayload);
+        unsupported.OriginalDiscriminator.ShouldBe("Test.ThrowingSetter");
+        unsupported.RawJson.ShouldBe(json);
+    }
+
+    [Fact]
     public void Failed_upcast_is_distinguishable_from_malformed_current_data()
     {
         const string json =

@@ -41,6 +41,26 @@ public class FailingUpcastNotificationData : NotificationData
     public string Value { get; set; } = default!;
 }
 
+[NotificationDataType("Test.ThrowingSetter")]
+public class ThrowingSetterNotificationData : NotificationData
+{
+    private string _value = string.Empty;
+
+    public string Value
+    {
+        get => _value;
+        set
+        {
+            if (string.Equals(value, "bad", StringComparison.Ordinal))
+            {
+                throw new FormatException("The historical value is invalid.");
+            }
+
+            _value = value;
+        }
+    }
+}
+
 internal static class NotificationTestObjects
 {
     public static NotificationDataTypeRegistry CreateRegistry(params Type[] extraTypes)

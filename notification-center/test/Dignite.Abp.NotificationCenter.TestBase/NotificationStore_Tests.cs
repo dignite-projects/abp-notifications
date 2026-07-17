@@ -95,6 +95,7 @@ public abstract class NotificationStore_Tests<TStartupModule> : NotificationCent
         var unknownId = Guid.NewGuid();
         var futureId = Guid.NewGuid();
         var malformedId = Guid.NewGuid();
+        var throwingSetterId = Guid.NewGuid();
         await InsertRawAsync(
             legacyId,
             userId,
@@ -115,12 +116,17 @@ public abstract class NotificationStore_Tests<TStartupModule> : NotificationCent
             userId,
             HistoricalPayloadFixtures.Read("malformed-order-shipped-v1.json"),
             DateTime.UtcNow.AddMinutes(-1));
+        await InsertRawAsync(
+            throwingSetterId,
+            userId,
+            HistoricalPayloadFixtures.Read("malformed-throwing-order-v1.json"),
+            DateTime.UtcNow);
 
         await WithUnitOfWorkAsync(async () =>
         {
             var rows = await GetRequiredService<INotificationStore>().GetUserNotificationsAsync(userId);
 
-            rows.Count.ShouldBe(4);
+            rows.Count.ShouldBe(5);
             var legacy = rows.Single(row => row.Notification.Id == legacyId)
                 .Notification.Data.ShouldBeOfType<OrderShippedNotificationData>();
             legacy.OrderNumber.ShouldBe("SO-LEGACY");
@@ -138,6 +144,10 @@ public abstract class NotificationStore_Tests<TStartupModule> : NotificationCent
                 .Notification.Data.ShouldBeOfType<UnsupportedNotificationData>();
             malformed.Reason.ShouldBe(UnsupportedNotificationDataReason.MalformedPayload);
             malformed.RawJson.ShouldContain("not-an-integer");
+            var throwingSetter = rows.Single(row => row.Notification.Id == throwingSetterId)
+                .Notification.Data.ShouldBeOfType<UnsupportedNotificationData>();
+            throwingSetter.Reason.ShouldBe(UnsupportedNotificationDataReason.MalformedPayload);
+            throwingSetter.RawJson.ShouldContain("THROW-FORMAT");
         });
     }
 
