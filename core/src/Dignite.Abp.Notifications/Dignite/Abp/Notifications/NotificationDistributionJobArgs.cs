@@ -15,14 +15,33 @@ public class NotificationDistributionJobArgs
 
     public Guid[]? ExcludedUserIds { get; set; }
 
+    /// <summary>
+    /// Defaults to enforcement, so jobs serialized before this property existed adopt the secure behavior.
+    /// </summary>
+    public NotificationRecipientEligibilityMode RecipientEligibilityMode { get; set; }
+
     public NotificationDistributionJobArgs()
     {
     }
 
     public NotificationDistributionJobArgs(NotificationInfo notification, Guid[]? userIds, Guid[]? excludedUserIds)
+        : this(
+            notification,
+            userIds,
+            excludedUserIds,
+            NotificationRecipientEligibilityMode.EnforceDefinitionRequirements)
+    {
+    }
+
+    public NotificationDistributionJobArgs(
+        NotificationInfo notification,
+        Guid[]? userIds,
+        Guid[]? excludedUserIds,
+        NotificationRecipientEligibilityMode recipientEligibilityMode)
     {
         Notification = notification;
         UserIds = userIds;
         ExcludedUserIds = excludedUserIds;
+        RecipientEligibilityMode = recipientEligibilityMode;
     }
 }

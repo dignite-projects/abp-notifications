@@ -21,6 +21,7 @@ public class DefaultNotificationDistributorTests
         var definitionManager = Substitute.For<INotificationDefinitionManager>();
         var eventBus = Substitute.For<IDistributedEventBus>();
         definitionManager.Get("test").Returns(DefinitionWithChannels());
+        definitionManager.IsAvailableAsync("test", Arg.Any<Guid>()).Returns(true);
 
         NotificationDeliveryEto? published = null;
         eventBus.WhenForAnyArgs(x => x.PublishAsync(Arg.Any<NotificationDeliveryEto>()))
@@ -142,6 +143,7 @@ public class DefaultNotificationDistributorTests
         var definitionManager = Substitute.For<INotificationDefinitionManager>();
         var eventBus = Substitute.For<IDistributedEventBus>();
         definitionManager.Get("test").Returns(new NotificationDefinition("test", new FixedLocalizableString("Test")));
+        definitionManager.IsAvailableAsync("test", Arg.Any<Guid>()).Returns(true);
 
         var userId = Guid.NewGuid();
         var distributor = new DefaultNotificationDistributor(store, definitionManager, eventBus);
@@ -177,6 +179,7 @@ public class DefaultNotificationDistributorTests
         var definitionManager = Substitute.For<INotificationDefinitionManager>();
         var eventBus = Substitute.For<IDistributedEventBus>();
         definitionManager.Get("test").Returns(DefinitionWithChannels());
+        definitionManager.IsAvailableAsync("test", Arg.Any<Guid>()).Returns(true);
 
         NotificationDeliveryEto? published = null;
         eventBus.WhenForAnyArgs(x => x.PublishAsync(Arg.Any<NotificationDeliveryEto>()))
@@ -204,6 +207,110 @@ public class DefaultNotificationDistributorTests
         delivery.EntityTypeName.ShouldBe("Demo.Order");
         delivery.EntityId.ShouldBe("1001");
         typeof(NotificationDelivery).GetProperty("UserIds").ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Explicit_recipients_are_filtered_by_the_same_definition_eligibility_as_subscribers()
+    {
+        var store = Substitute.For<INotificationStore>();
+        var definitionManager = Substitute.For<INotificationDefinitionManager>();
+        var eventBus = Substitute.For<IDistributedEventBus>();
+        definitionManager.Get("test").Returns(DefinitionWithChannels());
+
+        var eligible = Guid.NewGuid();
+        var denied = Guid.NewGuid();
+        definitionManager.IsAvailableAsync("test", eligible).Returns(true);
+        definitionManager.IsAvailableAsync("test", denied).Returns(false);
+
+        NotificationDeliveryEto? published = null;
+        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryEto>()))
+            .Do(call => published = call.Arg<NotificationDeliveryEto>());
+
+        var distributor = new DefaultNotificationDistributor(store, definitionManager, eventBus);
+        await distributor.DistributeAsync(
+            new NotificationInfo { Id = Guid.NewGuid(), NotificationName = "test" },
+            new[] { eligible, denied });
+
+        published.ShouldNotBeNull();
+        published!.UserIds.ShouldBe(new[] { eligible });
+        await store.DidNotReceive().InsertUserNotificationAsync(
+            Arg.Is<UserNotificationInfo>(row => row.UserId == denied));
+    }
+
+    [Fact]
+    public async Task Explicit_and_subscription_candidates_flow_through_the_same_batch_evaluator()
+    {
+        var store = Substitute.For<INotificationStore>();
+        var definitionManager = Substitute.For<INotificationDefinitionManager>();
+        var eventBus = Substitute.For<IDistributedEventBus>();
+        var evaluator = Substitute.For<INotificationRecipientEligibilityEvaluator>();
+        definitionManager.Get("test").Returns(DefinitionWithChannels());
+
+        var explicitUser = Guid.NewGuid();
+        var subscribedUser = Guid.NewGuid();
+        store.GetSubscriptionsAsync("test", null, null).Returns(new List<NotificationSubscriptionInfo>
+        {
+            new() { UserId = subscribedUser, NotificationName = "test" }
+        });
+        evaluator.EvaluateAsync(
+                "test",
+                Arg.Any<IReadOnlyCollection<Guid>>(),
+                null,
+                NotificationRecipientEligibilityMode.EnforceDefinitionRequirements)
+            .Returns(call =>
+            {
+                var candidates = call.ArgAt<IReadOnlyCollection<Guid>>(1).ToList();
+                return new NotificationRecipientEligibilityResult(candidates, Array.Empty<Guid>());
+            });
+
+        var distributor = new DefaultNotificationDistributor(store, definitionManager, eventBus, evaluator);
+
+        await distributor.DistributeAsync(
+            new NotificationInfo { Id = Guid.NewGuid(), NotificationName = "test" },
+            new[] { explicitUser });
+        await distributor.DistributeAsync(
+            new NotificationInfo { Id = Guid.NewGuid(), NotificationName = "test" });
+
+        await evaluator.Received(1).EvaluateAsync(
+            "test",
+            Arg.Is<IReadOnlyCollection<Guid>>(users => users.SequenceEqual(new[] { explicitUser })),
+            null,
+            NotificationRecipientEligibilityMode.EnforceDefinitionRequirements);
+        await evaluator.Received(1).EvaluateAsync(
+            "test",
+            Arg.Is<IReadOnlyCollection<Guid>>(users => users.SequenceEqual(new[] { subscribedUser })),
+            null,
+            NotificationRecipientEligibilityMode.EnforceDefinitionRequirements);
+    }
+
+    [Fact]
+    public async Task Named_bypass_is_forwarded_only_for_explicit_recipients()
+    {
+        var store = Substitute.For<INotificationStore>();
+        var definitionManager = Substitute.For<INotificationDefinitionManager>();
+        var eventBus = Substitute.For<IDistributedEventBus>();
+        var evaluator = Substitute.For<INotificationRecipientEligibilityEvaluator>();
+        definitionManager.Get("test").Returns(DefinitionWithChannels());
+        var userId = Guid.NewGuid();
+        evaluator.EvaluateAsync(
+                "test",
+                Arg.Any<IReadOnlyCollection<Guid>>(),
+                null,
+                NotificationRecipientEligibilityMode.BypassDefinitionRequirements)
+            .Returns(new NotificationRecipientEligibilityResult(new[] { userId }, Array.Empty<Guid>()));
+
+        var distributor = new DefaultNotificationDistributor(store, definitionManager, eventBus, evaluator);
+
+        await distributor.DistributeToExplicitRecipientsWithoutEligibilityChecksAsync(
+            new NotificationInfo { Id = Guid.NewGuid(), NotificationName = "test" },
+            new[] { userId });
+
+        await evaluator.Received(1).EvaluateAsync(
+            "test",
+            Arg.Is<IReadOnlyCollection<Guid>>(users => users.SequenceEqual(new[] { userId })),
+            null,
+            NotificationRecipientEligibilityMode.BypassDefinitionRequirements);
+        await definitionManager.DidNotReceiveWithAnyArgs().IsAvailableAsync(default!, default);
     }
 
     private static NotificationDefinition DefinitionWithChannels()

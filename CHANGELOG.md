@@ -15,6 +15,9 @@ changes.
 - Added scoped subscription application/REST contracts that round-trip the stable entity type and ID,
   while retaining the name-only methods as definition-wide compatibility wrappers for callers. MVC and
   Angular subscription UIs now submit the complete scope.
+- Added a replaceable, batch-shaped `INotificationRecipientEligibilityEvaluator` shared by explicit and
+  subscription-derived recipients, plus a narrowly named and warning-logged trusted-system bypass that is
+  restricted to explicit recipients.
 
 ### Changed
 
@@ -26,6 +29,15 @@ changes.
 - Notification subscription uniqueness now uses non-null, ordinal identity keys across EF Core and
   MongoDB. Existing databases require a host-owned backfill and index migration as documented in the
   README; this repository does not ship consumer migrations.
+- **Breaking behavior for callers.** Explicit `userIds` no longer bypass a notification definition's
+  permission and feature requirements: `PublishAsync` now filters explicit and subscription-derived
+  recipients through the same policy in the notification's tenant or host context. Call the named
+  `PublishToExplicitRecipientsWithoutEligibilityChecksAsync` API only for mandatory trusted-system delivery.
+- **Breaking for implementers.** `INotificationPublisher` and `INotificationDistributor` gained the named
+  explicit-recipient bypass members. Custom implementations must add them and be recompiled. Existing
+  `DefaultNotificationDistributor` subclasses overriding its three-argument `GetTargetUserIdsAsync` remain
+  active for candidate selection, after which the shared eligibility policy is applied; replace
+  `INotificationRecipientEligibilityEvaluator` to customize eligibility for both recipient sources.
 
 ### Fixed
 

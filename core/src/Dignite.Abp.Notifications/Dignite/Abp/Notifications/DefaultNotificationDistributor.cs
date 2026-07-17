@@ -16,18 +16,64 @@ public class DefaultNotificationDistributor : INotificationDistributor, ITransie
 
     protected IDistributedEventBus DistributedEventBus { get; }
 
+    protected INotificationRecipientEligibilityEvaluator RecipientEligibilityEvaluator { get; }
+
+    /// <summary>
+    /// Preserves manual construction compatibility. DI uses the fuller constructor with the replaceable evaluator.
+    /// </summary>
     public DefaultNotificationDistributor(
         INotificationStore store,
         INotificationDefinitionManager definitionManager,
         IDistributedEventBus distributedEventBus)
+        : this(
+            store,
+            definitionManager,
+            distributedEventBus,
+            new DefaultNotificationRecipientEligibilityEvaluator(definitionManager))
+    {
+    }
+
+    public DefaultNotificationDistributor(
+        INotificationStore store,
+        INotificationDefinitionManager definitionManager,
+        IDistributedEventBus distributedEventBus,
+        INotificationRecipientEligibilityEvaluator recipientEligibilityEvaluator)
     {
         Store = store;
         DefinitionManager = definitionManager;
         DistributedEventBus = distributedEventBus;
+        RecipientEligibilityEvaluator = recipientEligibilityEvaluator;
     }
 
-    public virtual async Task DistributeAsync(
+    public virtual Task DistributeAsync(
         NotificationInfo notification, Guid[]? userIds = null, Guid[]? excludedUserIds = null)
+    {
+        return DistributeAsyncInternal(
+            notification,
+            userIds,
+            excludedUserIds,
+            NotificationRecipientEligibilityMode.EnforceDefinitionRequirements);
+    }
+
+    public virtual Task DistributeToExplicitRecipientsWithoutEligibilityChecksAsync(
+        NotificationInfo notification,
+        Guid[] userIds,
+        Guid[]? excludedUserIds = null)
+    {
+        ArgumentNullException.ThrowIfNull(userIds);
+
+        return DistributeAsyncInternal(
+            notification,
+            userIds,
+            excludedUserIds,
+            NotificationRecipientEligibilityMode.BypassDefinitionRequirements);
+    }
+
+    protected virtual async Task DistributeAsyncInternal(
+        NotificationInfo notification,
+        Guid[]? userIds,
+        Guid[]? excludedUserIds,
+        NotificationRecipientEligibilityMode recipientEligibilityMode)
     {
         // An empty, explicitly supplied recipient list is intentionally different from null. Return before
         // subscription lookup or channel validation so every direct/background path remains a true no-op.
@@ -37,7 +83,30 @@ public class DefaultNotificationDistributor : INotificationDistributor, ITransie
         }
 
         var channels = ResolveExternalChannelsOrNull(notification.NotificationName);
-        var targetUserIds = await GetTargetUserIdsAsync(notification, userIds, excludedUserIds);
+        if (recipientEligibilityMode == NotificationRecipientEligibilityMode.BypassDefinitionRequirements &&
+            userIds == null)
+        {
+            throw new ArgumentException(
+                "Definition requirements can only be bypassed for explicit recipients.",
+                nameof(userIds));
+        }
+
+        var candidateUserIds = (await GetTargetUserIdsAsync(notification, userIds, excludedUserIds))
+            .Distinct()
+            .ToList();
+        if (candidateUserIds.Count == 0)
+        {
+            return;
+        }
+
+        // Eligibility deliberately runs after the established candidate-selection extension point so custom
+        // distributor subclasses cannot accidentally restore the historical explicit-recipient bypass.
+        var evaluation = await RecipientEligibilityEvaluator.EvaluateAsync(
+            notification.NotificationName,
+            candidateUserIds,
+            notification.TenantId,
+            recipientEligibilityMode);
+        var targetUserIds = evaluation.EligibleUserIds.Distinct().ToList();
         if (targetUserIds.Count == 0)
         {
             return;
@@ -80,39 +149,30 @@ public class DefaultNotificationDistributor : INotificationDistributor, ITransie
     }
 
     protected virtual async Task<List<Guid>> GetTargetUserIdsAsync(
-        NotificationInfo notification, Guid[]? userIds, Guid[]? excludedUserIds)
+        NotificationInfo notification,
+        Guid[]? userIds,
+        Guid[]? excludedUserIds)
     {
-        List<Guid> result;
+        List<Guid> candidates;
 
         if (userIds != null)
         {
-            // Explicitly targeted: honor the caller's list (no subscription/availability filtering) while
-            // preventing duplicate inbox rows and channel deliveries.
-            result = userIds.Distinct().ToList();
+            candidates = userIds.Distinct().ToList();
         }
         else
         {
-            // Subscription-driven: resolve subscribers and keep only those the notification is available to.
             var subscriptions = await Store.GetSubscriptionsAsync(
                 notification.NotificationName, notification.EntityTypeName, notification.EntityId);
-
-            result = new List<Guid>();
-            foreach (var userId in subscriptions.Select(s => s.UserId).Distinct())
-            {
-                if (await DefinitionManager.IsAvailableAsync(notification.NotificationName, userId))
-                {
-                    result.Add(userId);
-                }
-            }
+            candidates = subscriptions.Select(subscription => subscription.UserId).Distinct().ToList();
         }
 
         if (excludedUserIds != null && excludedUserIds.Length > 0)
         {
             var excluded = new HashSet<Guid>(excludedUserIds);
-            result = result.Where(u => !excluded.Contains(u)).ToList();
+            candidates = candidates.Where(userId => !excluded.Contains(userId)).ToList();
         }
 
-        return result;
+        return candidates;
     }
 
     protected virtual async Task SaveUserNotificationsAsync(NotificationInfo notification, List<Guid> userIds)

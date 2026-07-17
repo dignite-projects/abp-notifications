@@ -18,6 +18,9 @@ public interface INotificationDefinitionManager
 
     IReadOnlyList<NotificationDefinition> GetAll();
 
+    /// <summary>
+    /// Evaluates whether the user may subscribe to and receive the notification in the ambient tenant/host context.
+    /// </summary>
     Task<bool> IsAvailableAsync(string name, Guid userId);
 
     Task<IReadOnlyList<NotificationDefinition>> GetAllAvailableAsync(Guid userId);

@@ -9,8 +9,7 @@ namespace Dignite.Abp.Notifications;
 /// </summary>
 /// <remarks>
 /// <b>Tenant contract</b>: implementations must not switch tenants — evaluate against the ambient one. Distribution
-/// runs in the publishing tenant either because it happens inline on the caller's thread, or because
-/// <see cref="NotificationDistributionJob"/> restores it from the job args on a background worker. That ambient
+/// recipient eligibility switches to the notification's tenant before calling the definition manager. The ambient
 /// tenant reaches this service even though <see cref="NotificationDefinitionManager"/> resolves it from a fresh DI
 /// scope, because ABP's <c>ICurrentTenantAccessor</c> is an AsyncLocal singleton.
 /// </remarks>

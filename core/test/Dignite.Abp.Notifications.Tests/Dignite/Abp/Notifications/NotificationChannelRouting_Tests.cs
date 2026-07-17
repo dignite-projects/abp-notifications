@@ -93,6 +93,7 @@ public class NotificationChannelRouting_Tests
         definitionManager.Get("test").Returns(
             new NotificationDefinition("test", new FixedLocalizableString("Test"))
                 .UseChannels(EmailNotifier.ChannelName, SignalRNotifier.ChannelName));
+        definitionManager.IsAvailableAsync("test", Arg.Any<Guid>()).Returns(true);
 
         NotificationDeliveryEto? published = null;
         eventBus.WhenForAnyArgs(x => x.PublishAsync(Arg.Any<NotificationDeliveryEto>()))

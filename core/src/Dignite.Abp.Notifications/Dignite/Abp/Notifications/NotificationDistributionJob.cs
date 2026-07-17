@@ -1,3 +1,4 @@
+using System;
 using System.Threading.Tasks;
 using Volo.Abp.BackgroundJobs;
 using Volo.Abp.DependencyInjection;
@@ -34,7 +35,31 @@ public class NotificationDistributionJob : AsyncBackgroundJob<NotificationDistri
         // and ABP's event bus re-enters the tenant from the event itself before invoking them.
         using (CurrentTenant.Change(args.Notification.TenantId, null))
         {
-            await Distributor.DistributeAsync(args.Notification, args.UserIds, args.ExcludedUserIds);
+            if (args.RecipientEligibilityMode == NotificationRecipientEligibilityMode.BypassDefinitionRequirements)
+            {
+                if (args.UserIds == null)
+                {
+                    throw new ArgumentException(
+                        "Definition requirements can only be bypassed for explicit recipients.",
+                        nameof(args));
+                }
+
+                await Distributor.DistributeToExplicitRecipientsWithoutEligibilityChecksAsync(
+                    args.Notification,
+                    args.UserIds,
+                    args.ExcludedUserIds);
+            }
+            else if (args.RecipientEligibilityMode == NotificationRecipientEligibilityMode.EnforceDefinitionRequirements)
+            {
+                await Distributor.DistributeAsync(args.Notification, args.UserIds, args.ExcludedUserIds);
+            }
+            else
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(args),
+                    args.RecipientEligibilityMode,
+                    "Unknown recipient eligibility mode.");
+            }
         }
     }
 }
