@@ -357,6 +357,11 @@ counts are logged at Information level and the corresponding user IDs at Debug l
 the replacement must preserve the notification tenant/host boundary and return the same eligible/excluded
 partition.
 
+`INotificationPublisher` records `CurrentTenant.Id` automatically. Code that calls `INotificationDistributor`
+directly must populate `NotificationInfo.TenantId` for tenant notifications. That value is authoritative for
+subscription lookup, eligibility, inbox persistence, and event/outbox publication; `null` explicitly means
+**host**, even when the direct caller currently has an ambient tenant.
+
 Trusted infrastructure has a deliberately conspicuous, explicit-recipient-only escape hatch:
 
 ```csharp
@@ -375,7 +380,9 @@ recipient.
 > definition requirements. `PublishAsync` now filters explicit recipients exactly like subscribers. Move
 > only genuine trusted-system call sites to the named bypass API. Custom `INotificationPublisher` and
 > `INotificationDistributor` implementations must add the new bypass members; custom recipient evaluation
-> should replace `INotificationRecipientEligibilityEvaluator`.
+> should replace `INotificationRecipientEligibilityEvaluator`. Direct distributor callers that previously
+> omitted `NotificationInfo.TenantId` while relying on an ambient tenant must now set it explicitly; an omitted
+> value no longer falls back to ambient state and is treated as a host notification.
 
 ## Notifiers
 

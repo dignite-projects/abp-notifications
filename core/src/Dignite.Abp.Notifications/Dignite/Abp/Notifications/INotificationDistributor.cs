@@ -11,7 +11,10 @@ public interface INotificationDistributor
     /// <summary>
     /// Distributes a notification to subscribers or to an explicit set of users.
     /// </summary>
-    /// <param name="notification">The notification to distribute.</param>
+    /// <param name="notification">
+    /// The notification to distribute. Its <see cref="NotificationInfo.TenantId"/> is authoritative for the complete
+    /// operation; <see langword="null"/> means host and never falls back to the ambient tenant.
+    /// </param>
     /// <param name="userIds">
     /// The recipients. <see langword="null"/> resolves recipients from subscriptions; an empty array is an
     /// intentional no-op; a non-empty array targets those users explicitly. Duplicate IDs are removed before

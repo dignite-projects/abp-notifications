@@ -42,6 +42,9 @@ changes.
   removed because it could neither establish the notification's tenant/host context nor guarantee bypass audit
   logging. Manual callers must now supply `INotificationRecipientEligibilityEvaluator`, `ICurrentTenant`, and
   `ILogger<DefaultNotificationDistributor>`; normal dependency-injection resolution requires no changes.
+- **Breaking behavior for direct distributor callers.** `NotificationInfo.TenantId` is now authoritative for
+  subscription lookup, eligibility, persistence, and event/outbox publication. `null` always means host and no
+  longer falls back to an ambient tenant, so tenant-side callers of `INotificationDistributor` must set it explicitly.
 
 ### Fixed
 

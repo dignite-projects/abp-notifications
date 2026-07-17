@@ -108,7 +108,9 @@ subscription-derived candidates flow through the same `INotificationRecipientEli
 caller-supplied exclusions and before inbox persistence or channel publication.
 
 - Evaluate in the notification's recorded `TenantId`; do not inherit an unrelated ambient tenant from an
-  inline caller, background worker, or retry. Host (`null`) and tenant contexts must never mix.
+  inline caller, background worker, or retry. Host (`null`) and tenant contexts must never mix. Direct
+  `INotificationDistributor` callers must populate tenant notifications explicitly; `null` is authoritative host,
+  not an instruction to fall back to ambient state.
 - Keep the contract batch-shaped even when the default implementation checks users individually, so a host
   can replace it with an efficient remote or bulk policy evaluator without forking distribution.
 - The only supported bypass is the narrowly named explicit-recipient trusted-system API. It must never resolve
