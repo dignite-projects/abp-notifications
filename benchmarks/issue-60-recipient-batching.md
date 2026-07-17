@@ -6,7 +6,7 @@ These measurements exercise the same provider-agnostic integration test against 
 - gives 301 of them both a definition-wide and exact-entity subscription;
 - distributes one entity notification;
 - verifies exactly 2,001 inbox rows and recipient IDs;
-- uses candidate/write/event limits of 256/128/100.
+- uses the default candidate/write/event limits of 256/256/100.
 
 ## Reproduce
 
@@ -35,20 +35,23 @@ dotnet build Dignite.Abp.Notifications.slnx
 ```
 
 The elapsed time includes test-host startup, database setup, 2,302 subscription inserts, distribution, and
-assertion queries. It is a reproducible regression workload, not a provider throughput microbenchmark.
+assertion queries. It is a reproducible regression workload, not a provider throughput microbenchmark. The EF-only
+`Ef_batches_flush_and_detach_inbox_entities_inside_one_transaction` test separately verifies the memory boundary
+that elapsed time cannot show: after distributing 513 recipients with the default 256 write size, zero
+`UserNotification` entities remain tracked before commit.
 
 ## Recorded result
 
-Recorded 2026-07-17 at commit base `307b161`, .NET SDK 10.0.302, Windows 10.0.26200, Intel Core i7-8700,
+Recorded 2026-07-17 at commit `5f98f97`, .NET SDK 10.0.302, Windows 10.0.26200, Intel Core i7-8700,
 31.9 GB RAM:
 
 | Provider | Run 1 | Run 2 | Run 3 | Median |
 |---|---:|---:|---:|---:|
-| EF Core / in-memory SQLite | 7,185 ms | 8,126 ms | 8,868 ms | 8,126 ms |
-| MongoDB / MongoSandbox | 8,221 ms | 8,370 ms | 9,542 ms | 8,370 ms |
+| EF Core / in-memory SQLite | 7,073 ms | 7,462 ms | 11,400 ms | 7,462 ms |
+| MongoDB / MongoSandbox | 9,673 ms | 7,690 ms | 7,315 ms | 7,690 ms |
 
-Both providers completed with the same 2,001-recipient result and 21 delivery events. No provider-specific bulk
-extension was required.
+Both providers completed with the same 2,001-recipient result and 21 delivery events. No provider-specific
+bulk-extension dependency is used; the EF package supplies only its own flush-and-detach adapter.
 
 ## Default-size rationale
 
