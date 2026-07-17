@@ -12,6 +12,11 @@ changes.
 
 ### Added
 
+- Added MongoDB integration with ABP's distributed event outbox and inbox through
+  `UseNotificationCenterMongoDbOutbox()`. The opt-in validates a MongoDB 4.0+ replica set with a real committed
+  multi-collection transaction probe at host startup, exposes a reusable capability checker, uses ABP-compatible
+  event-box collections with query indexes, and shares atomic commit/rollback tests with EF Core. Standalone and
+  currently untested sharded topologies are rejected rather than receiving a false guarantee.
 - Added scoped subscription application/REST contracts that round-trip the stable entity type and ID,
   while retaining the name-only methods as definition-wide compatibility wrappers for callers. MVC and
   Angular subscription UIs now submit the complete scope.
@@ -32,6 +37,11 @@ changes.
 
 ### Changed
 
+- **Breaking for implementers.** `INotificationCenterMongoDbContext` now extends ABP's `IHasEventInbox` and
+  `IHasEventOutbox`. Consumer-owned implementations must expose and model the two ABP event collections and
+  configure both boxes against their custom context. MongoDB's `MessageId` inbox index is now unique; existing
+  duplicate event records must be reconciled before model initialization creates the index. Notification business
+  records require no backfill or collection rename.
 - **Breaking for implementers.** `INotificationAppService` gained scoped subscribe/unsubscribe members;
   custom implementations and replacements must implement the new methods and be recompiled. Existing
   callers of the name-only members remain source-compatible.

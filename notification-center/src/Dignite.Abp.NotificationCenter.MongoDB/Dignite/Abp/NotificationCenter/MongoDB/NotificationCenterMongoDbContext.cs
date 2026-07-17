@@ -2,6 +2,7 @@ using MongoDB.Bson;
 using MongoDB.Driver;
 using Volo.Abp.Data;
 using Volo.Abp.MongoDB;
+using Volo.Abp.MongoDB.DistributedEvents;
 
 namespace Dignite.Abp.NotificationCenter.MongoDB;
 
@@ -14,9 +15,45 @@ public class NotificationCenterMongoDbContext : AbpMongoDbContext, INotification
 
     public IMongoCollection<NotificationSubscription> NotificationSubscriptions => Collection<NotificationSubscription>();
 
+    public IMongoCollection<IncomingEventRecord> IncomingEvents => Collection<IncomingEventRecord>();
+
+    public IMongoCollection<OutgoingEventRecord> OutgoingEvents => Collection<OutgoingEventRecord>();
+
     protected override void CreateModel(IMongoModelBuilder modelBuilder)
     {
         base.CreateModel(modelBuilder);
+
+        modelBuilder.ConfigureEventInbox();
+        modelBuilder.ConfigureEventOutbox();
+
+        // ABP's MongoDB model builder supplies the conventional collection names but does not add the
+        // query indexes that its EF Core model supplies. Keep both providers aligned with the sender,
+        // processor, duplicate-detection, and cleanup query shapes.
+        modelBuilder.Entity<IncomingEventRecord>(b =>
+        {
+            b.ConfigureIndexes(indexes =>
+            {
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(IncomingEventRecord.Status))
+                        .Ascending(nameof(IncomingEventRecord.CreationTime))));
+
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(IncomingEventRecord.MessageId)),
+                    new CreateIndexOptions { Unique = true }));
+            });
+        });
+
+        modelBuilder.Entity<OutgoingEventRecord>(b =>
+        {
+            b.ConfigureIndexes(indexes =>
+            {
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(OutgoingEventRecord.CreationTime))));
+            });
+        });
 
         modelBuilder.Entity<Notification>(b =>
         {

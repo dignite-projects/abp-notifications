@@ -16,5 +16,7 @@ public class AbpNotificationCenterMongoDbModule : AbpModule
         {
             options.AddDefaultRepositories(includeAllEntities: true);
         });
+
+        context.Services.AddHostedService<NotificationCenterMongoDbOutboxCapabilityHostedService>();
     }
 }

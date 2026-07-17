@@ -1,6 +1,6 @@
 using System;
+using MongoDB.Driver;
 using MongoSandbox;
-using Volo.Abp;
 
 namespace Dignite.Abp.NotificationCenter.MongoDB;
 
@@ -28,9 +28,15 @@ public class MongoDbFixture : IDisposable
 
     public static string GetConnectionString(string databaseName)
     {
-        var stringArray = MongoDbRunner.ConnectionString.Split('?');
-        var connectionString = stringArray[0].EnsureEndsWith('/') + databaseName + "/?" + stringArray[1];
-        return connectionString;
+        return GetConnectionString(MongoDbRunner, databaseName);
+    }
+
+    public static string GetConnectionString(IMongoRunner runner, string databaseName)
+    {
+        return new MongoUrlBuilder(runner.ConnectionString)
+        {
+            DatabaseName = databaseName
+        }.ToString();
     }
 
     public void Dispose()

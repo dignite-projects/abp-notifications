@@ -232,7 +232,8 @@ non-transactional unit of work atomic.
 | EF Core, outbox + transactional UoW | each batch is flushed and detached inside the ambient transaction | yes, within one distributor/job invocation | the transaction rolls back inbox and outbox records |
 | EF Core, no outbox + transactional UoW | each batch is flushed and detached inside the ambient transaction | no | inbox writes roll back, but an already published external event may have escaped |
 | EF Core, non-transactional UoW | each flushed batch is durable | no | completed inbox batches and already published events can remain |
-| MongoDB | each completed provider batch can become durable (the shipped provider has no transaction) | no | completed inbox batches and already published events can remain |
+| MongoDB, outbox + transactional UoW on a supported topology | each batch participates in the ambient MongoDB transaction | yes, within one distributor/job invocation | the transaction rolls back inbox and outbox records |
+| MongoDB, no outbox or non-transactional UoW | each completed provider batch is durable | no | completed inbox batches and already published events can remain |
 | `NullNotificationStore` | no persistence | not applicable | already published delivery events remain |
 
 If you use the shipped `NotificationCenterDbContext`, one line enables both:
@@ -269,14 +270,82 @@ Configure<AbpDistributedEventBusOptions>(options =>
 });
 ```
 
-The MongoDB provider wires no outbox or inbox. A crash between the store write and the publish leaves
-the notification in the inbox with no channel delivery, and a redelivered event makes the Email
-notifier send a second copy. Cancellation is a boundary for stopping new work, not compensation for work
-already completed. A MongoDB job that is retried after partially writing its batch can encounter the inbox
-unique constraint and cannot resume the missing portion automatically. This release intentionally adds no
-per-recipient/channel ledger, retry/resume policy, or cross-provider transaction emulation; those belong to the
-delivery-ledger roadmap item. Choose EF Core with a transactional UoW and the outbox if atomic persistence and
-publication within a job matters.
+The shipped MongoDB context has an equivalent one-line opt-in; it configures both ABP event boxes:
+
+```csharp
+Configure<AbpDistributedEventBusOptions>(options => options.UseNotificationCenterMongoDbOutbox());
+```
+
+This opt-in registers a host-lifecycle validator that fails startup unless the active Notification Center connection
+is a transaction-capable replica set running MongoDB 4.0 or later with logical sessions. It does not infer the
+guarantee from topology metadata alone: the validator commits an insert-and-delete transaction spanning
+`AbpEventOutbox` and `AbpEventInbox`, leaving no probe rows. Standalone servers are rejected. Sharded clusters are
+diagnosed but currently rejected because this package does not run a real sharded-cluster integration suite and
+therefore does not advertise an unverified guarantee. The host must also use transactional ABP units of work; do
+not set `AbpUnitOfWorkDefaultOptions.TransactionBehavior` to `Disabled`. For production with more than one
+application instance, configure an ABP distributed-lock provider for the outbox sender and inbox processor.
+
+`INotificationCenterMongoDbOutboxCapabilityChecker` exposes the same diagnostic used at startup. The automatic
+check runs against the host/default connection. Applications that resolve a different connection per tenant must
+run the checker inside every tenant context before enabling traffic and ensure every tenant deployment satisfies
+the same topology requirement; the background event-box workers also need an application-specific strategy for
+visiting those databases. The one-line setup assumes the usual shared Notification Center database.
+
+#### MongoDB upgrade, collections, indexes, and cleanup
+
+Existing MongoDB hosts should upgrade in this order:
+
+1. convert the deployment to a MongoDB 4.0+ replica set and verify transactions independently;
+2. ensure the application role can create indexes and read/write the ABP event-box collections;
+3. inspect existing `AbpEventInbox` records and collapse duplicate non-empty `MessageId` values before the new
+   unique index is created (retain the processed/discarded record when one exists, otherwise the oldest pending row);
+4. deploy the new provider package and add `UseNotificationCenterMongoDbOutbox()`;
+5. keep notification distribution inside transactional units of work, then monitor the startup capability log and
+   ABP outbox/inbox workers before enabling traffic.
+
+Notification business data needs no backfill and no collection is renamed. The provider uses ABP's conventional `AbpEventOutbox` and
+`AbpEventInbox` names and creates indexes matching the EF Core query shapes: `CreationTime` for outbox sending,
+`Status + CreationTime` for inbox processing/cleanup, and `MessageId` for duplicate detection. MongoDB makes
+`MessageId` unique so two concurrent check-then-insert deliveries cannot create two handler-visible records. A
+losing concurrent transaction is retried by the broker; ABP's normal existence check then observes the winner.
+EF Core retains ABP's conventional non-unique `MessageId` index, which is a remaining provider difference.
+
+**Breaking for custom context implementers:** `INotificationCenterMongoDbContext` now extends ABP's
+`IHasEventInbox` and `IHasEventOutbox`. A consumer-owned implementation must expose
+`IMongoCollection<IncomingEventRecord> IncomingEvents` and `IMongoCollection<OutgoingEventRecord> OutgoingEvents`,
+call `ConfigureEventInbox()` and `ConfigureEventOutbox()` from `CreateModel`, and add the three indexes described
+above (including MongoDB's unique `MessageId` index). The non-generic
+`UseNotificationCenterMongoDbOutbox()` targets the shipped `NotificationCenterMongoDbContext`; a custom context
+must instead configure both boxes explicitly:
+
+```csharp
+Configure<AbpDistributedEventBusOptions>(options =>
+{
+    options.Outboxes.Configure(config => config.UseMongoDbContext<MyHostMongoDbContext>());
+    options.Inboxes.Configure(config => config.UseMongoDbContext<MyHostMongoDbContext>());
+});
+```
+
+That custom route does not activate the shipped-context hosted validator. Run an equivalent committed transaction
+probe for every resolved database during the host lifecycle before accepting traffic; merely checking `setName`,
+logical sessions, or wire version is not sufficient.
+
+Processed/discarded inbox records are retained for ABP's deduplication window and then removed by ABP's built-in
+cleanup worker. Tune `AbpEventBusBoxesOptions.WaitTimeToDeleteProcessedInboxEvents` and
+`CleanOldEventTimeIntervalSpan` for the host's redelivery window and storage budget. Outbox rows are deleted after
+successful broker publication. Operational TTL indexes are not created because they can bypass ABP's status-aware
+cleanup semantics.
+
+EF Core requires host-owned schema migrations for `AbpEventOutbox`/`AbpEventInbox`; MongoDB creates collections
+and indexes through its model initialization instead. Both providers use ABP's dispatcher/inbox terminology and
+require a transactional unit of work for atomic persist-and-record. The MongoDB-specific unique inbox index and
+replica-set startup probe are the remaining reliability/configuration differences. Neither provider claims
+exactly-once external delivery or atomicity across all independently scheduled fan-out jobs.
+
+Without the opt-in, a crash between the store write and publish can still leave a notification with no channel
+delivery, and redelivery can invoke a notifier again. Cancellation remains a boundary for stopping new work, not
+compensation for completed work. This release intentionally adds no per-recipient/channel ledger or retry/resume
+policy; those belong to the delivery-ledger roadmap item.
 
 Large explicit fan-outs are split into independently scheduled jobs. The publisher prepares the shared
 `Notification` record first, then each job commits or fails independently; no provider promises one transaction
@@ -731,6 +800,13 @@ Configure<AbpDistributedEventBusOptions>(options =>
 {
     options.UseNotificationCenterEfCoreOutbox();
 });
+
+// MongoDB hosts use the equivalent opt-in. Host startup performs a real transaction probe;
+// use a transaction-capable MongoDB 4.0+ replica set and transactional ABP units of work.
+Configure<AbpDistributedEventBusOptions>(options =>
+{
+    options.UseNotificationCenterMongoDbOutbox();
+});
 ```
 
 ## Architecture
@@ -757,8 +833,8 @@ Notifiers                 NotificationCenter (optional)
    and stripping the recipient list per user.
 
 `NotificationDeliveryEto` is the load-bearing boundary: between core and notifiers, between monolithic and
-distributed deployment, and the extension point for any new channel. Under the EF Core Notification
-Center provider, hosts should opt in to ABP's transactional outbox (see [Configuration](#configuration))
+distributed deployment, and the extension point for any new channel. Under either Notification Center
+persistence provider, hosts should opt in to ABP's transactional outbox (see [Configuration](#configuration))
 so "persist the notification" + "publish the event" commit together.
 
 > **Serialization invariant:** every `NotificationData` subclass must carry a stable
