@@ -56,7 +56,8 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
             GetRequiredService<ICurrentTenant>(),
             GetRequiredService<ILogger<DefaultNotificationDistributor>>(),
             GetRequiredService<INotificationDataTypeRegistry>(),
-            Options.Create(options ?? new NotificationOptions()));
+            Options.Create(options ?? new NotificationOptions()),
+            GetRequiredService<INotificationDeliveryStore>());
     }
 
     private Task DistributeAsync(
@@ -109,9 +110,9 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
         await InsertSubscriptionAsync(subscriber);
 
         var eventBus = Substitute.For<IDistributedEventBus>();
-        NotificationDeliveryEto? published = null;
-        eventBus.WhenForAnyArgs(x => x.PublishAsync(Arg.Any<NotificationDeliveryEto>()))
-            .Do(call => published = call.Arg<NotificationDeliveryEto>());
+        NotificationDeliveryWorkEto? published = null;
+        eventBus.WhenForAnyArgs(x => x.PublishAsync(Arg.Any<NotificationDeliveryWorkEto>()))
+            .Do(call => published = call.Arg<NotificationDeliveryWorkEto>());
 
         await DistributeAsync(background, CreateDistributor(eventBus), NewNotification(notificationId), null);
 
@@ -121,8 +122,8 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
                 .GetUserNotificationCountAsync(subscriber)).ShouldBe(1);
         });
         published.ShouldNotBeNull();
-        published!.UserIds.ShouldBe(new[] { subscriber });
-        await eventBus.Received(1).PublishAsync(Arg.Any<NotificationDeliveryEto>());
+        published!.UserId.ShouldBe(subscriber);
+        await eventBus.Received(1).PublishAsync(Arg.Any<NotificationDeliveryWorkEto>());
     }
 
     [Theory]
@@ -148,7 +149,7 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
             (await GetRequiredService<INotificationStore>()
                 .GetUserNotificationCountAsync(subscriber)).ShouldBe(0);
         });
-        await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<NotificationDeliveryEto>());
+        await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<NotificationDeliveryWorkEto>());
     }
 
     [Theory]
@@ -160,9 +161,9 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
         var u2 = Guid.NewGuid();
         var notificationId = Guid.NewGuid();
         var eventBus = Substitute.For<IDistributedEventBus>();
-        NotificationDeliveryEto? published = null;
-        eventBus.WhenForAnyArgs(x => x.PublishAsync(Arg.Any<NotificationDeliveryEto>()))
-            .Do(call => published = call.Arg<NotificationDeliveryEto>());
+        var published = new List<NotificationDeliveryWorkEto>();
+        eventBus.WhenForAnyArgs(x => x.PublishAsync(Arg.Any<NotificationDeliveryWorkEto>()))
+            .Do(call => published.Add(call.Arg<NotificationDeliveryWorkEto>()));
 
         await DistributeAsync(
             background,
@@ -176,10 +177,9 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
             (await store.GetUserNotificationCountAsync(u1)).ShouldBe(1);
             (await store.GetUserNotificationCountAsync(u2)).ShouldBe(1);
         });
-        published.ShouldNotBeNull();
-        published!.UserIds.ShouldBe(new[] { u1, u2 });
-        published.UserIds.Distinct().Count().ShouldBe(2);
-        await eventBus.Received(1).PublishAsync(Arg.Any<NotificationDeliveryEto>());
+        published.Select(item => item.UserId).ShouldBe(new[] { u1, u2 }, ignoreOrder: true);
+        published.Select(item => item.UserId).Distinct().Count().ShouldBe(2);
+        await eventBus.Received(2).PublishAsync(Arg.Any<NotificationDeliveryWorkEto>());
     }
 
     [Theory]
@@ -199,9 +199,9 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
         await InsertSubscriptionAsync(both, "Demo.Order", "42");
 
         var eventBus = Substitute.For<IDistributedEventBus>();
-        NotificationDeliveryEto? published = null;
-        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryEto>()))
-            .Do(call => published = call.Arg<NotificationDeliveryEto>());
+        var published = new List<NotificationDeliveryWorkEto>();
+        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryWorkEto>()))
+            .Do(call => published.Add(call.Arg<NotificationDeliveryWorkEto>()));
 
         await DistributeAsync(
             background,
@@ -218,9 +218,9 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
             (await store.GetUserNotificationCountAsync(otherEntity)).ShouldBe(0);
         });
 
-        published.ShouldNotBeNull();
-        published!.UserIds.ShouldBe(new[] { definitionWide, exact, both }, ignoreOrder: true);
-        published.UserIds.Distinct().Count().ShouldBe(3);
+        published.Select(item => item.UserId)
+            .ShouldBe(new[] { definitionWide, exact, both }, ignoreOrder: true);
+        published.Select(item => item.UserId).Distinct().Count().ShouldBe(3);
     }
 
     [Fact]
@@ -243,9 +243,9 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
         }
 
         var eventBus = Substitute.For<IDistributedEventBus>();
-        NotificationDeliveryEto? published = null;
-        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryEto>()))
-            .Do(call => published = call.Arg<NotificationDeliveryEto>());
+        NotificationDeliveryWorkEto? published = null;
+        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryWorkEto>()))
+            .Do(call => published = call.Arg<NotificationDeliveryWorkEto>());
         var notification = NewNotification(Guid.NewGuid());
         notification.TenantId = notificationTenantId;
 
@@ -275,7 +275,7 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
 
         published.ShouldNotBeNull();
         published!.TenantId.ShouldBe(notificationTenantId);
-        published.UserIds.ShouldBe(new[] { notificationTenantSubscriber });
+        published.UserId.ShouldBe(notificationTenantSubscriber);
         currentTenant.Id.ShouldBeNull();
     }
 
@@ -298,7 +298,7 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
             (await GetRequiredService<IRepository<Notification, Guid>>()
                 .FindAsync(notificationId)).ShouldBeNull();
         });
-        await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<NotificationDeliveryEto>());
+        await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<NotificationDeliveryWorkEto>());
     }
 
     [Fact]
@@ -333,9 +333,9 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
         });
 
         var eventBus = Substitute.For<IDistributedEventBus>();
-        var deliveryBatches = new List<Guid[]>();
-        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryEto>()))
-            .Do(call => deliveryBatches.Add(call.Arg<NotificationDeliveryEto>().UserIds.ToArray()));
+        var deliveryWorkItems = new List<NotificationDeliveryWorkEto>();
+        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryWorkEto>()))
+            .Do(call => deliveryWorkItems.Add(call.Arg<NotificationDeliveryWorkEto>()));
         var notificationId = Guid.NewGuid();
         var distributor = CreateDistributor(eventBus, new NotificationOptions
         {
@@ -360,11 +360,8 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
                 .FindAsync(notificationId)).ShouldNotBeNull();
         });
 
-        deliveryBatches.Count.ShouldBe(21);
-        deliveryBatches.Take(20).ShouldAllBe(batch => batch.Length == 100);
-        deliveryBatches[^1].Length.ShouldBe(1);
-        deliveryBatches.ShouldAllBe(batch => batch.Length <= 100);
-        deliveryBatches.SelectMany(batch => batch).Distinct().Count().ShouldBe(recipientCount);
+        deliveryWorkItems.Count.ShouldBe(recipientCount);
+        deliveryWorkItems.Select(item => item.UserId).Distinct().Count().ShouldBe(recipientCount);
     }
 
     [Fact]
@@ -373,7 +370,7 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
         var eventBus = Substitute.For<IDistributedEventBus>();
         using var cancellation = new CancellationTokenSource();
         var publishedBatches = 0;
-        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryEto>()))
+        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryWorkEto>()))
             .Do(_ =>
             {
                 publishedBatches++;
@@ -394,7 +391,7 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
                 null,
                 cancellation.Token)));
 
-        publishedBatches.ShouldBe(1);
+        publishedBatches.ShouldBe(2);
         await WithUnitOfWorkAsync(async () =>
         {
             // EF rolls the ambient transaction back, while the non-transactional Mongo test provider can retain
@@ -416,9 +413,9 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
             DeliveryEventRecipientLimit = 100
         };
         var eventBus = Substitute.For<IDistributedEventBus>();
-        var deliveries = new List<NotificationDeliveryEto>();
-        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryEto>()))
-            .Do(call => deliveries.Add(call.Arg<NotificationDeliveryEto>()));
+        var deliveries = new List<NotificationDeliveryWorkEto>();
+        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryWorkEto>()))
+            .Do(call => deliveries.Add(call.Arg<NotificationDeliveryWorkEto>()));
         var distributor = CreateDistributor(eventBus, options);
         var backgroundJobManager = Substitute.For<IBackgroundJobManager>();
         var publisher = new DefaultNotificationPublisher(
@@ -469,8 +466,7 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
             rows.Count.ShouldBe(distinctUsers.Length);
             rows.Select(row => row.UserId).ShouldBe(distinctUsers, ignoreOrder: true);
         });
-        deliveries.Count.ShouldBe(24);
-        deliveries.ShouldAllBe(delivery => delivery.UserIds.Length <= 100);
-        deliveries.SelectMany(delivery => delivery.UserIds).ShouldBe(distinctUsers, ignoreOrder: true);
+        deliveries.Count.ShouldBe(distinctUsers.Length);
+        deliveries.Select(delivery => delivery.UserId).ShouldBe(distinctUsers, ignoreOrder: true);
     }
 }

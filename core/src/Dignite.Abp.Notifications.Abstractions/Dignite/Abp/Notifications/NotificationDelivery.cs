@@ -44,4 +44,18 @@ public class NotificationDelivery
             EntityId = eto.EntityId
         };
     }
+
+    public static NotificationDelivery FromWorkItem(NotificationDeliveryWorkEto workItem)
+    {
+        return new NotificationDelivery
+        {
+            NotificationId = workItem.NotificationId,
+            NotificationName = workItem.NotificationName,
+            Data = workItem.Data,
+            Severity = workItem.Severity,
+            CreationTime = workItem.CreationTime,
+            EntityTypeName = workItem.EntityTypeName,
+            EntityId = workItem.EntityId
+        };
+    }
 }

@@ -1,0 +1,383 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using Dignite.Abp.Notifications;
+using Volo.Abp.Data;
+using Volo.Abp.DependencyInjection;
+using Volo.Abp.Domain.Entities;
+using Volo.Abp.Domain.Repositories;
+using Volo.Abp.Guids;
+using Volo.Abp.Linq;
+using Volo.Abp.MultiTenancy;
+using Volo.Abp.Uow;
+
+namespace Dignite.Abp.NotificationCenter;
+
+/// <summary>Durable EF Core/MongoDB implementation of the core delivery-state abstraction.</summary>
+[Dependency(ReplaceServices = true)]
+[ExposeServices(
+    typeof(INotificationDeliveryStore),
+    typeof(IBatchedNotificationDeliveryStore),
+    typeof(NotificationDeliveryStore))]
+public class NotificationDeliveryStore :
+    INotificationDeliveryStore,
+    IBatchedNotificationDeliveryStore,
+    ITransientDependency
+{
+    protected IRepository<NotificationDeliveryRecord, Guid> DeliveryRepository { get; }
+    protected IRepository<Notification, Guid> NotificationRepository { get; }
+    protected INotificationDataSerializer DataSerializer { get; }
+    protected IGuidGenerator GuidGenerator { get; }
+    protected IAsyncQueryableExecuter AsyncExecuter { get; }
+    protected IDataFilter DataFilter { get; }
+    protected IUnitOfWorkManager UnitOfWorkManager { get; }
+
+    public NotificationDeliveryStore(
+        IRepository<NotificationDeliveryRecord, Guid> deliveryRepository,
+        IRepository<Notification, Guid> notificationRepository,
+        INotificationDataSerializer dataSerializer,
+        IGuidGenerator guidGenerator,
+        IAsyncQueryableExecuter asyncExecuter,
+        IDataFilter dataFilter,
+        IUnitOfWorkManager unitOfWorkManager)
+    {
+        DeliveryRepository = deliveryRepository;
+        NotificationRepository = notificationRepository;
+        DataSerializer = dataSerializer;
+        GuidGenerator = guidGenerator;
+        AsyncExecuter = asyncExecuter;
+        DataFilter = dataFilter;
+        UnitOfWorkManager = unitOfWorkManager;
+    }
+
+    public virtual async Task EnsureCreatedAsync(
+        NotificationDeliveryWorkEto workItem,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateIdentity(workItem);
+        var existing = await DeliveryRepository.FindAsync(workItem.DeliveryId, cancellationToken: cancellationToken);
+        if (existing != null)
+        {
+            EnsureSameIdentity(existing, workItem);
+            return;
+        }
+
+        await DeliveryRepository.InsertAsync(
+            new NotificationDeliveryRecord(
+                workItem.DeliveryId,
+                workItem.NotificationId,
+                workItem.UserId,
+                workItem.Channel,
+                workItem.IdempotencyKey,
+                workItem.CreationTime,
+                workItem.TenantId),
+            autoSave: true,
+            cancellationToken: cancellationToken);
+    }
+
+    public virtual async Task EnsureCreatedAsync(
+        IReadOnlyCollection<NotificationDeliveryWorkEto> workItems,
+        CancellationToken cancellationToken = default)
+    {
+        if (workItems.Count == 0)
+        {
+            return;
+        }
+
+        var distinctItems = workItems
+            .GroupBy(workItem => workItem.DeliveryId)
+            .Select(group => group.First())
+            .ToList();
+        foreach (var workItem in distinctItems)
+        {
+            ValidateIdentity(workItem);
+        }
+
+        var ids = distinctItems.Select(workItem => workItem.DeliveryId).ToList();
+        var query = await DeliveryRepository.GetQueryableAsync();
+        var existing = await AsyncExecuter.ToListAsync(
+            query.Where(delivery => ids.Contains(delivery.Id)),
+            cancellationToken);
+        var existingById = existing.ToDictionary(delivery => delivery.Id);
+        foreach (var workItem in distinctItems.Where(workItem => existingById.ContainsKey(workItem.DeliveryId)))
+        {
+            EnsureSameIdentity(existingById[workItem.DeliveryId], workItem);
+        }
+
+        var entities = distinctItems
+            .Where(workItem => !existingById.ContainsKey(workItem.DeliveryId))
+            .Select(workItem => new NotificationDeliveryRecord(
+                workItem.DeliveryId,
+                workItem.NotificationId,
+                workItem.UserId,
+                workItem.Channel,
+                workItem.IdempotencyKey,
+                workItem.CreationTime,
+                workItem.TenantId))
+            .ToList();
+        if (entities.Count > 0)
+        {
+            await DeliveryRepository.InsertManyAsync(
+                entities,
+                autoSave: true,
+                cancellationToken: cancellationToken);
+        }
+    }
+
+    public virtual async Task<NotificationDeliveryClaim?> TryClaimAsync(
+        Guid deliveryId,
+        Guid? tenantId,
+        DateTime now,
+        TimeSpan leaseDuration,
+        int maxAttempts,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var unitOfWork = UnitOfWorkManager.Begin(requiresNew: true, isTransactional: false);
+            using (DataFilter.Disable<IMultiTenant>())
+            {
+                var entity = await DeliveryRepository.FirstOrDefaultAsync(
+                    delivery => delivery.Id == deliveryId && delivery.TenantId == tenantId,
+                    cancellationToken: cancellationToken);
+                if (entity == null || !entity.CanBeClaimed(now))
+                {
+                    await unitOfWork.CompleteAsync(cancellationToken);
+                    return null;
+                }
+
+                if (entity.AttemptCount >= maxAttempts)
+                {
+                    entity.MarkAbandonedDeadLetter(now);
+                    await DeliveryRepository.UpdateAsync(entity, autoSave: true, cancellationToken: cancellationToken);
+                    await unitOfWork.CompleteAsync(cancellationToken);
+                    return null;
+                }
+
+                var claim = entity.Claim(GuidGenerator.Create(), now, leaseDuration);
+                await DeliveryRepository.UpdateAsync(entity, autoSave: true, cancellationToken: cancellationToken);
+                await unitOfWork.CompleteAsync(cancellationToken);
+                return claim;
+            }
+        }
+        catch (AbpDbConcurrencyException)
+        {
+            return null;
+        }
+    }
+
+    public virtual Task<bool> MarkSucceededAsync(
+        Guid deliveryId,
+        Guid? tenantId,
+        Guid leaseId,
+        DateTime completedAt,
+        CancellationToken cancellationToken = default)
+    {
+        return UpdateTerminalAsync(
+            deliveryId,
+            tenantId,
+            entity => entity.MarkSucceeded(leaseId, completedAt),
+            cancellationToken);
+    }
+
+    public virtual Task<bool> MarkSuppressedAsync(
+        Guid deliveryId,
+        Guid? tenantId,
+        Guid leaseId,
+        DateTime completedAt,
+        string reasonCode,
+        CancellationToken cancellationToken = default)
+    {
+        return UpdateTerminalAsync(
+            deliveryId,
+            tenantId,
+            entity => entity.MarkSuppressed(leaseId, completedAt, reasonCode),
+            cancellationToken);
+    }
+
+    public virtual Task<bool> MarkFailedAsync(
+        Guid deliveryId,
+        Guid? tenantId,
+        Guid leaseId,
+        DateTime failedAt,
+        string failureCode,
+        DateTime? nextAttemptTime,
+        CancellationToken cancellationToken = default)
+    {
+        return UpdateTerminalAsync(
+            deliveryId,
+            tenantId,
+            entity => entity.MarkFailed(
+                leaseId,
+                failedAt,
+                failureCode,
+                nextAttemptTime),
+            cancellationToken);
+    }
+
+    public virtual async Task<IReadOnlyList<NotificationDeliveryWorkEto>> GetDueWorkItemsAsync(
+        DateTime now,
+        int maxResultCount,
+        CancellationToken cancellationToken = default)
+    {
+        using var unitOfWork = UnitOfWorkManager.Begin(requiresNew: true, isTransactional: false);
+        using (DataFilter.Disable<IMultiTenant>())
+        {
+            var deliveryQuery = await DeliveryRepository.GetQueryableAsync();
+            var deliveries = await AsyncExecuter.ToListAsync(deliveryQuery
+                .Where(delivery => delivery.State == NotificationDeliveryState.Pending
+                                   || delivery.State == NotificationDeliveryState.Failed
+                                   && (!delivery.NextAttemptTime.HasValue || delivery.NextAttemptTime <= now)
+                                   || delivery.State == NotificationDeliveryState.Claimed
+                                   && delivery.LeaseExpirationTime <= now)
+                .OrderBy(delivery => delivery.CreationTime)
+                .Take(maxResultCount), cancellationToken);
+            if (deliveries.Count == 0)
+            {
+                await unitOfWork.CompleteAsync(cancellationToken);
+                return Array.Empty<NotificationDeliveryWorkEto>();
+            }
+
+            var notificationIds = deliveries.Select(delivery => delivery.NotificationId).Distinct().ToList();
+            var notificationQuery = await NotificationRepository.GetQueryableAsync();
+            var notifications = await AsyncExecuter.ToListAsync(
+                notificationQuery.Where(notification => notificationIds.Contains(notification.Id)),
+                cancellationToken);
+            var notificationsById = notifications.ToDictionary(notification => notification.Id);
+            var items = deliveries
+                .Where(delivery => notificationsById.ContainsKey(delivery.NotificationId))
+                .Select(delivery => ToWorkItem(delivery, notificationsById[delivery.NotificationId]))
+                .ToList();
+            await unitOfWork.CompleteAsync(cancellationToken);
+            return items;
+        }
+    }
+
+    public virtual async Task<bool> RequeueAsync(
+        Guid deliveryId,
+        Guid? tenantId,
+        DateTime now,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var unitOfWork = UnitOfWorkManager.Begin(requiresNew: true, isTransactional: false);
+            using (DataFilter.Disable<IMultiTenant>())
+            {
+                var entity = await DeliveryRepository.FirstOrDefaultAsync(
+                    delivery => delivery.Id == deliveryId && delivery.TenantId == tenantId,
+                    cancellationToken: cancellationToken);
+                if (entity == null || !entity.Requeue(now))
+                {
+                    await unitOfWork.CompleteAsync(cancellationToken);
+                    return false;
+                }
+
+                await DeliveryRepository.UpdateAsync(entity, autoSave: true, cancellationToken: cancellationToken);
+                await unitOfWork.CompleteAsync(cancellationToken);
+                return true;
+            }
+        }
+        catch (AbpDbConcurrencyException)
+        {
+            return false;
+        }
+    }
+
+    protected virtual NotificationData? DeserializeDurableData(string? json)
+    {
+        return DataSerializer is INotificationDataTolerantReader tolerantReader
+            ? tolerantReader.DeserializeTolerantly(json)
+            : DataSerializer.Deserialize(json);
+    }
+
+    private async Task<bool> UpdateTerminalAsync(
+        Guid deliveryId,
+        Guid? tenantId,
+        Func<NotificationDeliveryRecord, bool> transition,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var unitOfWork = UnitOfWorkManager.Begin(requiresNew: true, isTransactional: false);
+            using (DataFilter.Disable<IMultiTenant>())
+            {
+                var entity = await DeliveryRepository.FirstOrDefaultAsync(
+                    delivery => delivery.Id == deliveryId && delivery.TenantId == tenantId,
+                    cancellationToken: cancellationToken);
+                if (entity == null || !transition(entity))
+                {
+                    await unitOfWork.CompleteAsync(cancellationToken);
+                    return false;
+                }
+
+                await DeliveryRepository.UpdateAsync(entity, autoSave: true, cancellationToken: cancellationToken);
+                await unitOfWork.CompleteAsync(cancellationToken);
+                return true;
+            }
+        }
+        catch (AbpDbConcurrencyException)
+        {
+            return false;
+        }
+    }
+
+    private NotificationDeliveryWorkEto ToWorkItem(
+        NotificationDeliveryRecord delivery,
+        Notification notification)
+    {
+        return new NotificationDeliveryWorkEto
+        {
+            DeliveryId = delivery.Id,
+            IdempotencyKey = delivery.IdempotencyKey,
+            NotificationId = notification.Id,
+            NotificationName = notification.NotificationName,
+            Data = DeserializeDurableData(notification.Data),
+            Severity = notification.Severity,
+            CreationTime = notification.CreationTime,
+            UserId = delivery.UserId,
+            Channel = delivery.Channel,
+            EntityTypeName = notification.EntityTypeName,
+            EntityId = notification.EntityId,
+            TenantId = delivery.TenantId
+        };
+    }
+
+    private static void ValidateIdentity(NotificationDeliveryWorkEto workItem)
+    {
+        if (workItem.DeliveryId != NotificationDeliveryIdentity.CreateId(
+                workItem.TenantId,
+                workItem.NotificationId,
+                workItem.UserId,
+                workItem.Channel)
+            || !string.Equals(
+                workItem.IdempotencyKey,
+                NotificationDeliveryIdentity.CreateIdempotencyKey(
+                    workItem.TenantId,
+                    workItem.NotificationId,
+                    workItem.UserId,
+                    workItem.Channel),
+                StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("The notification delivery work-item identity is invalid.");
+        }
+    }
+
+    private static void EnsureSameIdentity(
+        NotificationDeliveryRecord existing,
+        NotificationDeliveryWorkEto workItem)
+    {
+        if (existing.TenantId != workItem.TenantId
+            || existing.NotificationId != workItem.NotificationId
+            || existing.UserId != workItem.UserId
+            || !string.Equals(
+                existing.ChannelKey,
+                NotificationDeliveryIdentity.NormalizeChannel(workItem.Channel),
+                StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("A notification delivery id was reused for another identity.");
+        }
+    }
+}

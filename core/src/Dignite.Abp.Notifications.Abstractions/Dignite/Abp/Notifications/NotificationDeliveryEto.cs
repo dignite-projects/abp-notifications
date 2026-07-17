@@ -13,6 +13,21 @@ namespace Dignite.Abp.Notifications;
 [Serializable]
 public class NotificationDeliveryEto : IEventDataMayHaveTenantId
 {
+    /// <summary>
+    /// Stable per-recipient/channel delivery identity when this instance was adapted from the reliable work-item
+    /// pipeline. Null for legacy aggregate events produced by older applications.
+    /// </summary>
+    public Guid? DeliveryId { get; set; }
+
+    /// <summary>Stable downstream idempotency key; null on legacy aggregate events.</summary>
+    public string? IdempotencyKey { get; set; }
+
+    /// <summary>Single recipient on reliable adapted events; null on legacy aggregate events.</summary>
+    public Guid? UserId { get; set; }
+
+    /// <summary>Single channel on reliable adapted events; null on legacy aggregate events.</summary>
+    public string? Channel { get; set; }
+
     public Guid NotificationId { get; set; }
 
     public string NotificationName { get; set; } = default!;

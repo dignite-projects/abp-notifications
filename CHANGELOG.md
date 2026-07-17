@@ -12,6 +12,13 @@ changes.
 
 ### Added
 
+- Added a per-tenant/notification/user/channel delivery state machine with deterministic identities, atomic leases,
+  exponential retry with jitter, lease recovery, suppression, dead-lettering, metrics, and operator query/retry
+  permissions and REST endpoints. Notification Center persists the ledger with equivalent EF Core and MongoDB
+  indexes and behavior; Core-only applications retain a process-local null implementation.
+- Added `INotificationDeliveryNotifier` and single-recipient/channel `NotificationDeliveryWorkEto` contracts.
+  Work items carry a stable idempotency key for providers that support downstream deduplication, while legacy
+  `INotificationNotifier<NotificationDeliveryEto>` implementations remain callable through a singleton adapter.
 - Added MongoDB integration with ABP's distributed event outbox and inbox through
   `UseNotificationCenterMongoDbOutbox()`. The opt-in validates a MongoDB 4.0+ replica set with a real committed
   multi-collection transaction probe at host startup, exposes a reusable capability checker, uses ABP-compatible
@@ -37,6 +44,14 @@ changes.
 
 ### Changed
 
+- **Breaking wire behavior for independently deployed event consumers.** The default distributor now publishes
+  `NotificationDeliveryWorkEto` instead of batched `NotificationDeliveryEto`. Upgrade event consumers before
+  producers in a rolling deployment. Existing notifier source contracts remain supported, but an old process that
+  only subscribes to the legacy event type cannot consume the new work event.
+- Notification Center hosts require a host-owned schema migration for the new `AbpNotificationDeliveries` table
+  (or the equivalent MongoDB collection) and its unique identity/due-work indexes. Historical notifications need no
+  backfill. Internal scheduling is at least once; exactly-once external effects require the downstream provider to
+  honor the supplied idempotency key.
 - **Breaking for implementers.** `INotificationCenterMongoDbContext` now extends ABP's `IHasEventInbox` and
   `IHasEventOutbox`. Consumer-owned implementations must expose and model the two ABP event collections and
   configure both boxes against their custom context. MongoDB's `MessageId` inbox index is now unique; existing
@@ -76,15 +91,15 @@ changes.
   schema v1 and upgraded lazily without a database migration or eager row rewrite. Notification Center store
   queries and distributed-event/HTTP converters now tolerate unknown, future, malformed, and failed-upcast payloads
   by returning safe placeholder data, while `INotificationDataSerializer.Deserialize` retains strict behavior.
-- Distribution can now publish multiple `NotificationDeliveryEto` work items for one notification. Built-in EF Core,
+- Distribution can now schedule delivery work in multiple bounded groups for one notification. Built-in EF Core,
   MongoDB, and null stores use keyset pages and bounded writes; large explicit fan-outs prepare the notification once
   and enqueue bounded recipient jobs. Explicit normalization uses bounded keyset windows rather than a
   notification-wide duplicate set, and the inline threshold now shares the 10,000 hard maximum. EF Core flushes and
   detaches each inbox group while retaining an ambient transaction when one exists. Existing custom
   `INotificationStore` implementations remain compatible through the legacy materializing/per-row path and should
   add the new capabilities before large fan-outs. The original four-parameter `NotificationDistributionJobArgs`
-  constructor remains available for binary compatibility. No database migration or delivery-ledger/retry policy is
-  included.
+  constructor remains available for binary compatibility. Delivery events are now expanded into independently
+  claimable recipient/channel work items by the delivery reliability pipeline.
 - **Breaking behavior for payload authors.** Per-instance assignments to `NotificationData.SchemaVersion` no longer
   select the wire version. The converter now writes the current version declared by
   `[NotificationDataType("...", version)]`; move shape changes to that declaration and registered upcasters.

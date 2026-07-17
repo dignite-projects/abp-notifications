@@ -1,8 +1,10 @@
 using System;
 using System.Linq;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Shouldly;
 using Volo.Abp.MultiTenancy;
+using Volo.Abp.EventBus.Distributed;
 using Xunit;
 
 namespace Dignite.Abp.Notifications;
@@ -32,6 +34,10 @@ public class NotificationDistribution_Integration_Tests : DigniteAbpNotification
     [Fact]
     public async Task Publishing_to_explicit_users_emits_a_delivery_eto_through_the_bus()
     {
+        GetRequiredService<INotificationDeliveryStore>().ShouldNotBeNull();
+        GetRequiredService<IEnumerable<IDistributedEventHandler<NotificationDeliveryWorkEto>>>()
+            .ShouldContain(handler => handler is NotificationDeliveryWorkHandler);
+
         var u1 = Guid.NewGuid();
         var u2 = Guid.NewGuid();
 
@@ -40,11 +46,15 @@ public class NotificationDistribution_Integration_Tests : DigniteAbpNotification
             new MessageNotificationData("hi"),
             userIds: new[] { u1, u1, u2 });
 
-        _received.Items.Count.ShouldBe(1);
-        var eto = _received.Items.Single();
-        eto.NotificationName.ShouldBe(TestNotificationDefinitionProvider.Plain);
-        eto.UserIds.ShouldBe(new[] { u1, u2 });
-        eto.Data.ShouldBeOfType<MessageNotificationData>().Message.ShouldBe("hi");
+        _received.Items.Count.ShouldBe(2);
+        _received.Items.Select(item => item.UserId).ShouldBe(new[] { u1, u2 }, ignoreOrder: true);
+        foreach (var item in _received.Items)
+        {
+            item.NotificationName.ShouldBe(TestNotificationDefinitionProvider.Plain);
+            item.Channel.ShouldBe("SignalR");
+            item.Data.ShouldBeOfType<MessageNotificationData>().Message.ShouldBe("hi");
+            item.IdempotencyKey.ShouldStartWith(NotificationDeliveryIdentity.IdempotencyKeyPrefix);
+        }
     }
 
     [Fact]
@@ -87,7 +97,7 @@ public class NotificationDistribution_Integration_Tests : DigniteAbpNotification
         var args = _backgroundJobs.EnqueuedArgs.Single().ShouldBeOfType<NotificationDistributionJobArgs>();
         await GetRequiredService<NotificationDistributionJob>().ExecuteAsync(args);
 
-        _received.Items.Single().UserIds.ShouldBe(users, ignoreOrder: true);
+        _received.Items.Select(item => item.UserId).ShouldBe(users, ignoreOrder: true);
     }
 
     [Fact]
@@ -149,7 +159,7 @@ public class NotificationDistribution_Integration_Tests : DigniteAbpNotification
         }
 
         var delivery = _received.Items.Single();
-        delivery.UserIds.ShouldBe(new[] { userId });
+        delivery.UserId.ShouldBe(userId);
         delivery.TenantId.ShouldBe(tenantId);
     }
 
@@ -171,9 +181,8 @@ public class NotificationDistribution_Integration_Tests : DigniteAbpNotification
             NotificationRecipientEligibilityMode.BypassDefinitionRequirements);
         await GetRequiredService<NotificationDistributionJob>().ExecuteAsync(args);
 
-        var delivery = _received.Items.Single();
-        delivery.UserIds.ShouldBe(users, ignoreOrder: true);
-        delivery.TenantId.ShouldBe(tenantId);
+        _received.Items.Select(item => item.UserId).ShouldBe(users, ignoreOrder: true);
+        _received.Items.ShouldAllBe(item => item.TenantId == tenantId);
         _currentTenant.Id.ShouldBeNull();
     }
 

@@ -54,5 +54,22 @@ public static class NotificationCenterDbContextModelCreatingExtensions
             // A user's own subscriptions.
             b.HasIndex(x => new { x.TenantKey, x.UserId, x.NotificationNameKey });
         });
+
+        builder.Entity<NotificationDeliveryRecord>(b =>
+        {
+            b.ToTable(NotificationCenterDbProperties.DbTablePrefix + "NotificationDeliveries", NotificationCenterDbProperties.DbSchema);
+            b.ConfigureByConvention();
+
+            b.Property(x => x.Channel).IsRequired().HasMaxLength(NotificationCenterConsts.MaxDeliveryChannelLength);
+            b.Property(x => x.ChannelKey).IsRequired().HasMaxLength(NotificationCenterConsts.MaxDeliveryChannelLength);
+            b.Property(x => x.IdempotencyKey).IsRequired().IsUnicode(false)
+                .HasMaxLength(NotificationCenterConsts.DeliveryIdempotencyKeyLength);
+            b.Property(x => x.LastFailureCode).HasMaxLength(NotificationCenterConsts.MaxDeliveryFailureCodeLength);
+            b.Property(x => x.LastFailureMessage).HasMaxLength(NotificationCenterConsts.MaxDeliveryFailureMessageLength);
+
+            b.HasIndex(x => new { x.TenantKey, x.NotificationId, x.UserId, x.ChannelKey }).IsUnique();
+            b.HasIndex(x => new { x.State, x.NextAttemptTime });
+            b.HasIndex(x => new { x.State, x.LeaseExpirationTime });
+        });
     }
 }

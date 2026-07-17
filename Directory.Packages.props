@@ -19,6 +19,7 @@
     <PackageVersion Include="Volo.Abp.Ddd.Domain" Version="10.5.0" />
     <PackageVersion Include="Volo.Abp.Ddd.Application" Version="10.5.0" />
     <PackageVersion Include="Volo.Abp.Ddd.Application.Contracts" Version="10.5.0" />
+    <PackageVersion Include="Volo.Abp.Authorization.Abstractions" Version="10.5.0" />
     <PackageVersion Include="Volo.Abp.AspNetCore.Mvc" Version="10.5.0" />
     <PackageVersion Include="Volo.Abp.AspNetCore.Mvc.UI.Theme.Shared" Version="10.5.0" />
     <PackageVersion Include="Volo.Abp.AspNetCore.Mvc.UI.Bundling" Version="10.5.0" />

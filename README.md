@@ -4,13 +4,13 @@ An extensible, event-driven **notification framework for the [ABP Framework](htt
 an optional **Notification Center** (persistent inbox, subscriptions, read/unread state, REST API)
 with **MVC** and **Angular** UI libraries.
 
-- **Event-driven, pluggable notifiers.** The core publishes one distributed event
-  (`NotificationDeliveryEto`); each notifier (SignalR, Email, …) subscribes and relays it to its own
-  channel. Channels can be added, removed, or deployed independently without touching the core.
-- **Two operation modes, one framework.** Run stateless (fire-and-forget real-time push, no
-  persistence) or as a full Notification Center (persistent per-user inbox, subscriptions,
-  read/unread state, REST API).
-- **Dual persistence.** EF Core and MongoDB, behind the same `INotificationStore` abstraction.
+- **Event-driven, pluggable notifiers.** The core publishes one stable, independently claimable
+  `NotificationDeliveryWorkEto` per recipient and channel. Channels can be added, removed, or deployed
+  independently without touching the core.
+- **Two operation modes, one framework.** Run Core-only with process-local delivery state and no inbox,
+  or install Notification Center for durable delivery state, persistent inbox, subscriptions,
+  read/unread state, REST API, and operator retry.
+- **Dual persistence.** EF Core and MongoDB implement the same inbox and delivery-state abstractions.
 - **Contract-driven & headless.** Every payload carries a stable type discriminator, so any
   consumer — .NET, JS/TS, or the shipped Angular library — can deserialize and render it. The
   Notification Center is headless (REST API); UI is optional.
@@ -39,7 +39,7 @@ the first stable version exists the initial pre-release is necessarily also expo
 
 | Package | Purpose |
 |---|---|
-| `Dignite.Abp.Notifications.Abstractions` | Shared contracts: `NotificationData`, `NotificationDeliveryEto`, `[NotificationDataType]`, `INotificationDefinitionProvider`, `INotificationNotifier`. Notifiers and remote clients depend on **only** this. |
+| `Dignite.Abp.Notifications.Abstractions` | Shared contracts: `NotificationData`, `NotificationDeliveryWorkEto`, `[NotificationDataType]`, `INotificationDefinitionProvider`, `INotificationDeliveryNotifier`. Notifiers and remote clients depend on **only** this. |
 | `Dignite.Abp.Notifications` | The core: definitions, the publish/distribute pipeline, the `INotificationStore` abstraction + `NullNotificationStore`. |
 | `Dignite.Abp.Notifications.SignalR` | Real-time push notifier (SignalR hub at `/signalr-hubs/notifications`). |
 | `Dignite.Abp.Notifications.Emailing` | Email notifier (ABP `IEmailSender`). |
@@ -180,13 +180,14 @@ public class MyHostDbContext : AbpDbContext<MyHostDbContext>, INotificationCente
     public DbSet<Notification> Notifications { get; set; } = default!;
     public DbSet<UserNotification> UserNotifications { get; set; } = default!;
     public DbSet<NotificationSubscription> NotificationSubscriptions { get; set; } = default!;
+    public DbSet<NotificationDeliveryRecord> NotificationDeliveries { get; set; } = default!;
 
     public MyHostDbContext(DbContextOptions<MyHostDbContext> options) : base(options) { }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
-        builder.ConfigureNotificationCenter();   // maps the three tables
+        builder.ConfigureNotificationCenter();   // maps the four tables
     }
 }
 ```
@@ -220,12 +221,13 @@ backfill before deploying the new unique index.
 
 #### Delivery guarantees, batches, and partial progress
 
-Distributing a notification writes the per-user inbox rows **and** publishes `NotificationDeliveryEto`
-for the notifiers. Those two commit together only when the host enables ABP's transactional outbox;
-the same call enables the inbox, which deduplicates a redelivered event so a notifier does not send
-twice. The EF Core writer flushes and detaches each inbox batch so its change tracker stays bounded. Atomic
-rollback therefore requires an ambient **transactional** ABP unit of work; an outbox cannot make a
-non-transactional unit of work atomic.
+Distributing a notification writes the per-user inbox rows and one delivery-state row per
+tenant/notification/user/channel, then publishes a `NotificationDeliveryWorkEto` for each row. Those writes and
+the event record commit together only when the host enables ABP's transactional outbox. The same call enables
+ABP's event inbox; the delivery-state claim is an additional idempotency boundary for concurrent or redelivered
+work. The EF Core writer flushes and detaches each inbox batch so its change tracker stays bounded. Atomic rollback
+therefore requires an ambient **transactional** ABP unit of work; an outbox cannot make a non-transactional unit
+of work atomic.
 
 | Setup | Inbox batch behavior | Persist + publish atomic | Failure/cancellation after a completed batch |
 |---|---|---|---|
@@ -234,7 +236,7 @@ non-transactional unit of work atomic.
 | EF Core, non-transactional UoW | each flushed batch is durable | no | completed inbox batches and already published events can remain |
 | MongoDB, outbox + transactional UoW on a supported topology | each batch participates in the ambient MongoDB transaction | yes, within one distributor/job invocation | the transaction rolls back inbox and outbox records |
 | MongoDB, no outbox or non-transactional UoW | each completed provider batch is durable | no | completed inbox batches and already published events can remain |
-| `NullNotificationStore` | no persistence | not applicable | already published delivery events remain |
+| Core-only null stores | process-local delivery state; no inbox | not durable across process exit | completed external sends remain; pending/retry state is lost on restart |
 
 If you use the shipped `NotificationCenterDbContext`, one line enables both:
 
@@ -252,7 +254,7 @@ public class MyHostDbContext : AbpDbContext<MyHostDbContext>,
 {
     public DbSet<IncomingEventRecord> IncomingEvents { get; set; } = default!;
     public DbSet<OutgoingEventRecord> OutgoingEvents { get; set; } = default!;
-    // ...the three notification DbSets
+    // ...the four notification DbSets
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -342,10 +344,43 @@ require a transactional unit of work for atomic persist-and-record. The MongoDB-
 replica-set startup probe are the remaining reliability/configuration differences. Neither provider claims
 exactly-once external delivery or atomicity across all independently scheduled fan-out jobs.
 
-Without the opt-in, a crash between the store write and publish can still leave a notification with no channel
-delivery, and redelivery can invoke a notifier again. Cancellation remains a boundary for stopping new work, not
-compensation for completed work. This release intentionally adds no per-recipient/channel ledger or retry/resume
-policy; those belong to the delivery-ledger roadmap item.
+Without the opt-in, a crash between the delivery-state write and event publication can still leave a delivery
+pending until the retry worker scans it. Cancellation remains a boundary for stopping new work, not compensation
+for completed work.
+
+#### Delivery reliability, retries, and external side effects
+
+`NotificationDeliveryWorkEto` contains exactly one recipient and one channel. Its `DeliveryId` and
+`IdempotencyKey` are deterministic from the tenant/host boundary, notification, user, and normalized channel.
+Workers atomically claim a time-limited lease before invoking a notifier; a competing event or worker cannot claim
+the same work concurrently. Expired leases are recoverable, failures use bounded exponential backoff with jitter,
+and exhausted work becomes `DeadLetter`. Intentional channel decisions such as a missing email address return
+`Suppressed` and are not retried automatically. Operators may requeue `Failed`, `Suppressed`, or `DeadLetter`
+work, which begins a fresh attempt cycle.
+
+The guarantee is **at-least-once scheduling with a durable internal idempotency boundary**, not exactly-once
+delivery to an external provider. A process can fail after an email, webhook, or push provider accepted the side
+effect but before `Succeeded` was stored. Forward `workItem.IdempotencyKey` to providers that offer an idempotency
+or deduplication key; without provider support, a retry may repeat that external side effect. Stored diagnostics use
+fixed reason codes and sanitized messages and never persist exception text, addresses, recipient IDs, or payloads.
+
+Core-only applications continue to work without Notification Center. `NullNotificationDeliveryStore` keeps the
+same state machine and concurrent-claim behavior in process, but restart loses pending work, leases, retry history,
+and operator visibility. Install either Notification Center persistence provider when retries must survive a crash
+or deployment.
+
+**Database upgrade:** this repository does not ship migrations because the consuming host owns its schema history.
+Before enabling producers, EF Core hosts must add the mapped `AbpNotificationDeliveries` table and its unique
+`TenantKey + NotificationId + UserId + ChannelKey` index plus the configured due-work indexes. Custom
+`INotificationCenterDbContext` implementations must expose the
+`DbSet<NotificationDeliveryRecord> NotificationDeliveries` property; `ConfigureNotificationCenter()` creates the
+same unique/due indexes. This is a new ledger,
+so historical notifications require no backfill. Custom MongoDB contexts must expose
+`IMongoCollection<NotificationDeliveryRecord> NotificationDeliveries` and configure the collection name plus the
+same unique and due-work indexes in `CreateModel`. For a rolling deployment, upgrade consumers so they understand
+`NotificationDeliveryWorkEto`, apply the schema, and only then deploy producers. Legacy notifier implementations
+remain callable through the singleton `NotificationDeliveryEto` adapter, but old event consumers do not understand
+the new work-event type.
 
 Large explicit fan-outs are split into independently scheduled jobs. The publisher prepares the shared
 `Notification` record first, then each job commits or fails independently; no provider promises one transaction
@@ -539,13 +574,14 @@ bounded stages:
 1. normalize one candidate page (the built-in stores use a database-side distinct/order/keyset query);
 2. remove caller exclusions and evaluate definition eligibility for that page;
 3. write inbox rows in bounded multi-insert groups;
-4. publish one or more delivery events, each carrying at most the configured recipient limit.
+4. create delivery-state rows in bounded scheduling groups, then publish one independently claimable work event
+   for every eligible recipient/channel pair.
 
-The defaults are 256 candidates, 256 inbox rows, and 100 recipient IDs per delivery event. Each value must be
-between 1 and `NotificationOptions.MaxDistributionBatchSize` (10,000), and invalid configuration fails host
-startup. The broker limit bounds the recipient-ID portion of an event; notification data still has to fit the
-chosen transport's message-size limit. A delivery can therefore produce multiple `NotificationDeliveryEto`
-instances, and a notifier must treat each instance as independent delivery work.
+The defaults are 256 candidates, 256 inbox rows, and 100 recipients converted to work records per scheduling
+operation. Each value must be between 1 and `NotificationOptions.MaxDistributionBatchSize` (10,000), and invalid
+configuration fails host startup. `DeliveryEventRecipientLimit` retains its existing name for configuration
+compatibility, but `NotificationDeliveryWorkEto` always carries one recipient and channel. Notification data still
+has to fit the chosen transport's message-size limit.
 
 The built-in `NotificationStore` (shared by the EF Core and MongoDB packages) implements
 `IBatchedNotificationStore`; `NullNotificationStore` implements it without persistence. The capability is
@@ -619,10 +655,13 @@ recipient.
 
 ## Notifiers
 
-A notifier is an `INotificationNotifier<NotificationDeliveryEto>` that relays the event to a single channel.
-The generic notifier contract includes ABP's `IDistributedEventHandler<TEvent>` contract, while the
-non-generic `INotificationNotifier` keeps the stable channel metadata (`Name`) available for channel
-enumeration and routing.
+A reliable notifier implements `INotificationDeliveryNotifier` and relays one claimed
+`NotificationDeliveryWorkEto` to a single channel. The contract returns `Succeeded` or an intentional
+`Suppressed(reasonCode)` result; throwing reports a retryable channel failure. The non-generic
+`INotificationNotifier` keeps stable channel metadata (`Name`) available for channel enumeration and routing.
+Existing `INotificationNotifier<NotificationDeliveryEto>` implementations remain source-compatible: the processor
+passes them a singleton-recipient legacy event and interprets normal completion as success. Migrate to the reliable
+contract to consume the stable idempotency key and report suppression explicitly.
 
 - **SignalR** — clients connect to the hub at `/signalr-hubs/notifications` (an ABP `AbpHub`, mapped
   **automatically**; the host must *not* call `MapHub`) and receive a trimmed `NotificationDelivery`
@@ -695,22 +734,17 @@ enumeration and routing.
 
 ```csharp
 public class WebPushNotifier
-    : INotificationNotifier<NotificationDeliveryEto>, ITransientDependency
+    : INotificationDeliveryNotifier, ITransientDependency
 {
     public const string ChannelName = "WebPush";
     public string Name => ChannelName;
 
-    public async Task HandleEventAsync(NotificationDeliveryEto eventData)
+    public async Task<NotificationDeliveryResult> DeliverAsync(NotificationDeliveryWorkEto workItem)
     {
-        // Respect channel routing, and skip when there are no recipients.
-        if (!NotificationChannels.IsAllowed(eventData.Channels, Name) ||
-            eventData.UserIds is not { Length: > 0 })
-        {
-            return;
-        }
-
-        var payload = NotificationDelivery.FromEto(eventData);   // recipient list already stripped
-        // ... relay `payload` to your channel SDK, per recipient ...
+        var payload = NotificationDelivery.FromWorkItem(workItem);
+        // Forward workItem.IdempotencyKey if the provider supports idempotent requests.
+        await _webPush.SendAsync(workItem.UserId, payload, workItem.IdempotencyKey);
+        return NotificationDeliveryResult.Succeeded();
     }
 }
 ```
@@ -753,9 +787,13 @@ that mode.
 | `DELETE /api/notifications/subscriptions/{name}` | Unsubscribe from all entities for a name (compatibility endpoint) |
 | `POST /api/notifications/subscription-scopes` | Subscribe to the definition-wide or exact entity scope in the JSON body |
 | `DELETE /api/notifications/subscription-scopes` | Unsubscribe only the definition-wide or exact entity scope in the query |
+| `GET /api/notifications/deliveries` | Query delivery state by notification, user, channel, state, and time (`NotificationCenter.Deliveries`) |
+| `POST /api/notifications/deliveries/{id}/retry` | Requeue failed, suppressed, or dead-letter work in the current tenant (`NotificationCenter.Deliveries.Retry`) |
 
-Every endpoint is scoped to the authenticated caller. Use `...HttpApi.Client` for a typed C# proxy,
-or the Angular `NotificationsService` proxy in the browser.
+Inbox and subscription endpoints are scoped to the authenticated caller. Delivery operations are administrative,
+permission-gated, and tenant/host scoped; they expose only sanitized diagnostics. Use `...HttpApi.Client` for a
+typed C# proxy, or the Angular `NotificationsService` proxy for the existing end-user endpoints. The operator
+delivery endpoints are intentionally not added to the Angular end-user library.
 
 The scoped request contains `notificationName` plus optional `entityTypeName` and `entityId`; the two
 entity fields must be supplied together. `GET subscriptions` returns the definition-wide row for each
@@ -785,7 +823,19 @@ Configure<NotificationOptions>(options =>
     // Each value must be between 1 and NotificationOptions.MaxDistributionBatchSize (10,000).
     options.RecipientBatchSize = 256;
     options.UserNotificationWriteBatchSize = 256;
+    // Compatibility name: recipients converted to single-recipient/channel work records per scheduling group.
     options.DeliveryEventRecipientLimit = 100;
+
+    // Per-recipient/channel claim, retry, and dead-letter policy.
+    options.DeliveryLeaseDuration = TimeSpan.FromMinutes(2);
+    options.MaxDeliveryAttempts = 5;
+    options.InitialDeliveryRetryDelay = TimeSpan.FromSeconds(10);
+    options.MaxDeliveryRetryDelay = TimeSpan.FromMinutes(15);
+    options.DeliveryRetryBackoffFactor = 2;
+    options.DeliveryRetryJitterFactor = 0.2;
+    options.DeliveryRetryWorkerPeriod = TimeSpan.FromSeconds(30);
+    options.DeliveryRetryBatchSize = 100;
+    options.IsDeliveryRetryWorkerEnabled = true;
 });
 
 Configure<NotificationEmailOptions>(options =>
@@ -795,7 +845,7 @@ Configure<NotificationEmailOptions>(options =>
 });
 
 // EF Core Notification Center hosts can opt in to ABP's transactional outbox so the persisted
-// notification rows and the NotificationDeliveryEto commit together.
+// inbox/delivery-state rows and NotificationDeliveryWorkEto outbox records commit together.
 Configure<AbpDistributedEventBusOptions>(options =>
 {
     options.UseNotificationCenterEfCoreOutbox();
@@ -812,13 +862,14 @@ Configure<AbpDistributedEventBusOptions>(options =>
 ## Architecture
 
 ```
-Notifications.Abstractions   ── data model + NotificationDeliveryEto (the one boundary everyone shares)
+Notifications.Abstractions   ── data model + NotificationDeliveryWorkEto + reliable notifier contract
         │
-Notifications (Core)         ── define → publish → distribute; INotificationStore; publishes NotificationDeliveryEto
+Notifications (Core)         ── define → distribute → schedule → claim/retry; null stores remain supported
         │
    ┌────┴───────────────────┐
 Notifiers                 NotificationCenter (optional)
-(SignalR / Email / …)     persistence · inbox · subscriptions · REST API · UI   (EF Core / MongoDB)
+(SignalR / Email / …)     durable delivery ledger · inbox · subscriptions · REST API · UI
+                                                       (EF Core / MongoDB)
 ```
 
 **Publish → distribute → notify:**
@@ -827,15 +878,15 @@ Notifiers                 NotificationCenter (optional)
 2. Small explicit fan-outs distribute inline; larger ones enqueue a `NotificationDistributionJob`.
 3. The distributor resolves bounded recipient pages (explicit `userIds`, or subscribers from
    `IBatchedNotificationStore`), checks the definition's feature/permission availability, persists bounded
-   inbox groups (a no-op under `NullNotificationStore`), then publishes bounded `NotificationDeliveryEto`
-   work items when external channels are configured.
-4. Every installed notifier handling that event relays it to its channel — honoring channel routing
-   and stripping the recipient list per user.
+   inbox groups (a no-op under `NullNotificationStore`), creates one delivery identity per recipient/channel,
+   then publishes `NotificationDeliveryWorkEto` when external channels are configured.
+4. The work handler atomically claims a lease, invokes the selected channel notifier, and records success,
+   suppression, retry timing, or dead-letter state. The retry worker republishes due or lease-expired work.
 
-`NotificationDeliveryEto` is the load-bearing boundary: between core and notifiers, between monolithic and
-distributed deployment, and the extension point for any new channel. Under either Notification Center
-persistence provider, hosts should opt in to ABP's transactional outbox (see [Configuration](#configuration))
-so "persist the notification" + "publish the event" commit together.
+`NotificationDeliveryWorkEto` is the load-bearing boundary between scheduling and delivery and the extension
+point for any new channel. Under either Notification Center persistence provider, hosts should opt in to ABP's
+transactional outbox (see [Configuration](#configuration)) so notification, inbox, delivery ledger, and outgoing
+work records commit together.
 
 > **Serialization invariant:** every `NotificationData` subclass must carry a stable
 > `[NotificationDataType]` discriminator plus an explicit schema version and round-trip through

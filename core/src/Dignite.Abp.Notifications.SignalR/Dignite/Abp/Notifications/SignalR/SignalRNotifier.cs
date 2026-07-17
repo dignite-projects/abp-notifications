@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -11,8 +12,14 @@ namespace Dignite.Abp.Notifications.SignalR;
 /// <see cref="NotificationDelivery"/>, which by construction omits the ETO's full recipient list — so one user
 /// can never see the ids of the others (fixes the reference implementation's payload leak).
 /// </summary>
+[ExposeServices(
+    typeof(INotificationNotifier),
+    typeof(INotificationDeliveryNotifier),
+    typeof(INotificationNotifier<NotificationDeliveryEto>),
+    typeof(SignalRNotifier))]
 public class SignalRNotifier :
     INotificationNotifier<NotificationDeliveryEto>,
+    INotificationDeliveryNotifier,
     ITransientDependency
 {
     public const string ChannelName = "SignalR";
@@ -41,5 +48,19 @@ public class SignalRNotifier :
         var userIds = eventData.UserIds.Select(userId => userId.ToString()).ToList();
 
         return HubContext.Clients.Users(userIds).ReceiveNotification(payload);
+    }
+
+    public virtual async Task<NotificationDeliveryResult> DeliverAsync(NotificationDeliveryWorkEto workItem)
+    {
+        if (!string.Equals(workItem.Channel, Name, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"The {nameof(SignalRNotifier)} cannot deliver channel '{workItem.Channel}'.");
+        }
+
+        await HubContext.Clients
+            .User(workItem.UserId.ToString())
+            .ReceiveNotification(NotificationDelivery.FromWorkItem(workItem));
+        return NotificationDeliveryResult.Succeeded();
     }
 }

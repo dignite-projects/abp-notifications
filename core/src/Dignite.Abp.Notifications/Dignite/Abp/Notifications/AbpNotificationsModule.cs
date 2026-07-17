@@ -2,8 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Volo.Abp.BackgroundJobs;
 using Volo.Abp.EventBus;
+using Volo.Abp.EventBus.Distributed;
 using Volo.Abp.Features;
 using Volo.Abp.Guids;
 using Volo.Abp.Modularity;
@@ -38,6 +40,17 @@ public class AbpNotificationsModule : AbpModule
             .ValidateOnStart();
 
         context.Services.AddHostedService<NotificationDefinitionStartupService>();
+        context.Services.AddHostedService<NotificationDeliveryRetryWorker>();
+
+        // The public compatibility constructors intentionally remain available. Register the framework service via
+        // ActivatorUtilities so DI always chooses the state-store-aware constructor.
+        context.Services.Replace(ServiceDescriptor.Transient<INotificationDistributor>(serviceProvider =>
+            ActivatorUtilities.CreateInstance<DefaultNotificationDistributor>(serviceProvider)));
+
+        Configure<AbpDistributedEventBusOptions>(options =>
+        {
+            options.Handlers.Add<NotificationDeliveryWorkHandler>();
+        });
 
     }
 

@@ -15,6 +15,8 @@ public class NotificationCenterMongoDbContext : AbpMongoDbContext, INotification
 
     public IMongoCollection<NotificationSubscription> NotificationSubscriptions => Collection<NotificationSubscription>();
 
+    public IMongoCollection<NotificationDeliveryRecord> NotificationDeliveries => Collection<NotificationDeliveryRecord>();
+
     public IMongoCollection<IncomingEventRecord> IncomingEvents => Collection<IncomingEventRecord>();
 
     public IMongoCollection<OutgoingEventRecord> OutgoingEvents => Collection<OutgoingEventRecord>();
@@ -112,6 +114,31 @@ public class NotificationCenterMongoDbContext : AbpMongoDbContext, INotification
                         .Ascending(nameof(NotificationSubscription.TenantKey))
                         .Ascending(nameof(NotificationSubscription.UserId))
                         .Ascending(nameof(NotificationSubscription.NotificationNameKey))));
+            });
+        });
+
+        modelBuilder.Entity<NotificationDeliveryRecord>(b =>
+        {
+            b.CollectionName = NotificationCenterDbProperties.DbTablePrefix + "NotificationDeliveries";
+            b.ConfigureIndexes(indexes =>
+            {
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(NotificationDeliveryRecord.TenantKey))
+                        .Ascending(nameof(NotificationDeliveryRecord.NotificationId))
+                        .Ascending(nameof(NotificationDeliveryRecord.UserId))
+                        .Ascending(nameof(NotificationDeliveryRecord.ChannelKey)),
+                    new CreateIndexOptions { Unique = true }));
+
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(NotificationDeliveryRecord.State))
+                        .Ascending(nameof(NotificationDeliveryRecord.NextAttemptTime))));
+
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(NotificationDeliveryRecord.State))
+                        .Ascending(nameof(NotificationDeliveryRecord.LeaseExpirationTime))));
             });
         });
     }

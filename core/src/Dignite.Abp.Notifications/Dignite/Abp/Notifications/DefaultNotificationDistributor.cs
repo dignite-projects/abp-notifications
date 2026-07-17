@@ -22,6 +22,8 @@ public class DefaultNotificationDistributor :
 {
     protected INotificationStore Store { get; }
 
+    protected INotificationDeliveryStore DeliveryStore { get; }
+
     protected INotificationDefinitionManager DefinitionManager { get; }
 
     protected IDistributedEventBus DistributedEventBus { get; }
@@ -58,10 +60,12 @@ public class DefaultNotificationDistributor :
             currentTenant,
             logger,
             dataTypeRegistry,
-            Microsoft.Extensions.Options.Options.Create(new NotificationOptions()))
+            Microsoft.Extensions.Options.Options.Create(new NotificationOptions()),
+            new NullNotificationDeliveryStore())
     {
     }
 
+    /// <summary>Compatibility constructor for callers compiled before per-channel delivery state was added.</summary>
     public DefaultNotificationDistributor(
         INotificationStore store,
         INotificationDefinitionManager definitionManager,
@@ -71,8 +75,33 @@ public class DefaultNotificationDistributor :
         ILogger<DefaultNotificationDistributor> logger,
         INotificationDataTypeRegistry dataTypeRegistry,
         IOptions<NotificationOptions> options)
+        : this(
+            store,
+            definitionManager,
+            distributedEventBus,
+            recipientEligibilityEvaluator,
+            currentTenant,
+            logger,
+            dataTypeRegistry,
+            options,
+            new NullNotificationDeliveryStore())
+    {
+    }
+
+    [Microsoft.Extensions.DependencyInjection.ActivatorUtilitiesConstructor]
+    public DefaultNotificationDistributor(
+        INotificationStore store,
+        INotificationDefinitionManager definitionManager,
+        IDistributedEventBus distributedEventBus,
+        INotificationRecipientEligibilityEvaluator recipientEligibilityEvaluator,
+        ICurrentTenant currentTenant,
+        ILogger<DefaultNotificationDistributor> logger,
+        INotificationDataTypeRegistry dataTypeRegistry,
+        IOptions<NotificationOptions> options,
+        INotificationDeliveryStore deliveryStore)
     {
         Store = store;
+        DeliveryStore = deliveryStore;
         DefinitionManager = definitionManager;
         DistributedEventBus = distributedEventBus;
         RecipientEligibilityEvaluator = recipientEligibilityEvaluator;
@@ -790,27 +819,69 @@ public class DefaultNotificationDistributor :
         }).ToList(), CancellationToken.None);
     }
 
-    /// <summary>Publishes one already-bounded delivery event.</summary>
-    protected virtual Task PublishNotificationDeliveryBatchAsync(
+    /// <summary>
+    /// Converts an already-bounded recipient batch into independently claimable recipient/channel work items.
+    /// </summary>
+    protected virtual async Task PublishNotificationDeliveryBatchAsync(
         NotificationInfo notification,
         IReadOnlyCollection<Guid> userIds,
         string[] channels)
     {
-        var eto = new NotificationDeliveryEto(
-            notification.Id,
-            notification.NotificationName,
-            notification.Data,
-            notification.Severity,
-            notification.CreationTime,
-            userIds.ToArray())
+        var workItems = new List<NotificationDeliveryWorkEto>();
+        foreach (var userId in userIds.Distinct())
         {
-            Channels = channels,
+            foreach (var channel in channels.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                workItems.Add(CreateDeliveryWorkItem(notification, userId, channel));
+            }
+        }
+
+        if (DeliveryStore is IBatchedNotificationDeliveryStore batchedStore)
+        {
+            await batchedStore.EnsureCreatedAsync(workItems);
+        }
+        else
+        {
+            foreach (var workItem in workItems)
+            {
+                await DeliveryStore.EnsureCreatedAsync(workItem);
+            }
+        }
+
+        foreach (var workItem in workItems)
+        {
+            await DistributedEventBus.PublishAsync(workItem);
+        }
+    }
+
+    protected virtual NotificationDeliveryWorkEto CreateDeliveryWorkItem(
+        NotificationInfo notification,
+        Guid userId,
+        string channel)
+    {
+        return new NotificationDeliveryWorkEto
+        {
+            DeliveryId = NotificationDeliveryIdentity.CreateId(
+                notification.TenantId,
+                notification.Id,
+                userId,
+                channel),
+            IdempotencyKey = NotificationDeliveryIdentity.CreateIdempotencyKey(
+                notification.TenantId,
+                notification.Id,
+                userId,
+                channel),
+            NotificationId = notification.Id,
+            NotificationName = notification.NotificationName,
+            Data = notification.Data,
+            Severity = notification.Severity,
+            CreationTime = notification.CreationTime,
+            UserId = userId,
+            Channel = channel,
             TenantId = notification.TenantId,
             EntityTypeName = notification.EntityTypeName,
             EntityId = notification.EntityId
         };
-
-        return DistributedEventBus.PublishAsync(eto);
     }
 
     /// <summary>Compatibility extension point retained for subclasses.</summary>

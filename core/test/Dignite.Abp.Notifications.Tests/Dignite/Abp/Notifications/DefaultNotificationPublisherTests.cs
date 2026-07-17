@@ -457,7 +457,7 @@ public class DefaultNotificationPublisherTests
         public bool StoreWasCalled { get; private set; }
         public Guid? TenantSeenByStore { get; private set; }
         public Guid? TenantSeenByPublish { get; private set; }
-        public NotificationDeliveryEto? Published { get; private set; }
+        public NotificationDeliveryWorkEto? Published { get; private set; }
 
         public NotificationDistributionJob CreateJob()
         {
@@ -479,11 +479,11 @@ public class DefaultNotificationPublisherTests
                     StoreWasCalled = true;
                     TenantSeenByStore = CurrentTenant.Id;
                 });
-            EventBus.WhenForAnyArgs(x => x.PublishAsync(Arg.Any<NotificationDeliveryEto>()))
+            EventBus.WhenForAnyArgs(x => x.PublishAsync(Arg.Any<NotificationDeliveryWorkEto>()))
                 .Do(ci =>
                 {
                     TenantSeenByPublish = CurrentTenant.Id;
-                    Published = ci.Arg<NotificationDeliveryEto>();
+                    Published = ci.Arg<NotificationDeliveryWorkEto>();
                 });
 
             return new NotificationDistributionJob(
