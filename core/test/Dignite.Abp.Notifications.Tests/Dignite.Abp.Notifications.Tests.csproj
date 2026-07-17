@@ -22,6 +22,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Dignite.Abp.Notifications.TestProviderA\Dignite.Abp.Notifications.TestProviderA.csproj" />
+    <ProjectReference Include="..\Dignite.Abp.Notifications.TestProviderB\Dignite.Abp.Notifications.TestProviderB.csproj" />
     <ProjectReference Include="..\..\src\Dignite.Abp.Notifications\Dignite.Abp.Notifications.csproj" />
     <ProjectReference Include="..\..\src\Dignite.Abp.Notifications.SignalR\Dignite.Abp.Notifications.SignalR.csproj" />
     <ProjectReference Include="..\..\src\Dignite.Abp.Notifications.Emailing\Dignite.Abp.Notifications.Emailing.csproj" />

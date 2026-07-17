@@ -37,6 +37,10 @@
     <PackageVersion Include="System.Text.Json" Version="10.0.7" />
   </ItemGroup>
 
+  <ItemGroup Label="Microsoft hosting abstractions">
+    <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.7" />
+  </ItemGroup>
+
   <ItemGroup Label="Embedded static wwwroot content (ABP's AddEmbedded/ManifestEmbeddedFileProvider) -- direct reference needed to activate its build-time manifest generation, ABP's own dependency doesn't flow it transitively">
     <PackageVersion Include="Microsoft.Extensions.FileProviders.Embedded" Version="10.0.7" />
   </ItemGroup>

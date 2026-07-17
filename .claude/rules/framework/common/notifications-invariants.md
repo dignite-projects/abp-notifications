@@ -14,6 +14,9 @@ Newtonsoft.Json anywhere in this pipeline.
 - Every `NotificationData` subclass must carry a short, stable discriminator via
   `[NotificationDataType("...")]` (e.g. `"Dignite.Message"`) — a name that survives assembly
   version bumps and works for remote/non-.NET consumers reading the same JSON.
+- Discriminators use ordinal, case-sensitive comparison and must form a one-to-one mapping with CLR
+  payload types. Registering one key for two types, or one type under two keys, fails during startup;
+  repeating the exact same key/type pair is the only supported idempotent repeat.
 - All serialization — storage (EF Core / MongoDB), the distributed event bus, and the HTTP API —
   must go through the shared `INotificationDataTypeRegistry` / `NotificationDataJsonConverter`
   (registered once, globally, on `AbpSystemTextJsonSerializerOptions` in

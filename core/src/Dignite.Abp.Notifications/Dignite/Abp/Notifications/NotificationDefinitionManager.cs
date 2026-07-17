@@ -108,8 +108,9 @@ public class NotificationDefinitionManager : INotificationDefinitionManager, ISi
 
         using (var scope = ServiceScopeFactory.CreateScope())
         {
-            foreach (var providerType in Options.DefinitionProviders)
+            foreach (var providerType in Options.DefinitionProviders.Distinct())
             {
+                context.SetCurrentProvider(providerType);
                 var provider = (INotificationDefinitionProvider)scope.ServiceProvider.GetRequiredService(providerType);
                 provider.Define(context);
             }

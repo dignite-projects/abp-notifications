@@ -12,13 +12,20 @@ public class NotificationDataTypeRegistry : INotificationDataTypeRegistry, ISing
 
     public NotificationDataTypeRegistry(IOptions<NotificationDataOptions> options)
     {
-        _byDiscriminator = new Dictionary<string, Type>();
+        _byDiscriminator = new Dictionary<string, Type>(StringComparer.Ordinal);
         _byType = new Dictionary<Type, string>();
 
         foreach (var pair in options.Value.DataTypes)
         {
-            _byDiscriminator[pair.Key] = pair.Value;
-            _byType[pair.Value] = pair.Key;
+            if (_byType.TryGetValue(pair.Value, out var registeredDiscriminator))
+            {
+                throw new InvalidOperationException(
+                    $"Notification data CLR type '{GetTypeName(pair.Value)}' is registered with " +
+                    $"conflicting discriminators '{registeredDiscriminator}' and '{pair.Key}'.");
+            }
+
+            _byDiscriminator.Add(pair.Key, pair.Value);
+            _byType.Add(pair.Value, pair.Key);
         }
     }
 
@@ -30,5 +37,11 @@ public class NotificationDataTypeRegistry : INotificationDataTypeRegistry, ISing
     public Type? GetTypeOrNull(string discriminator)
     {
         return _byDiscriminator.TryGetValue(discriminator, out var type) ? type : null;
+    }
+
+    private static string GetTypeName(Type type)
+    {
+        var assemblyName = type.Assembly.GetName().Name ?? "<unknown assembly>";
+        return $"{type.FullName ?? type.Name}, {assemblyName}";
     }
 }

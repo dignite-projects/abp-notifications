@@ -272,6 +272,10 @@ Configure<NotificationDataOptions>(options =>
 });
 ```
 
+Discriminators use ordinal, case-sensitive comparison. Registering the same discriminator for two CLR
+types, or the same CLR type under two discriminators, fails during application startup with both sides
+named in the error. Repeating the exact same discriminator/type pair is safe and idempotent.
+
 **3. Register the notification definition** through an `INotificationDefinitionProvider` — its name,
 display text, optional feature/permission gating, and explicit channel routing:
 
@@ -287,6 +291,11 @@ public class ShopNotificationDefinitionProvider : NotificationDefinitionProvider
     }
 }
 ```
+
+Definition names also use ordinal, case-sensitive comparison. Every duplicate name is a startup error,
+and the error identifies both provider types; an equivalent-looking second definition is not treated as
+idempotent because definitions are mutable after construction. Provider types are convention-discovered
+across modules; registering the same provider type more than once is idempotent and the provider executes once.
 
 **4. Publish** from your business code via `INotificationPublisher`:
 
