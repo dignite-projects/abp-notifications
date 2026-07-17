@@ -4,6 +4,7 @@ using System.Linq;
 using Microsoft.Extensions.DependencyInjection;
 using Volo.Abp.BackgroundJobs;
 using Volo.Abp.EventBus;
+using Volo.Abp.EventBus.Distributed;
 using Volo.Abp.Features;
 using Volo.Abp.Guids;
 using Volo.Abp.Modularity;
@@ -38,7 +39,12 @@ public class AbpNotificationsModule : AbpModule
             .ValidateOnStart();
 
         context.Services.AddHostedService<NotificationDefinitionStartupService>();
+        context.Services.AddHostedService<NotificationDeliveryRetryWorker>();
 
+        Configure<AbpDistributedEventBusOptions>(options =>
+        {
+            options.Handlers.Add<NotificationDeliveryWorkHandler>();
+        });
     }
 
     private static void AutoAddDefinitionProviders(IServiceCollection services)

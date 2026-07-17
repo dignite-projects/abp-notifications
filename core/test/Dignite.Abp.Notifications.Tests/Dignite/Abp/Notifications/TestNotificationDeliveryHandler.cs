@@ -5,10 +5,14 @@ using Volo.Abp.EventBus.Distributed;
 namespace Dignite.Abp.Notifications;
 
 /// <summary>
-/// Stands in for a real notifier: subscribes to <see cref="NotificationDeliveryEto"/> on the local distributed event bus
-/// and records what it receives.
+/// Records channel-specific work emitted through the local distributed event bus.
 /// </summary>
-public class TestNotificationDeliveryHandler : IDistributedEventHandler<NotificationDeliveryEto>, ITransientDependency
+[ExposeServices(
+    typeof(IDistributedEventHandler<NotificationDeliveryWorkEto>),
+    typeof(TestNotificationDeliveryHandler))]
+public class TestNotificationDeliveryHandler :
+    IDistributedEventHandler<NotificationDeliveryWorkEto>,
+    ITransientDependency
 {
     private readonly ReceivedNotificationDeliveries _received;
 
@@ -17,7 +21,7 @@ public class TestNotificationDeliveryHandler : IDistributedEventHandler<Notifica
         _received = received;
     }
 
-    public Task HandleEventAsync(NotificationDeliveryEto eventData)
+    public Task HandleEventAsync(NotificationDeliveryWorkEto eventData)
     {
         _received.Items.Enqueue(eventData);
         return Task.CompletedTask;

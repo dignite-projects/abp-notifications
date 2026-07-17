@@ -58,7 +58,7 @@ public class NotificationDistributionJob : AsyncBackgroundJob<NotificationDistri
         // args — NotificationDistributionJobArgs is not — so the worker thread starts with no ambient tenant.
         // Everything downstream (INotificationStore, INotificationDefinitionManager, INotificationPermissionChecker)
         // reads the ambient tenant, and it flows into their fresh DI scopes because ABP's ICurrentTenantAccessor is
-        // an AsyncLocal singleton. Notifiers are NOT downstream of this scope: they handle NotificationDeliveryEto,
+        // an AsyncLocal singleton. Notifiers are NOT downstream of this scope: they handle NotificationDeliveryWorkEto,
         // and ABP's event bus re-enters the tenant from the event itself before invoking them.
         using (CurrentTenant.Change(args.Notification.TenantId, null))
         {

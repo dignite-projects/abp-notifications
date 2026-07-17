@@ -11,6 +11,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\..\core\src\Dignite.Abp.Notifications.Abstractions\Dignite.Abp.Notifications.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <EmbeddedResource Include="Dignite\Abp\NotificationCenter\Localization\*.json" />
     <Content Remove="Dignite\Abp\NotificationCenter\Localization\*.json" />
   </ItemGroup>

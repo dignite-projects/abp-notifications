@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Dignite.Abp.Notifications.Emailing;
 using Dignite.Abp.Notifications.SignalR;
@@ -50,6 +51,7 @@ public class NotificationChannelRouting_Tests
 
         ((INotificationNotifier)notifier).Name.ShouldBe(SignalRNotifier.ChannelName);
         (notifier is INotificationNotifier<NotificationDeliveryEto>).ShouldBeTrue();
+        (notifier is INotificationDeliveryNotifier).ShouldBeTrue();
         (notifier is IDistributedEventHandler<NotificationDeliveryEto>).ShouldBeTrue();
     }
 
@@ -97,9 +99,9 @@ public class NotificationChannelRouting_Tests
                 .UseChannels(EmailNotifier.ChannelName, SignalRNotifier.ChannelName));
         definitionManager.IsAvailableAsync("test", Arg.Any<Guid>()).Returns(true);
 
-        NotificationDeliveryEto? published = null;
-        eventBus.WhenForAnyArgs(x => x.PublishAsync(Arg.Any<NotificationDeliveryEto>()))
-            .Do(ci => published = ci.Arg<NotificationDeliveryEto>());
+        var published = new List<NotificationDeliveryWorkEto>();
+        eventBus.WhenForAnyArgs(x => x.PublishAsync(Arg.Any<NotificationDeliveryWorkEto>()))
+            .Do(ci => published.Add(ci.Arg<NotificationDeliveryWorkEto>()));
 
         var currentTenant = new TestCurrentTenant();
         var distributor = new DefaultNotificationDistributor(
@@ -116,8 +118,10 @@ public class NotificationChannelRouting_Tests
         await distributor.DistributeAsync(
             new NotificationInfo { Id = Guid.NewGuid(), NotificationName = "test" }, new[] { Guid.NewGuid() });
 
-        published.ShouldNotBeNull();
-        published!.Channels.ShouldBe(new[] { EmailNotifier.ChannelName, SignalRNotifier.ChannelName });
+        published.Count.ShouldBe(2);
+        published.Select(item => item.Channel)
+            .ShouldBe(new[] { EmailNotifier.ChannelName, SignalRNotifier.ChannelName }, ignoreOrder: true);
+        published.Select(item => item.UserId).Distinct().Count().ShouldBe(1);
     }
 
     private static NotificationDeliveryEto EtoWithChannels(string[] channels)

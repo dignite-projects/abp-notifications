@@ -4,6 +4,7 @@ using Volo.Abp;
 using Volo.Abp.Autofac;
 using Volo.Abp.BackgroundJobs;
 using Volo.Abp.Modularity;
+using Volo.Abp.EventBus.Distributed;
 
 namespace Dignite.Abp.Notifications;
 
@@ -18,6 +19,10 @@ public class DigniteAbpNotificationsTestModule : AbpModule
     {
         // Collector for notification delivery ETOs delivered through the (local) distributed event bus.
         context.Services.AddSingleton<ReceivedNotificationDeliveries>();
+        Configure<AbpDistributedEventBusOptions>(options =>
+        {
+            options.Handlers.Add<TestNotificationDeliveryHandler>();
+        });
 
         // No real background job infrastructure in tests — swap in a fake we can inspect.
         context.Services.AddSingleton<FakeBackgroundJobManager>();

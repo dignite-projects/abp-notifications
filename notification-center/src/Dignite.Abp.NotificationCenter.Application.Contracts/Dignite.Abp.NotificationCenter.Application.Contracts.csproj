@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <PackageReference Include="Volo.Abp.Ddd.Application.Contracts" />
+    <PackageReference Include="Volo.Abp.Authorization.Abstractions" />
   </ItemGroup>
 
   <ItemGroup>

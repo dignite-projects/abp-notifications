@@ -14,7 +14,7 @@ public class EmailNotificationAddressResolveContext
     public Guid UserId { get; }
 
     /// <summary>
-    /// The tenant that owns the notification, carried over from <c>NotificationDeliveryEto.TenantId</c>. A local
+    /// The tenant that owns the notification, carried over from the delivery work item. A local
     /// repository-backed resolver does not need it — ABP's event bus has already entered this tenant before the
     /// notifier runs. It is exposed for resolvers that must forward the tenant across a boundary the ambient scope
     /// cannot cross, such as a remote user service.

@@ -18,9 +18,11 @@ public class NotificationCenterDbContext :
 
     public DbSet<NotificationSubscription> NotificationSubscriptions { get; set; } = default!;
 
-    // Transactional inbox/outbox support. When an app enables it, "persist the notification + publish
-    // NotificationDeliveryEto" becomes atomic, and notifiers get at-least-once, de-duplicated delivery (roadmap
-    // problem C). The tables are always present; whether they're used is an app-level opt-in.
+    public DbSet<NotificationDeliveryRecord> NotificationDeliveries { get; set; } = default!;
+
+    // Transactional inbox/outbox support makes notification/inbox persistence and publishing
+    // NotificationDeliveryWorkEto atomic. The channel consumer persists its own delivery state before claiming it;
+    // external side effects remain at least once unless the provider honors the idempotency key.
     public DbSet<IncomingEventRecord> IncomingEvents { get; set; } = default!;
 
     public DbSet<OutgoingEventRecord> OutgoingEvents { get; set; } = default!;

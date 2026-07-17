@@ -29,9 +29,9 @@ public class DefaultNotificationDistributorTests
         definitionManager.Get("test").Returns(DefinitionWithChannels());
         definitionManager.IsAvailableAsync("test", Arg.Any<Guid>()).Returns(true);
 
-        NotificationDeliveryEto? published = null;
-        eventBus.WhenForAnyArgs(x => x.PublishAsync(Arg.Any<NotificationDeliveryEto>()))
-            .Do(ci => published = ci.Arg<NotificationDeliveryEto>());
+        var published = new List<NotificationDeliveryWorkEto>();
+        eventBus.WhenForAnyArgs(x => x.PublishAsync(Arg.Any<NotificationDeliveryWorkEto>()))
+            .Do(ci => published.Add(ci.Arg<NotificationDeliveryWorkEto>()));
 
         var distributor = CreateDistributor(store, definitionManager, eventBus);
 
@@ -49,13 +49,10 @@ public class DefaultNotificationDistributorTests
 
         await distributor.DistributeAsync(notification, new[] { u1, u1, u2, u3, u3 }, new[] { u2 });
 
-        published.ShouldNotBeNull();
-        published!.UserIds.Length.ShouldBe(2);
-        published.UserIds.ShouldContain(u1);
-        published.UserIds.ShouldContain(u3);
-        published.UserIds.ShouldNotContain(u2);
-        published.TenantId.ShouldBe(tenantId);
-        ((IEventDataMayHaveTenantId)published).IsMultiTenant(out var eventTenantId).ShouldBeTrue();
+        published.Count.ShouldBe(2);
+        published.Select(item => item.UserId).ShouldBe(new[] { u1, u3 }, ignoreOrder: true);
+        published.ShouldAllBe(item => item.TenantId == tenantId);
+        ((IEventDataMayHaveTenantId)published[0]).IsMultiTenant(out var eventTenantId).ShouldBeTrue();
         eventTenantId.ShouldBe(tenantId);
 
         await store.Received(1).InsertNotificationAsync(Arg.Any<NotificationInfo>());
@@ -97,9 +94,9 @@ public class DefaultNotificationDistributorTests
                 .Select(row => row.UserId)
                 .ToArray()));
 
-        var deliveryBatches = new List<Guid[]>();
-        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryEto>()))
-            .Do(call => deliveryBatches.Add(call.Arg<NotificationDeliveryEto>().UserIds.ToArray()));
+        var deliveryWorkItems = new List<NotificationDeliveryWorkEto>();
+        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryWorkEto>()))
+            .Do(call => deliveryWorkItems.Add(call.Arg<NotificationDeliveryWorkEto>()));
 
         long candidateMetric = 0;
         long eligibleMetric = 0;
@@ -178,10 +175,9 @@ public class DefaultNotificationDistributorTests
         candidateBatchSizes.ShouldBe(new[] { 128, 128, 128, 128 });
         writeBatches.Count.ShouldBe(8);
         writeBatches.ShouldAllBe(batch => batch.Length == 64);
-        deliveryBatches.Select(batch => batch.Length)
-            .ShouldBe(new[] { 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 12 });
         writeBatches.SelectMany(batch => batch).Distinct().Count().ShouldBe(512);
-        deliveryBatches.SelectMany(batch => batch).Distinct().Count().ShouldBe(512);
+        deliveryWorkItems.Count.ShouldBe(512);
+        deliveryWorkItems.Select(item => item.UserId).Distinct().Count().ShouldBe(512);
         await batchedStore.Received(1).InsertNotificationAsync(
             Arg.Any<NotificationInfo>(),
             Arg.Any<CancellationToken>());
@@ -223,7 +219,7 @@ public class DefaultNotificationDistributorTests
                 .Select(row => row.UserId)));
         using var cancellation = new CancellationTokenSource();
         var deliveryCount = 0;
-        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryEto>()))
+        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryWorkEto>()))
             .Do(_ =>
             {
                 deliveryCount++;
@@ -247,7 +243,7 @@ public class DefaultNotificationDistributorTests
             null,
             cancellation.Token));
 
-        deliveryCount.ShouldBe(1);
+        deliveryCount.ShouldBe(2);
         persistedRecipients.Count.ShouldBe(2);
         await evaluator.Received(1).EvaluateAsync(
             "test",
@@ -291,7 +287,7 @@ public class DefaultNotificationDistributorTests
             Arg.Is<IReadOnlyCollection<UserNotificationInfo>>(rows =>
                 rows.Select(row => row.UserId).SequenceEqual(users)),
             CancellationToken.None);
-        await eventBus.Received(1).PublishAsync(Arg.Any<NotificationDeliveryEto>());
+        await eventBus.Received(2).PublishAsync(Arg.Any<NotificationDeliveryWorkEto>());
     }
 
     [Fact]
@@ -385,6 +381,26 @@ public class DefaultNotificationDistributorTests
     }
 
     [Fact]
+    public void Non_finite_retry_factors_are_rejected_at_startup_validation()
+    {
+        var invalidBackoff = new NotificationOptions { DeliveryRetryBackoffFactor = double.NaN };
+        var invalidJitter = new NotificationOptions { DeliveryRetryJitterFactor = double.PositiveInfinity };
+
+        Should.Throw<InvalidOperationException>(() => CreateDistributor(
+                Substitute.For<INotificationStore>(),
+                Substitute.For<INotificationDefinitionManager>(),
+                Substitute.For<IDistributedEventBus>(),
+                options: invalidBackoff))
+            .Message.ShouldContain(nameof(NotificationOptions.DeliveryRetryBackoffFactor));
+        Should.Throw<InvalidOperationException>(() => CreateDistributor(
+                Substitute.For<INotificationStore>(),
+                Substitute.For<INotificationDefinitionManager>(),
+                Substitute.For<IDistributedEventBus>(),
+                options: invalidJitter))
+            .Message.ShouldContain(nameof(NotificationOptions.DeliveryRetryJitterFactor));
+    }
+
+    [Fact]
     public async Task Legacy_protected_overrides_remain_active_on_the_compatibility_pipeline()
     {
         var store = Substitute.For<INotificationStore>();
@@ -409,7 +425,7 @@ public class DefaultNotificationDistributorTests
             users);
 
         distributor.PublishedUserIds.ShouldBe(users);
-        await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<NotificationDeliveryEto>());
+        await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<NotificationDeliveryWorkEto>());
         await store.Received(2).InsertUserNotificationAsync(Arg.Any<UserNotificationInfo>());
     }
 
@@ -437,7 +453,7 @@ public class DefaultNotificationDistributorTests
         await store.DidNotReceiveWithAnyArgs().GetSubscriptionsAsync(default!, default, default);
         await store.DidNotReceiveWithAnyArgs().InsertNotificationAsync(default!);
         await store.DidNotReceiveWithAnyArgs().InsertUserNotificationAsync(default!);
-        await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<NotificationDeliveryEto>());
+        await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<NotificationDeliveryWorkEto>());
     }
 
     [Fact]
@@ -458,9 +474,9 @@ public class DefaultNotificationDistributorTests
         definitionManager.IsAvailableAsync("test", available).Returns(true);
         definitionManager.IsAvailableAsync("test", notAvailable).Returns(false);
 
-        NotificationDeliveryEto? published = null;
-        eventBus.WhenForAnyArgs(x => x.PublishAsync(Arg.Any<NotificationDeliveryEto>()))
-            .Do(ci => published = ci.Arg<NotificationDeliveryEto>());
+        NotificationDeliveryWorkEto? published = null;
+        eventBus.WhenForAnyArgs(x => x.PublishAsync(Arg.Any<NotificationDeliveryWorkEto>()))
+            .Do(ci => published = ci.Arg<NotificationDeliveryWorkEto>());
 
         var distributor = CreateDistributor(store, definitionManager, eventBus);
         var notification = new NotificationInfo { Id = Guid.NewGuid(), NotificationName = "test" };
@@ -469,7 +485,7 @@ public class DefaultNotificationDistributorTests
         await distributor.DistributeAsync(notification);
 
         published.ShouldNotBeNull();
-        published!.UserIds.ShouldBe(new[] { available });
+        published!.UserId.ShouldBe(available);
     }
 
     [Fact]
@@ -488,7 +504,7 @@ public class DefaultNotificationDistributorTests
         await distributor.DistributeAsync(notification, new[] { user }, new[] { user });
 
         await store.DidNotReceiveWithAnyArgs().InsertNotificationAsync(default!);
-        await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<NotificationDeliveryEto>());
+        await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<NotificationDeliveryWorkEto>());
     }
 
     [Fact]
@@ -508,7 +524,7 @@ public class DefaultNotificationDistributorTests
 
         await store.Received(1).InsertNotificationAsync(notification);
         await store.Received(1).InsertUserNotificationAsync(Arg.Is<UserNotificationInfo>(x => x.UserId == userId));
-        await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<NotificationDeliveryEto>());
+        await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<NotificationDeliveryWorkEto>());
     }
 
     [Fact]
@@ -524,7 +540,7 @@ public class DefaultNotificationDistributorTests
 
         await Should.ThrowAsync<AbpException>(() => distributor.DistributeAsync(notification, new[] { Guid.NewGuid() }));
 
-        await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<NotificationDeliveryEto>());
+        await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<NotificationDeliveryWorkEto>());
     }
 
     [Fact]
@@ -536,9 +552,9 @@ public class DefaultNotificationDistributorTests
         definitionManager.Get("test").Returns(DefinitionWithChannels());
         definitionManager.IsAvailableAsync("test", Arg.Any<Guid>()).Returns(true);
 
-        NotificationDeliveryEto? published = null;
-        eventBus.WhenForAnyArgs(x => x.PublishAsync(Arg.Any<NotificationDeliveryEto>()))
-            .Do(ci => published = ci.Arg<NotificationDeliveryEto>());
+        NotificationDeliveryWorkEto? published = null;
+        eventBus.WhenForAnyArgs(x => x.PublishAsync(Arg.Any<NotificationDeliveryWorkEto>()))
+            .Do(ci => published = ci.Arg<NotificationDeliveryWorkEto>());
 
         var distributor = CreateDistributor(store, definitionManager, eventBus);
 
@@ -558,7 +574,7 @@ public class DefaultNotificationDistributorTests
         published.EntityId.ShouldBe("1001");
 
         // The per-user view forwards entity identity but must still drop the recipient list (invariants §4).
-        var delivery = NotificationDelivery.FromEto(published);
+        var delivery = NotificationDelivery.FromWorkItem(published);
         delivery.EntityTypeName.ShouldBe("Demo.Order");
         delivery.EntityId.ShouldBe("1001");
         typeof(NotificationDelivery).GetProperty("UserIds").ShouldBeNull();
@@ -577,9 +593,9 @@ public class DefaultNotificationDistributorTests
         definitionManager.IsAvailableAsync("test", eligible).Returns(true);
         definitionManager.IsAvailableAsync("test", denied).Returns(false);
 
-        NotificationDeliveryEto? published = null;
-        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryEto>()))
-            .Do(call => published = call.Arg<NotificationDeliveryEto>());
+        NotificationDeliveryWorkEto? published = null;
+        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryWorkEto>()))
+            .Do(call => published = call.Arg<NotificationDeliveryWorkEto>());
 
         var distributor = CreateDistributor(store, definitionManager, eventBus);
         await distributor.DistributeAsync(
@@ -587,7 +603,7 @@ public class DefaultNotificationDistributorTests
             new[] { eligible, denied });
 
         published.ShouldNotBeNull();
-        published!.UserIds.ShouldBe(new[] { eligible });
+        published!.UserId.ShouldBe(eligible);
         await store.DidNotReceive().InsertUserNotificationAsync(
             Arg.Is<UserNotificationInfo>(row => row.UserId == denied));
     }
@@ -705,7 +721,7 @@ public class DefaultNotificationDistributorTests
         await store.DidNotReceiveWithAnyArgs().GetSubscriptionsAsync(default!, default, default);
         await store.DidNotReceiveWithAnyArgs().InsertNotificationAsync(default!);
         await store.DidNotReceiveWithAnyArgs().InsertUserNotificationAsync(default!);
-        await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<NotificationDeliveryEto>());
+        await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<NotificationDeliveryWorkEto>());
     }
 
     [Fact]
@@ -733,7 +749,7 @@ public class DefaultNotificationDistributorTests
 
         exception.Message.ShouldContain("incomplete entity identity");
         await store.DidNotReceiveWithAnyArgs().InsertNotificationAsync(default!);
-        await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<NotificationDeliveryEto>());
+        await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<NotificationDeliveryWorkEto>());
     }
 
     [Theory]
@@ -768,7 +784,7 @@ public class DefaultNotificationDistributorTests
             .Do(_ => tenantsSeen.Add(currentTenant.Id));
         store.When(candidate => candidate.InsertUserNotificationAsync(Arg.Any<UserNotificationInfo>()))
             .Do(_ => tenantsSeen.Add(currentTenant.Id));
-        eventBus.WhenForAnyArgs(candidate => candidate.PublishAsync(Arg.Any<NotificationDeliveryEto>()))
+        eventBus.WhenForAnyArgs(candidate => candidate.PublishAsync(Arg.Any<NotificationDeliveryWorkEto>()))
             .Do(_ => tenantsSeen.Add(currentTenant.Id));
         var distributor = CreateDistributor(
             store,

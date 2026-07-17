@@ -27,8 +27,45 @@ public class EmailNotifier_Tests
             NullLogger<EmailNotifier>.Instance);
 
         ((INotificationNotifier)notifier).Name.ShouldBe(EmailNotifier.ChannelName);
+        (notifier is INotificationDeliveryNotifier).ShouldBeTrue();
         (notifier is INotificationNotifier<NotificationDeliveryEto>).ShouldBeTrue();
         (notifier is IDistributedEventHandler<NotificationDeliveryEto>).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Reliable_delivery_reports_missing_address_as_terminal_suppression()
+    {
+        var emailSender = Substitute.For<IEmailSender>();
+        var notifier = new EmailNotifier(
+            emailSender,
+            Array.Empty<IEmailNotificationAddressResolver>(),
+            CreateDefaultBuilder(),
+            NullLogger<EmailNotifier>.Instance);
+        var notificationId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var workItem = new NotificationDeliveryWorkEto
+        {
+            DeliveryId = NotificationDeliveryIdentity.CreateId(null, notificationId, userId, EmailNotifier.ChannelName),
+            IdempotencyKey = NotificationDeliveryIdentity.CreateIdempotencyKey(
+                null,
+                notificationId,
+                userId,
+                EmailNotifier.ChannelName),
+            NotificationId = notificationId,
+            NotificationName = "order.shipped",
+            Data = new MessageNotificationData("Shipped!"),
+            Severity = NotificationSeverity.Info,
+            CreationTime = DateTime.UtcNow,
+            UserId = userId,
+            Channel = EmailNotifier.ChannelName
+        };
+
+        var result = await notifier.DeliverAsync(workItem);
+
+        result.IsSuppressed.ShouldBeTrue();
+        result.ReasonCode.ShouldBe("address-unavailable");
+        await emailSender.DidNotReceiveWithAnyArgs().SendAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>());
     }
 
     [Fact]

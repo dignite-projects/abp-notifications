@@ -15,13 +15,19 @@ namespace Dignite.Abp.Notifications.Emailing;
 /// Relays notifications to email — the second notifier that stress-tests the framework's event contract. Unlike
 /// SignalR (which addresses users directly), email needs a UserId → address mapping, supplied by the
 /// <see cref="IEmailNotificationAddressResolver"/> chain. Honors channel routing via <see cref="NotificationChannels"/>.
-/// <para>
-/// This notifier is not idempotent by itself: a redelivered event re-sends. Deduplication comes from ABP's
-/// transactional inbox, which the host must enable — on EF Core via <c>UseNotificationCenterEfCoreOutbox()</c>. The
-/// MongoDB provider wires no inbox, so a redelivery there sends a second email.
-/// </para>
+/// Reliable work items are tracked before this notifier runs. The supplied idempotency key can be forwarded by a
+/// custom sender/provider integration; the base ABP email sender has no idempotency-key parameter, so an ambiguous
+/// provider timeout can still produce a duplicate external email.
 /// </summary>
-public class EmailNotifier : INotificationNotifier<NotificationDeliveryEto>, ITransientDependency
+[ExposeServices(
+    typeof(INotificationNotifier),
+    typeof(INotificationDeliveryNotifier),
+    typeof(INotificationNotifier<NotificationDeliveryEto>),
+    typeof(EmailNotifier))]
+public class EmailNotifier :
+    INotificationNotifier<NotificationDeliveryEto>,
+    INotificationDeliveryNotifier,
+    ITransientDependency
 {
     public const string ChannelName = "Email";
 
@@ -87,6 +93,8 @@ public class EmailNotifier : INotificationNotifier<NotificationDeliveryEto>, ITr
 
     public virtual async Task HandleEventAsync(NotificationDeliveryEto eventData)
     {
+        // Legacy wire path only. Reliable work reaches DeliverAsync through NotificationDeliveryProcessor; an old
+        // producer's aggregate event retains its original partial-progress semantics during migration.
         if (!NotificationChannels.IsAllowed(eventData.Channels, Name)
             || eventData.UserIds == null
             || eventData.UserIds.Length == 0)
@@ -101,50 +109,73 @@ public class EmailNotifier : INotificationNotifier<NotificationDeliveryEto>, ITr
         // per recipient. Deduplicating by address would trade N loud duplicates for a silently dropped email.
         foreach (var userId in eventData.UserIds.Distinct())
         {
-            var context = new EmailNotificationAddressResolveContext(notification, userId, eventData.TenantId);
-            var address = await ResolveAddressOrNullAsync(context);
-            if (address == null)
-            {
-                continue;
-            }
-
-            var culture = ResolveCulture(address.CultureName);
-            NotificationEmail? email;
-
-            // CultureInfo is backed by AsyncLocal. Set it only around this recipient's content build and always
-            // restore both values so the next recipient in this event cannot inherit the previous recipient's culture.
-            var previousCulture = CultureInfo.CurrentCulture;
-            var previousUICulture = CultureInfo.CurrentUICulture;
-            try
-            {
-                CultureInfo.CurrentCulture = culture;
-                CultureInfo.CurrentUICulture = culture;
-
-                email = await EmailBuilder.BuildAsync(
-                    new NotificationEmailBuildContext(
-                        notification,
-                        userId,
-                        address.Address,
-                        eventData.TenantId,
-                        culture.Name));
-            }
-            finally
-            {
-                CultureInfo.CurrentCulture = previousCulture;
-                CultureInfo.CurrentUICulture = previousUICulture;
-            }
-
-            if (email == null)
-            {
-                Logger.LogDebug(
-                    "No email content provider produced content for notification '{NotificationName}' and user '{UserId}'.",
-                    eventData.NotificationName,
-                    userId);
-                continue;
-            }
-
-            await EmailSender.SendAsync(address.Address, email.Subject, email.Body, email.IsBodyHtml);
+            await DeliverToUserAsync(notification, userId, eventData.TenantId);
         }
+    }
+
+    public virtual Task<NotificationDeliveryResult> DeliverAsync(NotificationDeliveryWorkEto workItem)
+    {
+        if (!string.Equals(workItem.Channel, Name, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"The {nameof(EmailNotifier)} cannot deliver channel '{workItem.Channel}'.");
+        }
+
+        return DeliverToUserAsync(
+            NotificationDelivery.FromWorkItem(workItem),
+            workItem.UserId,
+            workItem.TenantId);
+    }
+
+    protected virtual async Task<NotificationDeliveryResult> DeliverToUserAsync(
+        NotificationDelivery notification,
+        Guid userId,
+        Guid? tenantId)
+    {
+        var context = new EmailNotificationAddressResolveContext(notification, userId, tenantId);
+        var address = await ResolveAddressOrNullAsync(context);
+        if (address == null)
+        {
+            return NotificationDeliveryResult.Suppressed("address-unavailable");
+        }
+
+        var culture = ResolveCulture(address.CultureName);
+        NotificationEmail? email;
+
+        // CultureInfo is backed by AsyncLocal. Set it only around this recipient's content build and always restore
+        // both values so another delivery cannot inherit the previous recipient's culture.
+        var previousCulture = CultureInfo.CurrentCulture;
+        var previousUICulture = CultureInfo.CurrentUICulture;
+        try
+        {
+            CultureInfo.CurrentCulture = culture;
+            CultureInfo.CurrentUICulture = culture;
+
+            email = await EmailBuilder.BuildAsync(
+                new NotificationEmailBuildContext(
+                    notification,
+                    userId,
+                    address.Address,
+                    tenantId,
+                    culture.Name));
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = previousCulture;
+            CultureInfo.CurrentUICulture = previousUICulture;
+        }
+
+        if (email == null)
+        {
+            Logger.LogDebug(
+                "No email content provider produced content for notification '{NotificationName}' and user '{UserId}'.",
+                notification.NotificationName,
+                userId);
+            return NotificationDeliveryResult.Suppressed("content-unavailable");
+        }
+
+        await EmailSender.SendAsync(address.Address, email.Subject, email.Body, email.IsBodyHtml);
+        return NotificationDeliveryResult.Succeeded();
     }
 
     /// <summary>Walks the resolver chain and takes the first non-null address result.</summary>
