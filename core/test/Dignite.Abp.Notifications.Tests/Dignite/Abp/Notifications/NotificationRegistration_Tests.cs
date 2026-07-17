@@ -270,6 +270,16 @@ public class NotificationRegistration_Tests
     }
 
     [Fact]
+    public async Task Invalid_distribution_batch_configuration_fails_host_start()
+    {
+        var exception = await Should.ThrowAsync<Exception>(
+            () => StartHostAsync<InvalidDistributionBatchStartupModule>());
+
+        exception.ToString().ShouldContain(nameof(NotificationOptions.DeliveryEventRecipientLimit));
+        exception.ToString().ShouldContain(NotificationOptions.MaxDistributionBatchSize.ToString());
+    }
+
+    [Fact]
     public async Task Abstractions_only_host_registers_one_tolerant_global_converter()
     {
         using var host = BuildHost<AbstractionsOnlyStartupModule>();
@@ -614,6 +624,16 @@ public class CompleteUpcastChainStartupModule : AbpModule
             options.AddUpcaster<EvolvingOrderNotificationData>(2, payload => payload);
             options.AddUpcaster<EvolvingOrderNotificationData>(1, payload => payload);
         });
+    }
+}
+
+[DependsOn(typeof(AbpNotificationsModule))]
+public class InvalidDistributionBatchStartupModule : AbpModule
+{
+    public override void ConfigureServices(ServiceConfigurationContext context)
+    {
+        Configure<NotificationOptions>(options =>
+            options.DeliveryEventRecipientLimit = NotificationOptions.MaxDistributionBatchSize + 1);
     }
 }
 

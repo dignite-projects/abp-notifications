@@ -240,6 +240,42 @@ public abstract class NotificationStore_Tests<TStartupModule> : NotificationCent
     }
 
     [Fact]
+    public async Task Batched_subscription_pages_are_globally_distinct_stable_and_exact()
+    {
+        var users = Enumerable.Range(0, 5)
+            .Select(_ => Guid.NewGuid())
+            .OrderBy(userId => userId)
+            .ToArray();
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var store = GetRequiredService<INotificationStore>();
+            await store.InsertSubscriptionAsync(NewSubscription(users[0]));
+            await store.InsertSubscriptionAsync(NewSubscription(users[1]));
+            await store.InsertSubscriptionAsync(NewSubscription(users[1], "Demo.Order", "42"));
+            await store.InsertSubscriptionAsync(NewSubscription(users[2], "Demo.Order", "42"));
+            await store.InsertSubscriptionAsync(NewSubscription(users[3], "Demo.Order", "42"));
+            await store.InsertSubscriptionAsync(NewSubscription(users[4], "Demo.Order", "99"));
+        });
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var store = (IBatchedNotificationStore)GetRequiredService<INotificationStore>();
+            var firstPage = await store.GetSubscriptionUserIdsAsync(
+                "order.shipped", "Demo.Order", "42", 0, 2);
+            var secondPage = await store.GetSubscriptionUserIdsAsync(
+                "order.shipped", "Demo.Order", "42", 2, 2);
+            var exactBoundaryPage = await store.GetSubscriptionUserIdsAsync(
+                "order.shipped", "Demo.Order", "42", 4, 2);
+
+            firstPage.ShouldBe(users.Take(2));
+            secondPage.ShouldBe(users.Skip(2).Take(2));
+            exactBoundaryPage.ShouldBeEmpty();
+            firstPage.Concat(secondPage).Distinct().Count().ShouldBe(4);
+        });
+    }
+
+    [Fact]
     public async Task Subscription_identity_is_unique_for_host_and_tenant_scopes_independently()
     {
         var userId = Guid.NewGuid();

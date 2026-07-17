@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -540,6 +541,35 @@ public class DefaultNotificationPublisherTests
         tenantSeen.ShouldBe(tenantId);
         await distributor.Received(1).DistributeToExplicitRecipientsWithoutEligibilityChecksAsync(
             Arg.Any<NotificationInfo>(), userIds, null);
+        await distributor.DidNotReceiveWithAnyArgs().DistributeAsync(default!, default, default);
+        currentTenant.Id.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Distribution_job_forwards_cancellation_to_a_capable_distributor()
+    {
+        var distributor = Substitute.For<INotificationDistributor, ICancellableNotificationDistributor>();
+        var cancellableDistributor = (ICancellableNotificationDistributor)distributor;
+        var currentTenant = new TestCurrentTenant();
+        using var cancellation = new CancellationTokenSource();
+        var notification = new NotificationInfo
+        {
+            Id = Guid.NewGuid(),
+            NotificationName = "test",
+            TenantId = Guid.NewGuid()
+        };
+        var userIds = new[] { Guid.NewGuid() };
+        var job = new NotificationDistributionJob(distributor, currentTenant);
+
+        await job.ExecuteAsync(
+            new NotificationDistributionJobArgs(notification, userIds, null),
+            cancellation.Token);
+
+        await cancellableDistributor.Received(1).DistributeAsync(
+            notification,
+            userIds,
+            null,
+            cancellation.Token);
         await distributor.DidNotReceiveWithAnyArgs().DistributeAsync(default!, default, default);
         currentTenant.Id.ShouldBeNull();
     }

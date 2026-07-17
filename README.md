@@ -218,18 +218,19 @@ would not preserve ordinal identity. This repository intentionally ships no migr
 consuming host owns its database and migration history. MongoDB consumers must likewise complete the
 backfill before deploying the new unique index.
 
-#### Delivery guarantees — opt in to the transactional outbox
+#### Delivery guarantees, batches, and partial progress
 
 Distributing a notification writes the per-user inbox rows **and** publishes `NotificationDeliveryEto`
 for the notifiers. Those two commit together only when the host enables ABP's transactional outbox;
 the same call enables the inbox, which deduplicates a redelivered event so a notifier does not send
-twice.
+twice. Batching does not introduce an inner transaction or commit: it retains the ambient ABP unit of work.
 
-| Setup | Persist + publish atomic | Redelivery deduplicated |
-|---|---|---|
-| EF Core, outbox enabled | yes | yes |
-| EF Core, outbox not enabled | no | no |
-| MongoDB | no | no |
+| Setup | Inbox batch behavior | Persist + publish atomic | Failure/cancellation after a completed batch |
+|---|---|---|---|
+| EF Core, outbox enabled | all batches remain pending in the ambient unit of work | yes | the unit of work rolls back inbox and outbox records |
+| EF Core, outbox not enabled | all batches remain pending in the ambient unit of work | no | database work rolls back, but an already published external event may have escaped |
+| MongoDB | each completed provider batch can become durable (the shipped provider has no transaction) | no | completed inbox batches and already published events can remain |
+| `NullNotificationStore` | no persistence | not applicable | already published delivery events remain |
 
 If you use the shipped `NotificationCenterDbContext`, one line enables both:
 
@@ -267,7 +268,10 @@ Configure<AbpDistributedEventBusOptions>(options =>
 
 The MongoDB provider wires no outbox or inbox. A crash between the store write and the publish leaves
 the notification in the inbox with no channel delivery, and a redelivered event makes the Email
-notifier send a second copy. Choose EF Core if those guarantees matter.
+notifier send a second copy. Cancellation is a boundary for stopping new work, not compensation for work
+already completed. This release intentionally adds no per-recipient/channel ledger, retry policy, or
+cross-provider transaction emulation. Choose EF Core with the outbox if atomic persistence and publication
+matter.
 
 ## Defining and publishing a notification
 
@@ -440,10 +444,49 @@ needs its own application permission checks where appropriate.
 Eligibility is evaluated in the notification's recorded `TenantId`, not whichever tenant happens to be
 ambient when an inline call or background job executes. A tenant notification therefore uses that tenant's
 feature values and permission context, while a host notification is evaluated in the host context. Filtered
-counts are logged at Information level and the corresponding user IDs at Debug level. Replace
+counts and batch progress are logged without logging the recipient IDs. Replace
 `INotificationRecipientEligibilityEvaluator` when a deployment can batch these lookups more efficiently;
 the replacement must preserve the notification tenant/host boundary and return the same eligible/excluded
 partition.
+
+### Bounded recipient pipeline
+
+Inline versus background selection controls where distribution runs; it does not change the amount of work in
+one pipeline unit. Both explicit and subscription-derived recipients now flow through the same configurable,
+bounded stages:
+
+1. normalize one candidate page (the built-in stores use a stable, database-side distinct/order/page query);
+2. remove caller exclusions and evaluate definition eligibility for that page;
+3. write inbox rows in bounded multi-insert groups;
+4. publish one or more delivery events, each carrying at most the configured recipient limit.
+
+The defaults are 256 candidates, 256 inbox rows, and 100 recipient IDs per delivery event. Each value must be
+between 1 and `NotificationOptions.MaxDistributionBatchSize` (10,000), and invalid configuration fails host
+startup. The broker limit bounds the recipient-ID portion of an event; notification data still has to fit the
+chosen transport's message-size limit. A delivery can therefore produce multiple `NotificationDeliveryEto`
+instances, and a notifier must treat each instance as independent delivery work.
+
+The built-in `NotificationStore` (shared by the EF Core and MongoDB packages) implements
+`IBatchedNotificationStore`; `NullNotificationStore` implements it without persistence. The capability is
+separate from `INotificationStore` so existing custom stores remain binary/source compatible. A legacy custom
+store still works through a materializing/per-row fallback, but it does **not** gain the large-fan-out memory or
+write guarantees. Implement `IBatchedNotificationStore` before enabling large broadcasts in a custom store.
+For the same compatibility reason, a `DefaultNotificationDistributor` subclass that overrides any legacy
+`GetTargetUserIdsAsync`, `SaveUserNotificationsAsync`, or `PublishNotificationDeliveryAsync` hook continues
+through its original materializing path and emits a warning; migrate those customizations to the new capability
+and evaluator contracts to obtain bounded guarantees.
+Likewise, the default distributor implements the additive `ICancellableNotificationDistributor`; the background
+job passes the host shutdown token, and manual job/distributor runners can pass their own token. Cancellation is
+observed between candidate, persistence, and delivery batches, not during a provider operation already in flight.
+
+The public `Dignite.Abp.Notifications` meter exposes counters for candidates, eligible recipients, filtered
+recipients, batches, and failures, plus a distribution-duration histogram. Stable instrument names are constants
+on `NotificationDistributionMetrics`. Low-cardinality tags identify recipient source, host/tenant scope, stage,
+and outcome; `notification.name` is also included and should be allow-listed or aggregated when definitions are
+dynamically named.
+
+The default-size rationale and reproducible 2,001-recipient EF Core/MongoDB measurements are recorded in
+[`benchmarks/issue-60-recipient-batching.md`](benchmarks/issue-60-recipient-batching.md).
 
 `INotificationPublisher` records `CurrentTenant.Id` automatically. Code that calls `INotificationDistributor`
 directly must populate `NotificationInfo.TenantId` for tenant notifications. That value is authoritative for
@@ -638,6 +681,11 @@ Configure<NotificationOptions>(options =>
 {
     // Explicit recipients above this count distribute on a background job instead of inline. Default: 5.
     options.DirectDistributionUserThreshold = 10;
+
+    // Each value must be between 1 and NotificationOptions.MaxDistributionBatchSize (10,000).
+    options.RecipientBatchSize = 256;
+    options.UserNotificationWriteBatchSize = 256;
+    options.DeliveryEventRecipientLimit = 100;
 });
 
 Configure<NotificationEmailOptions>(options =>
@@ -670,10 +718,10 @@ Notifiers                 NotificationCenter (optional)
 
 1. Business code calls `INotificationPublisher.PublishAsync(...)`.
 2. Small explicit fan-outs distribute inline; larger ones enqueue a `NotificationDistributionJob`.
-3. The distributor resolves recipients (explicit `userIds`, or subscribers from
-   `INotificationStore`), checks the definition's feature/permission availability, persists to the
-   store (a no-op under `NullNotificationStore`), then publishes one `NotificationDeliveryEto` when
-   external channels are configured.
+3. The distributor resolves bounded recipient pages (explicit `userIds`, or subscribers from
+   `IBatchedNotificationStore`), checks the definition's feature/permission availability, persists bounded
+   inbox groups (a no-op under `NullNotificationStore`), then publishes bounded `NotificationDeliveryEto`
+   work items when external channels are configured.
 4. Every installed notifier handling that event relays it to its channel — honoring channel routing
    and stripping the recipient list per user.
 

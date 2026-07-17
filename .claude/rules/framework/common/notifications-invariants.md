@@ -145,3 +145,19 @@ identity. Treat these as publish-time contracts, not hints for a downstream Noti
   questions.
 - `Unspecified` is the compatibility state. A definition that has not opted into a dimension remains permissive for
   that dimension so migration can happen definition by definition.
+
+## 9. Recipient work stays bounded
+
+Inline/background selection is not a scalability boundary. Explicit and subscription-derived recipients must join
+the same bounded candidate → eligibility → persistence → delivery pipeline after resolution.
+
+- Built-in stores page a stable, database-side distinct user-ID query and multi-insert only an already-bounded inbox
+  group. Matching definition-wide and exact entity subscriptions must not create duplicate inbox rows.
+- Never put every recipient into one `NotificationDeliveryEto`; respect
+  `NotificationOptions.DeliveryEventRecipientLimit`. Broker limits also include the notification payload.
+- Observe cancellation between candidate, store, and event batches. Do not describe cancellation as rollback:
+  EF/outbox, EF without outbox, MongoDB, and null-store forwarding have different partial-progress semantics.
+- Keep candidates, eligible recipients, filtered recipients, batches, duration, and failures observable without
+  logging recipient IDs. Preserve tenant scope on every query, write, metric tag, job, and event.
+- `IBatchedNotificationStore` and `ICancellableNotificationDistributor` are additive compatibility capabilities.
+  Legacy custom implementations may use the compatibility fallback, but large fan-outs require those capabilities.

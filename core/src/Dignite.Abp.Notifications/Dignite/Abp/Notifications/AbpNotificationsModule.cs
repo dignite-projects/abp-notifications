@@ -28,6 +28,15 @@ public class AbpNotificationsModule : AbpModule
 
     public override void ConfigureServices(ServiceConfigurationContext context)
     {
+        context.Services
+            .AddOptions<NotificationOptions>()
+            .Validate(options =>
+            {
+                options.ValidateDistributionBatching();
+                return true;
+            })
+            .ValidateOnStart();
+
         context.Services.AddHostedService<NotificationDefinitionStartupService>();
 
     }

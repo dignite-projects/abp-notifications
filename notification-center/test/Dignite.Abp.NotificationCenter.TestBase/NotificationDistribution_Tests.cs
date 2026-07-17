@@ -1,8 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Dignite.Abp.Notifications;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 using Shouldly;
 using Volo.Abp;
@@ -38,7 +41,9 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
         };
     }
 
-    private DefaultNotificationDistributor CreateDistributor(IDistributedEventBus eventBus)
+    private DefaultNotificationDistributor CreateDistributor(
+        IDistributedEventBus eventBus,
+        NotificationOptions? options = null)
     {
         return new DefaultNotificationDistributor(
             GetRequiredService<INotificationStore>(),
@@ -47,7 +52,8 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
             GetRequiredService<INotificationRecipientEligibilityEvaluator>(),
             GetRequiredService<ICurrentTenant>(),
             GetRequiredService<ILogger<DefaultNotificationDistributor>>(),
-            GetRequiredService<INotificationDataTypeRegistry>());
+            GetRequiredService<INotificationDataTypeRegistry>(),
+            Options.Create(options ?? new NotificationOptions()));
     }
 
     private Task DistributeAsync(
@@ -290,5 +296,109 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
                 .FindAsync(notificationId)).ShouldBeNull();
         });
         await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<NotificationDeliveryEto>());
+    }
+
+    [Fact]
+    public async Task Thousands_of_duplicate_scope_subscribers_are_paged_persisted_and_published_in_bounded_batches()
+    {
+        const int recipientCount = 2001;
+        var users = Enumerable.Range(0, recipientCount).Select(_ => Guid.NewGuid()).ToArray();
+        var duplicateScopeUsers = users.Take(301).ToArray();
+        var now = DateTime.UtcNow;
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var subscriptions = users.Select(userId => new NotificationSubscription(
+                    Guid.NewGuid(),
+                    userId,
+                    "order.shipped",
+                    null,
+                    null,
+                    now,
+                    null))
+                .Concat(duplicateScopeUsers.Select(userId => new NotificationSubscription(
+                    Guid.NewGuid(),
+                    userId,
+                    "order.shipped",
+                    "Demo.Order",
+                    "42",
+                    now,
+                    null)))
+                .ToList();
+            await GetRequiredService<IRepository<NotificationSubscription, Guid>>()
+                .InsertManyAsync(subscriptions);
+        });
+
+        var eventBus = Substitute.For<IDistributedEventBus>();
+        var deliveryBatches = new List<Guid[]>();
+        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryEto>()))
+            .Do(call => deliveryBatches.Add(call.Arg<NotificationDeliveryEto>().UserIds.ToArray()));
+        var notificationId = Guid.NewGuid();
+        var distributor = CreateDistributor(eventBus, new NotificationOptions
+        {
+            RecipientBatchSize = 256,
+            UserNotificationWriteBatchSize = 128,
+            DeliveryEventRecipientLimit = 100
+        });
+
+        await DistributeAsync(
+            background: false,
+            distributor,
+            NewNotification(notificationId, "Demo.Order", "42"),
+            userIds: null);
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var inboxRows = await GetRequiredService<IRepository<UserNotification, Guid>>()
+                .GetListAsync(row => row.NotificationId == notificationId);
+            inboxRows.Count.ShouldBe(recipientCount);
+            inboxRows.Select(row => row.UserId).Distinct().Count().ShouldBe(recipientCount);
+            (await GetRequiredService<IRepository<Notification, Guid>>()
+                .FindAsync(notificationId)).ShouldNotBeNull();
+        });
+
+        deliveryBatches.Count.ShouldBe(21);
+        deliveryBatches.Take(20).ShouldAllBe(batch => batch.Length == 100);
+        deliveryBatches[^1].Length.ShouldBe(1);
+        deliveryBatches.ShouldAllBe(batch => batch.Length <= 100);
+        deliveryBatches.SelectMany(batch => batch).Distinct().Count().ShouldBe(recipientCount);
+    }
+
+    [Fact]
+    public async Task Cancellation_stops_provider_work_before_the_next_candidate_batch()
+    {
+        var eventBus = Substitute.For<IDistributedEventBus>();
+        using var cancellation = new CancellationTokenSource();
+        var publishedBatches = 0;
+        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryEto>()))
+            .Do(_ =>
+            {
+                publishedBatches++;
+                cancellation.Cancel();
+            });
+        var notificationId = Guid.NewGuid();
+        var distributor = CreateDistributor(eventBus, new NotificationOptions
+        {
+            RecipientBatchSize = 2,
+            UserNotificationWriteBatchSize = 2,
+            DeliveryEventRecipientLimit = 2
+        });
+
+        await Should.ThrowAsync<OperationCanceledException>(() => WithUnitOfWorkAsync(() =>
+            distributor.DistributeAsync(
+                NewNotification(notificationId),
+                Enumerable.Range(0, 5).Select(_ => Guid.NewGuid()).ToArray(),
+                null,
+                cancellation.Token)));
+
+        publishedBatches.ShouldBe(1);
+        await WithUnitOfWorkAsync(async () =>
+        {
+            // EF rolls the ambient transaction back, while the non-transactional Mongo test provider can retain
+            // the completed first batch. Neither provider may advance beyond that cancellation boundary.
+            var retainedRows = await GetRequiredService<IRepository<UserNotification, Guid>>()
+                .GetListAsync(row => row.NotificationId == notificationId);
+            retainedRows.Count.ShouldBeLessThanOrEqualTo(2);
+        });
     }
 }
