@@ -155,7 +155,8 @@ public class NotificationDataOptions
 
         private static string GetTypeName(Type type)
         {
-            return type.FullName ?? type.Name;
+            var assemblyName = type.Assembly.GetName().Name ?? "<unknown assembly>";
+            return $"{type.FullName ?? type.Name}, {assemblyName}";
         }
     }
 }

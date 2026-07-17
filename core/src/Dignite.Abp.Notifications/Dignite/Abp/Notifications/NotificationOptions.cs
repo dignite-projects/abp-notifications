@@ -11,6 +11,10 @@ public class NotificationOptions
     /// </summary>
     public int DirectDistributionUserThreshold { get; set; } = 5;
 
+    /// <summary>
+    /// Gets definition provider types discovered across application modules or registered explicitly. Repeating the
+    /// same provider type is idempotent; the definition manager executes each provider type once.
+    /// </summary>
     public ITypeList<INotificationDefinitionProvider> DefinitionProviders { get; }
 
     public NotificationOptions()

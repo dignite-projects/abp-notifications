@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Microsoft.Extensions.DependencyInjection;
 using Volo.Abp.BackgroundJobs;
 using Volo.Abp.EventBus;
@@ -29,7 +30,7 @@ public class AbpNotificationsModule : AbpModule
 
     public override void ConfigureServices(ServiceConfigurationContext context)
     {
-        context.Services.AddOptions<NotificationOptions>().ValidateOnStart();
+        context.Services.AddHostedService<NotificationDefinitionStartupService>();
 
         // Make NotificationData serialize/deserialize polymorphically (stable discriminator) everywhere ABP's
         // System.Text.Json is used — distributed event bus, HTTP API, etc. — not just via INotificationDataSerializer.
@@ -43,18 +44,16 @@ public class AbpNotificationsModule : AbpModule
 
     private static void AutoAddDefinitionProviders(IServiceCollection services)
     {
-        var definitionProviders = new List<Type>();
-
-        services.OnRegistered(context =>
+        services.PostConfigure<NotificationOptions>(options =>
         {
-            if (typeof(INotificationDefinitionProvider).IsAssignableFrom(context.ImplementationType))
-            {
-                definitionProviders.Add(context.ImplementationType);
-            }
-        });
+            var definitionProviders = services
+                .Where(descriptor => descriptor.ImplementationType != null &&
+                                     typeof(INotificationDefinitionProvider).IsAssignableFrom(
+                                         descriptor.ImplementationType))
+                .Select(descriptor => descriptor.ImplementationType!)
+                .Distinct()
+                .ToList();
 
-        services.Configure<NotificationOptions>(options =>
-        {
             options.DefinitionProviders.AddIfNotContains(definitionProviders);
         });
     }

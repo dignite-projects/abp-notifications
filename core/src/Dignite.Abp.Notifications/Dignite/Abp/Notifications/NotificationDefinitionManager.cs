@@ -104,6 +104,18 @@ public class NotificationDefinitionManager : INotificationDefinitionManager, ISi
 
     protected virtual IDictionary<string, NotificationDefinition> CreateDefinitions()
     {
-        return NotificationDefinitionRegistry.GetOrCreate(Options, ServiceScopeFactory);
+        var context = new NotificationDefinitionContext();
+
+        using (var scope = ServiceScopeFactory.CreateScope())
+        {
+            foreach (var providerType in Options.DefinitionProviders.Distinct())
+            {
+                context.SetCurrentProvider(providerType);
+                var provider = (INotificationDefinitionProvider)scope.ServiceProvider.GetRequiredService(providerType);
+                provider.Define(context);
+            }
+        }
+
+        return context.Definitions;
     }
 }

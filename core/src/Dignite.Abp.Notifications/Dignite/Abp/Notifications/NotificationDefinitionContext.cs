@@ -55,6 +55,12 @@ public class NotificationDefinitionContext : INotificationDefinitionContext
 
     private static string GetProviderName(Type? providerType)
     {
-        return providerType?.FullName ?? "<direct registration>";
+        if (providerType == null)
+        {
+            return "<direct registration>";
+        }
+
+        var assemblyName = providerType.Assembly.GetName().Name ?? "<unknown assembly>";
+        return $"{providerType.FullName ?? providerType.Name}, {assemblyName}";
     }
 }

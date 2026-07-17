@@ -294,7 +294,8 @@ public class ShopNotificationDefinitionProvider : NotificationDefinitionProvider
 
 Definition names also use ordinal, case-sensitive comparison. Every duplicate name is a startup error,
 and the error identifies both provider types; an equivalent-looking second definition is not treated as
-idempotent because definitions are mutable after construction.
+idempotent because definitions are mutable after construction. Provider types are convention-discovered
+across modules; registering the same provider type more than once is idempotent and the provider executes once.
 
 **4. Publish** from your business code via `INotificationPublisher`:
 

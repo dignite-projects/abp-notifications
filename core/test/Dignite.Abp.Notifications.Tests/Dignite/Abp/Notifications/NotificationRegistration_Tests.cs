@@ -1,10 +1,16 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
+using Dignite.Abp.Notifications.TestProviderA;
+using Dignite.Abp.Notifications.TestProviderB;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Shouldly;
 using Volo.Abp;
+using Volo.Abp.DependencyInjection;
 using Volo.Abp.Localization;
 using Volo.Abp.Modularity;
 using Xunit;
@@ -121,15 +127,17 @@ public class NotificationRegistration_Tests
     [Fact]
     public async Task Duplicate_definition_providers_fail_host_start_independent_of_provider_order()
     {
-        var forward = await Should.ThrowAsync<OptionsValidationException>(
+        var forward = await Should.ThrowAsync<InvalidOperationException>(
             () => StartHostAsync<DuplicateDefinitionsForwardStartupModule>());
-        var reverse = await Should.ThrowAsync<OptionsValidationException>(
+        var reverse = await Should.ThrowAsync<InvalidOperationException>(
             () => StartHostAsync<DuplicateDefinitionsReverseStartupModule>());
 
         forward.Message.ShouldBe(reverse.Message);
-        forward.Message.ShouldContain("Test.StartupDuplicateDefinition");
-        forward.Message.ShouldContain(typeof(DuplicateDefinitionFirstProvider).FullName!);
-        forward.Message.ShouldContain(typeof(DuplicateDefinitionSecondProvider).FullName!);
+        forward.Message.ShouldContain("Test.CrossModuleDuplicate");
+        forward.Message.ShouldContain(typeof(TestProviderADefinitionProvider).FullName!);
+        forward.Message.ShouldContain(typeof(TestProviderBDefinitionProvider).FullName!);
+        forward.Message.ShouldContain(typeof(TestProviderADefinitionProvider).Assembly.GetName().Name!);
+        forward.Message.ShouldContain(typeof(TestProviderBDefinitionProvider).Assembly.GetName().Name!);
     }
 
     [Fact]
@@ -163,6 +171,34 @@ public class NotificationRegistration_Tests
         await StartHostAsync<ValidRegistrationsStartupModule>();
     }
 
+    [Fact]
+    public async Task Definition_provider_can_resolve_options_and_manager_during_host_start()
+    {
+        await StartHostAsync<ProviderDependencyStartupModule>();
+    }
+
+    [Fact]
+    public async Task Host_start_uses_the_registered_definition_manager_override()
+    {
+        await StartHostAsync<CustomDefinitionManagerStartupModule>();
+    }
+
+    [Fact]
+    public async Task Convention_discovered_definition_provider_executes_once_across_startup_and_concurrent_lookups()
+    {
+        TestProviderADefinitionProvider.ResetDefineCallCount();
+        using var host = BuildHost<SingleDefinitionProviderStartupModule>();
+        host.Services.GetService<TestProviderADefinitionProvider>().ShouldNotBeNull();
+
+        await host.StartAsync();
+        var definitionManager = host.Services.GetRequiredService<INotificationDefinitionManager>();
+        await Task.WhenAll(Enumerable.Range(0, 32)
+            .Select(_ => Task.Run(() => definitionManager.GetAll())));
+
+        TestProviderADefinitionProvider.DefineCallCount.ShouldBe(1);
+        await host.StopAsync();
+    }
+
     private static NotificationDefinition NewDefinition(string name)
     {
         return new NotificationDefinition(name, new FixedLocalizableString(name));
@@ -170,12 +206,16 @@ public class NotificationRegistration_Tests
 
     private static async Task StartHostAsync<TStartupModule>() where TStartupModule : IAbpModule
     {
-        var builder = Host.CreateApplicationBuilder();
-        builder.Services.AddApplication<TStartupModule>();
-
-        using var host = builder.Build();
+        using var host = BuildHost<TStartupModule>();
         await host.StartAsync();
         await host.StopAsync();
+    }
+
+    private static IHost BuildHost<TStartupModule>() where TStartupModule : IAbpModule
+    {
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddApplication<TStartupModule>();
+        return builder.Build();
     }
 }
 
@@ -209,54 +249,60 @@ internal sealed class CaseSensitiveDataLower : NotificationData
 {
 }
 
-internal sealed class DuplicateDefinitionFirstProvider : INotificationDefinitionProvider
+internal sealed class ProviderDependencyDefinitionProvider : INotificationDefinitionProvider
 {
+    private readonly NotificationOptions _options;
+    private readonly INotificationDefinitionManager _definitionManager;
+
+    public ProviderDependencyDefinitionProvider(
+        IOptions<NotificationOptions> options,
+        INotificationDefinitionManager definitionManager)
+    {
+        _options = options.Value;
+        _definitionManager = definitionManager;
+    }
+
     public void Define(INotificationDefinitionContext context)
     {
+        _options.ShouldNotBeNull();
+        _definitionManager.ShouldNotBeNull();
+        _options.DefinitionProviders.Count(type => type == typeof(ProviderDependencyDefinitionProvider)).ShouldBe(1);
         context.Add(new NotificationDefinition(
-            "Test.StartupDuplicateDefinition",
-            new FixedLocalizableString("First")));
+            "Test.ProviderDependencies",
+            new FixedLocalizableString("Provider dependencies")));
     }
 }
 
-internal sealed class DuplicateDefinitionSecondProvider : INotificationDefinitionProvider
+[DisableConventionalRegistration]
+internal sealed class CustomNotificationDefinitionManager : NotificationDefinitionManager
 {
-    public void Define(INotificationDefinitionContext context)
+    public CustomNotificationDefinitionManager(
+        IOptions<NotificationOptions> options,
+        IServiceScopeFactory serviceScopeFactory)
+        : base(options, serviceScopeFactory)
     {
-        context.Add(new NotificationDefinition(
-            "Test.StartupDuplicateDefinition",
-            new FixedLocalizableString("Second")));
+    }
+
+    protected override IDictionary<string, NotificationDefinition> CreateDefinitions()
+    {
+        var definition = new NotificationDefinition(
+            "Test.CustomManager",
+            new FixedLocalizableString("Custom manager"));
+        return new Dictionary<string, NotificationDefinition>(StringComparer.Ordinal)
+        {
+            [definition.Name] = definition
+        };
     }
 }
 
-[DependsOn(typeof(AbpNotificationsModule))]
+[DependsOn(typeof(TestProviderAModule), typeof(TestProviderBModule))]
 public class DuplicateDefinitionsForwardStartupModule : AbpModule
 {
-    public override void ConfigureServices(ServiceConfigurationContext context)
-    {
-        context.Services.AddTransient<DuplicateDefinitionFirstProvider>();
-        context.Services.AddTransient<DuplicateDefinitionSecondProvider>();
-        Configure<NotificationOptions>(options =>
-        {
-            options.DefinitionProviders.Add(typeof(DuplicateDefinitionFirstProvider));
-            options.DefinitionProviders.Add(typeof(DuplicateDefinitionSecondProvider));
-        });
-    }
 }
 
-[DependsOn(typeof(AbpNotificationsModule))]
+[DependsOn(typeof(TestProviderBModule), typeof(TestProviderAModule))]
 public class DuplicateDefinitionsReverseStartupModule : AbpModule
 {
-    public override void ConfigureServices(ServiceConfigurationContext context)
-    {
-        context.Services.AddTransient<DuplicateDefinitionSecondProvider>();
-        context.Services.AddTransient<DuplicateDefinitionFirstProvider>();
-        Configure<NotificationOptions>(options =>
-        {
-            options.DefinitionProviders.Add(typeof(DuplicateDefinitionSecondProvider));
-            options.DefinitionProviders.Add(typeof(DuplicateDefinitionFirstProvider));
-        });
-    }
 }
 
 [DependsOn(typeof(AbpNotificationsAbstractionsModule))]
@@ -309,5 +355,31 @@ public class ValidRegistrationsStartupModule : AbpModule
             options.Add<DistinctDataA>();
             options.Add<DistinctDataB>();
         });
+    }
+}
+
+[DependsOn(typeof(AbpNotificationsModule))]
+public class ProviderDependencyStartupModule : AbpModule
+{
+    public override void ConfigureServices(ServiceConfigurationContext context)
+    {
+        context.Services.AddTransient<ProviderDependencyDefinitionProvider>();
+        Configure<NotificationOptions>(options =>
+            options.DefinitionProviders.Add(typeof(ProviderDependencyDefinitionProvider)));
+    }
+}
+
+[DependsOn(typeof(TestProviderAModule))]
+public class SingleDefinitionProviderStartupModule : AbpModule
+{
+}
+
+[DependsOn(typeof(TestProviderAModule), typeof(TestProviderBModule))]
+public class CustomDefinitionManagerStartupModule : AbpModule
+{
+    public override void ConfigureServices(ServiceConfigurationContext context)
+    {
+        context.Services.Replace(
+            ServiceDescriptor.Singleton<INotificationDefinitionManager, CustomNotificationDefinitionManager>());
     }
 }
