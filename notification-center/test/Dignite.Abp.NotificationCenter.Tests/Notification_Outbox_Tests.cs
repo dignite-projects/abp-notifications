@@ -17,7 +17,7 @@ namespace Dignite.Abp.NotificationCenter;
 /// </summary>
 public class Notification_Outbox_Tests : NotificationCenterTestBase<AbpNotificationCenterEntityFrameworkCoreTestModule>
 {
-    private static NotificationInfo NewNotification(Guid id)
+    private static NotificationInfo NewNotification(Guid id, Guid? tenantId = null)
     {
         return new NotificationInfo
         {
@@ -25,7 +25,8 @@ public class Notification_Outbox_Tests : NotificationCenterTestBase<AbpNotificat
             NotificationName = "order.shipped",
             Data = new MessageNotificationData("hi"),
             Severity = NotificationSeverity.Info,
-            CreationTime = DateTime.UtcNow
+            CreationTime = DateTime.UtcNow,
+            TenantId = tenantId
         };
     }
 
@@ -49,12 +50,12 @@ public class Notification_Outbox_Tests : NotificationCenterTestBase<AbpNotificat
     }
 
     /// <summary>
-    /// The in-process half of the tenant story: distribution on the caller's thread inherits the caller's tenant, so
-    /// nothing in the pipeline has to switch. The store's `notification.TenantId ?? CurrentTenant.Id` fallback is what
-    /// stamps the row when the caller left TenantId unset. (The background half lives in DefaultNotificationPublisherTests.)
+    /// The in-process half of the tenant story: distribution scopes subscription queries, persistence, and outbox
+    /// publication to the notification's recorded tenant. (The background half lives in
+    /// DefaultNotificationPublisherTests.)
     /// </summary>
     [Fact]
-    public async Task Inline_distribution_persists_into_the_ambient_tenant()
+    public async Task Inline_distribution_persists_into_the_recorded_tenant()
     {
         var notificationId = Guid.NewGuid();
         var tenantId = Guid.NewGuid();
@@ -64,7 +65,7 @@ public class Notification_Outbox_Tests : NotificationCenterTestBase<AbpNotificat
             await WithUnitOfWorkAsync(async () =>
             {
                 await GetRequiredService<INotificationDistributor>()
-                    .DistributeAsync(NewNotification(notificationId), new[] { Guid.NewGuid() });
+                    .DistributeAsync(NewNotification(notificationId, tenantId), new[] { Guid.NewGuid() });
             });
 
             await WithUnitOfWorkAsync(async () =>

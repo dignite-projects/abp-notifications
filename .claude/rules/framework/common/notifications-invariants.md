@@ -99,3 +99,21 @@ name in application contracts or UI state.
   entity row does not make the definition-wide row redundant.
 - Persistence uniqueness includes the tenant and complete scope. Nullable database uniqueness differs
   across providers, so use the normalized non-null identity keys mapped by both EF Core and MongoDB.
+
+## 7. Definition requirements apply again at delivery
+
+`NotificationDefinition.PermissionName` and `FeatureDependency` constrain both subscription and delivery.
+Never treat an explicit `userIds` array as an implicit authorization or eligibility bypass. Explicit and
+subscription-derived candidates flow through the same `INotificationRecipientEligibilityEvaluator`, after
+caller-supplied exclusions and before inbox persistence or channel publication.
+
+- Evaluate in the notification's recorded `TenantId`; do not inherit an unrelated ambient tenant from an
+  inline caller, background worker, or retry. Host (`null`) and tenant contexts must never mix. Direct
+  `INotificationDistributor` callers must populate tenant notifications explicitly; `null` is authoritative host,
+  not an instruction to fall back to ambient state.
+- Keep the contract batch-shaped even when the default implementation checks users individually, so a host
+  can replace it with an efficient remote or bulk policy evaluator without forking distribution.
+- The only supported bypass is the narrowly named explicit-recipient trusted-system API. It must never resolve
+  subscriptions, must bypass both permission and feature requirements together, and must remain observable.
+- A failed requirement filters that candidate before any `UserNotificationInfo` or `NotificationDeliveryEto`
+  is produced. Publishing authorization is a separate application-layer concern.

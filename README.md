@@ -339,6 +339,51 @@ threshold is configurable — see [Configuration](#configuration)). Recipient se
 targets those users explicitly. Duplicate explicit IDs are removed before the threshold is evaluated,
 inbox rows are persisted, or channel delivery is published.
 
+### Recipient eligibility policy
+
+A definition's permission and feature requirements govern both who may subscribe **and who may receive**
+the notification. Distribution applies one `INotificationRecipientEligibilityEvaluator` to both
+subscription-derived and explicitly targeted candidates. Caller-supplied exclusions are removed first;
+each remaining candidate must satisfy `PermissionName` and `FeatureName` (configured through
+`RequireFeature(...)`), or is filtered without an
+inbox row or channel event. This is a delivery policy, not publisher authorization: publishing code still
+needs its own application permission checks where appropriate.
+
+Eligibility is evaluated in the notification's recorded `TenantId`, not whichever tenant happens to be
+ambient when an inline call or background job executes. A tenant notification therefore uses that tenant's
+feature values and permission context, while a host notification is evaluated in the host context. Filtered
+counts are logged at Information level and the corresponding user IDs at Debug level. Replace
+`INotificationRecipientEligibilityEvaluator` when a deployment can batch these lookups more efficiently;
+the replacement must preserve the notification tenant/host boundary and return the same eligible/excluded
+partition.
+
+`INotificationPublisher` records `CurrentTenant.Id` automatically. Code that calls `INotificationDistributor`
+directly must populate `NotificationInfo.TenantId` for tenant notifications. That value is authoritative for
+subscription lookup, eligibility, inbox persistence, and event/outbox publication; `null` explicitly means
+**host**, even when the direct caller currently has an ambient tenant.
+
+Trusted infrastructure has a deliberately conspicuous, explicit-recipient-only escape hatch:
+
+```csharp
+await _publisher.PublishToExplicitRecipientsWithoutEligibilityChecksAsync(
+    "Demo.MandatorySecurityNotice",
+    new[] { userId },
+    new MessageNotificationData("Your recovery settings changed."));
+```
+
+This API never resolves subscribers, emits a Warning log for every invocation that reaches eligibility
+evaluation, and bypasses both the permission and feature requirements. Use it only when receiving the
+notification is itself mandatory regardless of those requirements; it is not a shortcut around a denied
+recipient.
+
+> **Upgrade note:** before this policy was introduced, explicitly supplied `userIds` implicitly bypassed
+> definition requirements. `PublishAsync` now filters explicit recipients exactly like subscribers. Move
+> only genuine trusted-system call sites to the named bypass API. Custom `INotificationPublisher` and
+> `INotificationDistributor` implementations must add the new bypass members; custom recipient evaluation
+> should replace `INotificationRecipientEligibilityEvaluator`. Direct distributor callers that previously
+> omitted `NotificationInfo.TenantId` while relying on an ambient tenant must now set it explicitly; an omitted
+> value no longer falls back to ambient state and is treated as a host notification.
+
 ## Notifiers
 
 A notifier is an `INotificationNotifier<NotificationDeliveryEto>` that relays the event to a single channel.

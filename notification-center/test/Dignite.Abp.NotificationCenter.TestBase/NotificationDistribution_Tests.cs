@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Threading.Tasks;
 using Dignite.Abp.Notifications;
+using Microsoft.Extensions.Logging;
 using NSubstitute;
 using Shouldly;
 using Volo.Abp.Domain.Repositories;
@@ -41,7 +42,10 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
         return new DefaultNotificationDistributor(
             GetRequiredService<INotificationStore>(),
             GetRequiredService<INotificationDefinitionManager>(),
-            eventBus);
+            eventBus,
+            GetRequiredService<INotificationRecipientEligibilityEvaluator>(),
+            GetRequiredService<ICurrentTenant>(),
+            GetRequiredService<ILogger<DefaultNotificationDistributor>>());
     }
 
     private Task DistributeAsync(
@@ -206,5 +210,61 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
         published.ShouldNotBeNull();
         published!.UserIds.ShouldBe(new[] { definitionWide, exact, both }, ignoreOrder: true);
         published.UserIds.Distinct().Count().ShouldBe(3);
+    }
+
+    [Fact]
+    public async Task Direct_distribution_uses_the_notification_tenant_for_subscription_query_and_persistence()
+    {
+        var notificationTenantId = Guid.NewGuid();
+        var callerTenantId = Guid.NewGuid();
+        var notificationTenantSubscriber = Guid.NewGuid();
+        var callerTenantSubscriber = Guid.NewGuid();
+        var currentTenant = GetRequiredService<ICurrentTenant>();
+
+        using (currentTenant.Change(notificationTenantId, "notification"))
+        {
+            await InsertSubscriptionAsync(notificationTenantSubscriber);
+        }
+
+        using (currentTenant.Change(callerTenantId, "caller"))
+        {
+            await InsertSubscriptionAsync(callerTenantSubscriber);
+        }
+
+        var eventBus = Substitute.For<IDistributedEventBus>();
+        NotificationDeliveryEto? published = null;
+        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryEto>()))
+            .Do(call => published = call.Arg<NotificationDeliveryEto>());
+        var notification = NewNotification(Guid.NewGuid());
+        notification.TenantId = notificationTenantId;
+
+        using (currentTenant.Change(callerTenantId, "caller"))
+        {
+            await DistributeAsync(false, CreateDistributor(eventBus), notification, null);
+            currentTenant.Id.ShouldBe(callerTenantId);
+        }
+
+        using (currentTenant.Change(notificationTenantId, "notification"))
+        {
+            await WithUnitOfWorkAsync(async () =>
+            {
+                (await GetRequiredService<INotificationStore>()
+                    .GetUserNotificationCountAsync(notificationTenantSubscriber)).ShouldBe(1);
+            });
+        }
+
+        using (currentTenant.Change(callerTenantId, "caller"))
+        {
+            await WithUnitOfWorkAsync(async () =>
+            {
+                (await GetRequiredService<INotificationStore>()
+                    .GetUserNotificationCountAsync(callerTenantSubscriber)).ShouldBe(0);
+            });
+        }
+
+        published.ShouldNotBeNull();
+        published!.TenantId.ShouldBe(notificationTenantId);
+        published.UserIds.ShouldBe(new[] { notificationTenantSubscriber });
+        currentTenant.Id.ShouldBeNull();
     }
 }

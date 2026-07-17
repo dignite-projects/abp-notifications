@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Dignite.Abp.Notifications.Emailing;
 using Dignite.Abp.Notifications.SignalR;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Shouldly;
 using Volo.Abp.EventBus.Distributed;
@@ -93,12 +94,23 @@ public class NotificationChannelRouting_Tests
         definitionManager.Get("test").Returns(
             new NotificationDefinition("test", new FixedLocalizableString("Test"))
                 .UseChannels(EmailNotifier.ChannelName, SignalRNotifier.ChannelName));
+        definitionManager.IsAvailableAsync("test", Arg.Any<Guid>()).Returns(true);
 
         NotificationDeliveryEto? published = null;
         eventBus.WhenForAnyArgs(x => x.PublishAsync(Arg.Any<NotificationDeliveryEto>()))
             .Do(ci => published = ci.Arg<NotificationDeliveryEto>());
 
-        var distributor = new DefaultNotificationDistributor(store, definitionManager, eventBus);
+        var currentTenant = new TestCurrentTenant();
+        var distributor = new DefaultNotificationDistributor(
+            store,
+            definitionManager,
+            eventBus,
+            new DefaultNotificationRecipientEligibilityEvaluator(
+                definitionManager,
+                currentTenant,
+                NullLogger<DefaultNotificationRecipientEligibilityEvaluator>.Instance),
+            currentTenant,
+            NullLogger<DefaultNotificationDistributor>.Instance);
         await distributor.DistributeAsync(
             new NotificationInfo { Id = Guid.NewGuid(), NotificationName = "test" }, new[] { Guid.NewGuid() });
 

@@ -20,10 +20,14 @@ public class NotificationDefinition
 
     public ILocalizableString? Description { get; set; }
 
-    /// <summary>When set, a user must be granted this permission for the notification to be available to them.</summary>
+    /// <summary>
+    /// When set, a user must be granted this permission both to subscribe and to receive the notification.
+    /// </summary>
     public string? PermissionName { get; private set; }
 
-    /// <summary>When set, this feature must be enabled for the notification to be available.</summary>
+    /// <summary>
+    /// When set, this feature must be enabled in the notification tenant both to subscribe and to receive it.
+    /// </summary>
     public string? FeatureName { get; private set; }
 
     /// <summary>Free-form extension bag — e.g. explicit external channel routing.</summary>

@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using Shouldly;
@@ -59,6 +61,33 @@ public class DefaultNotificationPublisherTests
             Arg.Any<Guid[]?>());
         await _backgroundJobManager.DidNotReceiveWithAnyArgs()
             .EnqueueAsync(Arg.Any<NotificationDistributionJobArgs>());
+    }
+
+    [Fact]
+    public async Task Named_bypass_uses_the_explicit_recipient_bypass_inline()
+    {
+        var publisher = CreatePublisher(threshold: 3);
+        var users = new[] { Guid.NewGuid(), Guid.NewGuid() };
+
+        await publisher.PublishToExplicitRecipientsWithoutEligibilityChecksAsync("test", users);
+
+        await _distributor.Received(1).DistributeToExplicitRecipientsWithoutEligibilityChecksAsync(
+            Arg.Any<NotificationInfo>(),
+            Arg.Is<Guid[]>(actual => actual.SequenceEqual(users)),
+            null);
+        await _distributor.DidNotReceiveWithAnyArgs().DistributeAsync(default!, default, default);
+    }
+
+    [Fact]
+    public async Task Named_bypass_requires_an_explicit_recipient_array()
+    {
+        var publisher = CreatePublisher(threshold: 3);
+
+        await Should.ThrowAsync<ArgumentNullException>(() =>
+            publisher.PublishToExplicitRecipientsWithoutEligibilityChecksAsync("test", null!));
+
+        await _distributor.DidNotReceiveWithAnyArgs()
+            .DistributeToExplicitRecipientsWithoutEligibilityChecksAsync(default!, default!, default);
     }
 
     [Fact]
@@ -124,6 +153,22 @@ public class DefaultNotificationPublisherTests
     }
 
     [Fact]
+    public async Task Named_bypass_is_preserved_in_background_job_args()
+    {
+        var publisher = CreatePublisher(threshold: 1);
+        var users = new[] { Guid.NewGuid(), Guid.NewGuid() };
+
+        await publisher.PublishToExplicitRecipientsWithoutEligibilityChecksAsync("test", users);
+
+        await _backgroundJobManager.Received(1).EnqueueAsync(
+            Arg.Is<NotificationDistributionJobArgs>(args =>
+                args.RecipientEligibilityMode ==
+                NotificationRecipientEligibilityMode.BypassDefinitionRequirements
+                && args.UserIds != null
+                && args.UserIds.SequenceEqual(users)));
+    }
+
+    [Fact]
     public async Task Duplicate_recipients_are_normalized_before_the_background_threshold_is_evaluated()
     {
         var publisher = CreatePublisher(threshold: 1);
@@ -182,6 +227,7 @@ public class DefaultNotificationPublisherTests
                 new() { UserId = subscribedUser, NotificationName = "test" }
             });
             definitionManager.IsAvailableAsync("test", subscribedUser).Returns(true);
+            definitionManager.IsAvailableAsync("test", Arg.Any<Guid>()).Returns(true);
 
             Store.When(x => x.InsertNotificationAsync(Arg.Any<NotificationInfo>()))
                 .Do(_ =>
@@ -197,7 +243,16 @@ public class DefaultNotificationPublisherTests
                 });
 
             return new NotificationDistributionJob(
-                new DefaultNotificationDistributor(Store, definitionManager, EventBus),
+                new DefaultNotificationDistributor(
+                    Store,
+                    definitionManager,
+                    EventBus,
+                    new DefaultNotificationRecipientEligibilityEvaluator(
+                        definitionManager,
+                        CurrentTenant,
+                        NullLogger<DefaultNotificationRecipientEligibilityEvaluator>.Instance),
+                    CurrentTenant,
+                    NullLogger<DefaultNotificationDistributor>.Instance),
                 CurrentTenant);
         }
 
@@ -262,5 +317,52 @@ public class DefaultNotificationPublisherTests
         pipeline.StoreWasCalled.ShouldBeFalse();
         pipeline.Published.ShouldBeNull();
         await pipeline.Store.DidNotReceiveWithAnyArgs().GetSubscriptionsAsync(default!, default, default);
+    }
+
+    [Fact]
+    public async Task Distribution_job_invokes_the_bypass_only_for_explicit_recipients_in_the_notification_tenant()
+    {
+        var distributor = Substitute.For<INotificationDistributor>();
+        var currentTenant = new TestCurrentTenant();
+        var tenantId = Guid.NewGuid();
+        var userIds = new[] { Guid.NewGuid() };
+        Guid? tenantSeen = null;
+        distributor.When(service => service.DistributeToExplicitRecipientsWithoutEligibilityChecksAsync(
+                Arg.Any<NotificationInfo>(),
+                Arg.Any<Guid[]>(),
+                Arg.Any<Guid[]?>()))
+            .Do(_ => tenantSeen = currentTenant.Id);
+        var job = new NotificationDistributionJob(distributor, currentTenant);
+
+        await job.ExecuteAsync(new NotificationDistributionJobArgs(
+            new NotificationInfo
+            {
+                Id = Guid.NewGuid(),
+                NotificationName = "test",
+                TenantId = tenantId
+            },
+            userIds,
+            null,
+            NotificationRecipientEligibilityMode.BypassDefinitionRequirements));
+
+        tenantSeen.ShouldBe(tenantId);
+        await distributor.Received(1).DistributeToExplicitRecipientsWithoutEligibilityChecksAsync(
+            Arg.Any<NotificationInfo>(), userIds, null);
+        await distributor.DidNotReceiveWithAnyArgs().DistributeAsync(default!, default, default);
+        currentTenant.Id.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Distribution_job_rejects_a_subscription_bypass()
+    {
+        var job = new NotificationDistributionJob(
+            Substitute.For<INotificationDistributor>(),
+            new TestCurrentTenant());
+
+        await Should.ThrowAsync<ArgumentException>(() => job.ExecuteAsync(new NotificationDistributionJobArgs(
+            new NotificationInfo { Id = Guid.NewGuid(), NotificationName = "test" },
+            null,
+            null,
+            NotificationRecipientEligibilityMode.BypassDefinitionRequirements)));
     }
 }

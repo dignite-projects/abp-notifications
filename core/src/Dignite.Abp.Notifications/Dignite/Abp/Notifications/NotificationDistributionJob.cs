@@ -1,3 +1,4 @@
+using System;
 using System.Threading.Tasks;
 using Volo.Abp.BackgroundJobs;
 using Volo.Abp.DependencyInjection;
@@ -24,8 +25,9 @@ public class NotificationDistributionJob : AsyncBackgroundJob<NotificationDistri
 
     public override async Task ExecuteAsync(NotificationDistributionJobArgs args)
     {
-        // This is the only place in the pipeline that has to restore a tenant, because it is the only place that
-        // runs off the caller's thread. ABP's BackgroundJobExecuter wraps a job in
+        // Restore the tenant before invoking even a custom distributor. The default distributor independently
+        // scopes its whole operation to Notification.TenantId so direct calls cannot mix tenant/host data either.
+        // ABP's BackgroundJobExecuter wraps a job in
         // CurrentTenant.Change(GetJobArgsTenantId(args)), which resolves to args.TenantId only for IMultiTenant
         // args — NotificationDistributionJobArgs is not — so the worker thread starts with no ambient tenant.
         // Everything downstream (INotificationStore, INotificationDefinitionManager, INotificationPermissionChecker)
@@ -34,7 +36,31 @@ public class NotificationDistributionJob : AsyncBackgroundJob<NotificationDistri
         // and ABP's event bus re-enters the tenant from the event itself before invoking them.
         using (CurrentTenant.Change(args.Notification.TenantId, null))
         {
-            await Distributor.DistributeAsync(args.Notification, args.UserIds, args.ExcludedUserIds);
+            if (args.RecipientEligibilityMode == NotificationRecipientEligibilityMode.BypassDefinitionRequirements)
+            {
+                if (args.UserIds == null)
+                {
+                    throw new ArgumentException(
+                        "Definition requirements can only be bypassed for explicit recipients.",
+                        nameof(args));
+                }
+
+                await Distributor.DistributeToExplicitRecipientsWithoutEligibilityChecksAsync(
+                    args.Notification,
+                    args.UserIds,
+                    args.ExcludedUserIds);
+            }
+            else if (args.RecipientEligibilityMode == NotificationRecipientEligibilityMode.EnforceDefinitionRequirements)
+            {
+                await Distributor.DistributeAsync(args.Notification, args.UserIds, args.ExcludedUserIds);
+            }
+            else
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(args),
+                    args.RecipientEligibilityMode,
+                    "Unknown recipient eligibility mode.");
+            }
         }
     }
 }

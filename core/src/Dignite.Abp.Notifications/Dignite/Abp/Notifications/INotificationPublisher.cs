@@ -19,7 +19,8 @@ public interface INotificationPublisher
     /// <param name="userIds">
     /// The recipients. <see langword="null"/> resolves recipients from subscriptions; an empty array is an
     /// intentional no-op; a non-empty array targets those users explicitly. Duplicate IDs are removed before
-    /// the inline/background threshold is evaluated and before distribution.
+    /// the inline/background threshold is evaluated and before distribution. Explicit and subscription-derived
+    /// recipients must satisfy the notification definition's feature and permission requirements.
     /// </param>
     /// <param name="excludedUserIds">Optional user IDs to remove from the resolved recipient set.</param>
     Task PublishAsync(
@@ -28,5 +29,23 @@ public interface INotificationPublisher
         NotificationEntityIdentifier? entityIdentifier = null,
         NotificationSeverity severity = NotificationSeverity.Info,
         Guid[]? userIds = null,
+        Guid[]? excludedUserIds = null);
+
+    /// <summary>
+    /// Publishes a trusted-system notification to explicit users without evaluating the notification definition's
+    /// feature or permission requirements. The bypass is logged and cannot be used for subscription resolution.
+    /// </summary>
+    /// <param name="notificationName">The registered notification name.</param>
+    /// <param name="userIds">The explicit recipients. An empty array is an intentional no-op.</param>
+    /// <param name="data">The optional notification payload.</param>
+    /// <param name="entityIdentifier">The optional stable identifier of the related entity.</param>
+    /// <param name="severity">The notification severity.</param>
+    /// <param name="excludedUserIds">Optional user IDs to remove before delivery.</param>
+    Task PublishToExplicitRecipientsWithoutEligibilityChecksAsync(
+        string notificationName,
+        Guid[] userIds,
+        NotificationData? data = null,
+        NotificationEntityIdentifier? entityIdentifier = null,
+        NotificationSeverity severity = NotificationSeverity.Info,
         Guid[]? excludedUserIds = null);
 }

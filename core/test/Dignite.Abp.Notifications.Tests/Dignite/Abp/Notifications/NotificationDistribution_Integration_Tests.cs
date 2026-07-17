@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Threading.Tasks;
 using Shouldly;
+using Volo.Abp.MultiTenancy;
 using Xunit;
 
 namespace Dignite.Abp.Notifications;
@@ -17,6 +18,7 @@ public class NotificationDistribution_Integration_Tests : DigniteAbpNotification
     private readonly INotificationDefinitionManager _definitionManager;
     private readonly ReceivedNotificationDeliveries _received;
     private readonly FakeBackgroundJobManager _backgroundJobs;
+    private readonly ICurrentTenant _currentTenant;
 
     public NotificationDistribution_Integration_Tests()
     {
@@ -24,6 +26,7 @@ public class NotificationDistribution_Integration_Tests : DigniteAbpNotification
         _definitionManager = GetRequiredService<INotificationDefinitionManager>();
         _received = GetRequiredService<ReceivedNotificationDeliveries>();
         _backgroundJobs = GetRequiredService<FakeBackgroundJobManager>();
+        _currentTenant = GetRequiredService<ICurrentTenant>();
     }
 
     [Fact]
@@ -85,6 +88,93 @@ public class NotificationDistribution_Integration_Tests : DigniteAbpNotification
         await GetRequiredService<NotificationDistributionJob>().ExecuteAsync(args);
 
         _received.Items.Single().UserIds.ShouldBe(users);
+    }
+
+    [Fact]
+    public async Task Explicit_recipients_must_satisfy_permission_requirements_by_default()
+    {
+        var userId = Guid.NewGuid();
+
+        await _publisher.PublishAsync(
+            TestNotificationDefinitionProvider.PermissionDenied,
+            userIds: new[] { userId });
+
+        _received.Items.ShouldBeEmpty();
+
+        await _publisher.PublishAsync(
+            TestNotificationDefinitionProvider.PermissionGranted,
+            userIds: new[] { userId });
+
+        _received.Items.Single().NotificationName
+            .ShouldBe(TestNotificationDefinitionProvider.PermissionGranted);
+    }
+
+    [Fact]
+    public async Task Explicit_recipients_must_satisfy_features_in_the_notification_tenant_by_default()
+    {
+        var tenantId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+
+        using (_currentTenant.Change(tenantId, "tenant"))
+        {
+            await _publisher.PublishAsync(
+                TestNotificationDefinitionProvider.DisabledFeatureGated,
+                userIds: new[] { userId });
+
+            _received.Items.ShouldBeEmpty();
+
+            await _publisher.PublishAsync(
+                TestNotificationDefinitionProvider.FeatureGated,
+                userIds: new[] { userId });
+        }
+
+        var delivery = _received.Items.Single();
+        delivery.NotificationName.ShouldBe(TestNotificationDefinitionProvider.FeatureGated);
+        delivery.TenantId.ShouldBe(tenantId);
+        _currentTenant.Id.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Named_bypass_delivers_a_trusted_system_notification_and_is_tenant_scoped()
+    {
+        var tenantId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+
+        using (_currentTenant.Change(tenantId, "tenant"))
+        {
+            await _publisher.PublishToExplicitRecipientsWithoutEligibilityChecksAsync(
+                TestNotificationDefinitionProvider.DisabledFeatureGated,
+                new[] { userId },
+                new MessageNotificationData("system"));
+        }
+
+        var delivery = _received.Items.Single();
+        delivery.UserIds.ShouldBe(new[] { userId });
+        delivery.TenantId.ShouldBe(tenantId);
+    }
+
+    [Fact]
+    public async Task Background_job_preserves_the_named_bypass_for_explicit_recipients()
+    {
+        var tenantId = Guid.NewGuid();
+        var users = Enumerable.Range(0, 6).Select(_ => Guid.NewGuid()).ToArray();
+
+        using (_currentTenant.Change(tenantId, "tenant"))
+        {
+            await _publisher.PublishToExplicitRecipientsWithoutEligibilityChecksAsync(
+                TestNotificationDefinitionProvider.DisabledFeatureGated,
+                users);
+        }
+
+        var args = _backgroundJobs.EnqueuedArgs.Single().ShouldBeOfType<NotificationDistributionJobArgs>();
+        args.RecipientEligibilityMode.ShouldBe(
+            NotificationRecipientEligibilityMode.BypassDefinitionRequirements);
+        await GetRequiredService<NotificationDistributionJob>().ExecuteAsync(args);
+
+        var delivery = _received.Items.Single();
+        delivery.UserIds.ShouldBe(users);
+        delivery.TenantId.ShouldBe(tenantId);
+        _currentTenant.Id.ShouldBeNull();
     }
 
     [Fact]

@@ -40,13 +40,52 @@ public class DefaultNotificationPublisher : INotificationPublisher, ITransientDe
         CurrentTenant = currentTenant;
     }
 
-    public virtual async Task PublishAsync(
+    public virtual Task PublishAsync(
         string notificationName,
         NotificationData? data = null,
         NotificationEntityIdentifier? entityIdentifier = null,
         NotificationSeverity severity = NotificationSeverity.Info,
         Guid[]? userIds = null,
         Guid[]? excludedUserIds = null)
+    {
+        return PublishAsyncInternal(
+            notificationName,
+            data,
+            entityIdentifier,
+            severity,
+            userIds,
+            excludedUserIds,
+            NotificationRecipientEligibilityMode.EnforceDefinitionRequirements);
+    }
+
+    public virtual Task PublishToExplicitRecipientsWithoutEligibilityChecksAsync(
+        string notificationName,
+        Guid[] userIds,
+        NotificationData? data = null,
+        NotificationEntityIdentifier? entityIdentifier = null,
+        NotificationSeverity severity = NotificationSeverity.Info,
+        Guid[]? excludedUserIds = null)
+    {
+        ArgumentNullException.ThrowIfNull(userIds);
+
+        return PublishAsyncInternal(
+            notificationName,
+            data,
+            entityIdentifier,
+            severity,
+            userIds,
+            excludedUserIds,
+            NotificationRecipientEligibilityMode.BypassDefinitionRequirements);
+    }
+
+    protected virtual async Task PublishAsyncInternal(
+        string notificationName,
+        NotificationData? data,
+        NotificationEntityIdentifier? entityIdentifier,
+        NotificationSeverity severity,
+        Guid[]? userIds,
+        Guid[]? excludedUserIds,
+        NotificationRecipientEligibilityMode recipientEligibilityMode)
     {
         var normalizedUserIds = userIds?.Distinct().ToArray();
         if (normalizedUserIds is { Length: 0 })
@@ -68,12 +107,26 @@ public class DefaultNotificationPublisher : INotificationPublisher, ITransientDe
 
         if (normalizedUserIds != null && normalizedUserIds.Length <= Options.DirectDistributionUserThreshold)
         {
-            await Distributor.DistributeAsync(notification, normalizedUserIds, excludedUserIds);
+            if (recipientEligibilityMode == NotificationRecipientEligibilityMode.BypassDefinitionRequirements)
+            {
+                await Distributor.DistributeToExplicitRecipientsWithoutEligibilityChecksAsync(
+                    notification,
+                    normalizedUserIds,
+                    excludedUserIds);
+            }
+            else
+            {
+                await Distributor.DistributeAsync(notification, normalizedUserIds, excludedUserIds);
+            }
         }
         else
         {
             await BackgroundJobManager.EnqueueAsync(
-                new NotificationDistributionJobArgs(notification, normalizedUserIds, excludedUserIds));
+                new NotificationDistributionJobArgs(
+                    notification,
+                    normalizedUserIds,
+                    excludedUserIds,
+                    recipientEligibilityMode));
         }
     }
 }
