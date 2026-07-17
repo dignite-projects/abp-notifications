@@ -9,6 +9,8 @@
     "Subscriptions": "通知の購読",
     "NotificationType": "通知の種類",
     "Description": "説明",
-    "Subscribed": "購読済み"
+    "Subscribed": "購読済み",
+    "SubscriptionScope": "範囲",
+    "AllEntities": "すべてのエンティティ"
   }
 }

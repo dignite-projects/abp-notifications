@@ -34,9 +34,37 @@ public class NotificationSubscriptionManagerTests
         await manager.SubscribeToAllAvailableNotificationsAsync(userId);
 
         await store.Received(1).InsertSubscriptionAsync(
-            Arg.Is<NotificationSubscriptionInfo>(s => s.NotificationName == "n2" && s.UserId == userId));
+            Arg.Is<NotificationSubscriptionInfo>(s =>
+                s.NotificationName == "n2" && s.UserId == userId
+                && s.EntityTypeName == null && s.EntityId == null));
         await store.DidNotReceive().InsertSubscriptionAsync(
             Arg.Is<NotificationSubscriptionInfo>(s => s.NotificationName == "n1"));
+    }
+
+    [Fact]
+    public async Task SubscribeToAllAvailable_creates_a_definition_wide_row_when_only_an_entity_scope_exists()
+    {
+        var store = Substitute.For<INotificationStore>();
+        var definitionManager = Substitute.For<INotificationDefinitionManager>();
+        var clock = Substitute.For<IClock>();
+        clock.Now.Returns(DateTime.UtcNow);
+
+        var userId = Guid.NewGuid();
+        var definition = new NotificationDefinition("order.shipped", new FixedLocalizableString("Order shipped"));
+        definitionManager.GetAllAvailableAsync(userId)
+            .Returns((IReadOnlyList<NotificationDefinition>)new List<NotificationDefinition> { definition });
+        store.IsSubscribedAsync(userId, "order.shipped", null, null).Returns(false);
+        store.IsSubscribedAsync(userId, "order.shipped", "Demo.Order", "42").Returns(true);
+
+        var manager = new NotificationSubscriptionManager(store, definitionManager, clock);
+
+        await manager.SubscribeToAllAvailableNotificationsAsync(userId);
+
+        await store.Received(1).InsertSubscriptionAsync(Arg.Is<NotificationSubscriptionInfo>(subscription =>
+            subscription.UserId == userId
+            && subscription.NotificationName == "order.shipped"
+            && subscription.EntityTypeName == null
+            && subscription.EntityId == null));
     }
 
     [Fact]

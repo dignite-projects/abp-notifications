@@ -107,4 +107,74 @@ public abstract class NotificationAppService_Tests<TStartupModule> : Notificatio
             });
         }
     }
+
+    [Fact]
+    public async Task Scoped_subscriptions_round_trip_and_unsubscribe_by_complete_identity()
+    {
+        using (ChangeCurrentUser(_userId))
+        {
+            await WithUnitOfWorkAsync(async () =>
+            {
+                var appService = GetRequiredService<INotificationAppService>();
+                await appService.SubscribeScopedAsync(new NotificationSubscriptionScopeDto
+                {
+                    NotificationName = "order.shipped"
+                });
+                await appService.SubscribeScopedAsync(new NotificationSubscriptionScopeDto
+                {
+                    NotificationName = "order.shipped",
+                    EntityTypeName = "Demo.Order",
+                    EntityId = "42"
+                });
+                await appService.SubscribeScopedAsync(new NotificationSubscriptionScopeDto
+                {
+                    NotificationName = "order.shipped",
+                    EntityTypeName = "Demo.Order",
+                    EntityId = "99"
+                });
+            });
+
+            await WithUnitOfWorkAsync(async () =>
+            {
+                var appService = GetRequiredService<INotificationAppService>();
+                var rows = (await appService.GetSubscriptionsAsync()).Items
+                    .Where(subscription => subscription.NotificationName == "order.shipped")
+                    .ToList();
+
+                rows.Count.ShouldBe(3);
+                rows.ShouldContain(subscription =>
+                    subscription.EntityTypeName == null && subscription.EntityId == null
+                    && subscription.IsSubscribed);
+                rows.ShouldContain(subscription =>
+                    subscription.EntityTypeName == "Demo.Order" && subscription.EntityId == "42"
+                    && subscription.IsSubscribed);
+                rows.ShouldContain(subscription =>
+                    subscription.EntityTypeName == "Demo.Order" && subscription.EntityId == "99"
+                    && subscription.IsSubscribed);
+
+                await appService.UnsubscribeScopedAsync(new NotificationSubscriptionScopeDto
+                {
+                    NotificationName = "order.shipped",
+                    EntityTypeName = "Demo.Order",
+                    EntityId = "42"
+                });
+            });
+
+            await WithUnitOfWorkAsync(async () =>
+            {
+                var rows = (await GetRequiredService<INotificationAppService>().GetSubscriptionsAsync()).Items
+                    .Where(subscription => subscription.NotificationName == "order.shipped")
+                    .ToList();
+
+                rows.Count.ShouldBe(2);
+                rows.ShouldContain(subscription =>
+                    subscription.EntityTypeName == null && subscription.EntityId == null
+                    && subscription.IsSubscribed);
+                rows.ShouldContain(subscription =>
+                    subscription.EntityTypeName == "Demo.Order" && subscription.EntityId == "99"
+                    && subscription.IsSubscribed);
+                rows.ShouldNotContain(subscription => subscription.EntityId == "42");
+            });
+        }
+    }
 }

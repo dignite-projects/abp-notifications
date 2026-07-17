@@ -193,6 +193,30 @@ public class MyHostDbContext : AbpDbContext<MyHostDbContext>, INotificationCente
 
 Then add a migration in your host and update the database, exactly as for any other ABP module.
 
+### Upgrading subscription identity indexes
+
+Subscription identity is the tuple `(TenantId, UserId, NotificationName, EntityTypeName?, EntityId?)`.
+The two entity values are either both null (subscribe to every entity for that notification definition)
+or both present (subscribe to exactly that entity). Notification Center persists three normalized,
+non-null keys so this tuple is enforced with the same ordinal semantics in relational databases and
+MongoDB: `TenantKey`, `NotificationNameKey`, and `ScopeKey`.
+
+When upgrading an existing Notification Center database, create a host-owned migration/data migration
+that:
+
+1. adds the three keys as temporarily nullable;
+2. backfills every subscription by calling `NotificationSubscriptionIdentity.GetTenantKey`,
+   `GetNotificationNameKey`, and `GetScopeKey` with its existing natural values;
+3. removes or repairs legacy rows with only one entity field and resolves any pre-existing duplicate
+   identities before adding the unique index;
+4. makes the keys required and replaces the old nullable natural-value indexes with the indexes from
+   `ConfigureNotificationCenter` or `ConfigureNotificationCenterMongoDb`.
+
+Do not add required keys with a shared empty-string default: existing rows would collide and the value
+would not preserve ordinal identity. This repository intentionally ships no migration because the
+consuming host owns its database and migration history. MongoDB consumers must likewise complete the
+backfill before deploying the new unique index.
+
 #### Delivery guarantees — opt in to the transactional outbox
 
 Distributing a notification writes the per-user inbox rows **and** publishes `NotificationDeliveryEto`
@@ -446,11 +470,22 @@ that mode.
 | `DELETE /api/notifications/{id}` | Delete one |
 | `DELETE /api/notifications` | Delete all (optionally by state) |
 | `GET /api/notifications/subscriptions` | List the caller's subscriptions |
-| `POST /api/notifications/subscriptions` | Subscribe to a notification name |
-| `DELETE /api/notifications/subscriptions/{name}` | Unsubscribe |
+| `POST /api/notifications/subscriptions` | Subscribe to all entities for a notification name (compatibility endpoint) |
+| `DELETE /api/notifications/subscriptions/{name}` | Unsubscribe from all entities for a name (compatibility endpoint) |
+| `POST /api/notifications/subscriptions/scoped` | Subscribe to the definition-wide or exact entity scope in the JSON body |
+| `DELETE /api/notifications/subscriptions/scoped` | Unsubscribe only the definition-wide or exact entity scope in the query |
 
 Every endpoint is scoped to the authenticated caller. Use `...HttpApi.Client` for a typed C# proxy,
 or the Angular `NotificationsService` proxy in the browser.
+
+The scoped request contains `notificationName` plus optional `entityTypeName` and `entityId`; the two
+entity fields must be supplied together. `GET subscriptions` returns the definition-wide row for each
+available definition and every persisted entity-specific row separately, so clients must use the full
+three-field scope rather than infer state from a flattened notification name.
+
+For subscription-driven distribution, a notification without an entity matches only definition-wide
+subscriptions. A notification for a concrete entity matches the union of definition-wide subscriptions
+and that exact entity scope; a user present in both receives one inbox row and one channel delivery.
 
 ## UI libraries (optional)
 

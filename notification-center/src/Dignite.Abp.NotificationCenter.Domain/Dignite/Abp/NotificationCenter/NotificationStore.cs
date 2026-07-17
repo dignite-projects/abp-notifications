@@ -204,32 +204,51 @@ public class NotificationStore : INotificationStore, ITransientDependency
     public virtual async Task DeleteSubscriptionAsync(
         Guid userId, string notificationName, string? entityTypeName, string? entityId)
     {
+        var tenantKey = NotificationSubscriptionIdentity.GetTenantKey(CurrentTenant.Id);
+        var notificationNameKey = NotificationSubscriptionIdentity.GetNotificationNameKey(notificationName);
+        var scopeKey = NotificationSubscriptionIdentity.GetScopeKey(entityTypeName, entityId);
+
         await SubscriptionRepository.DeleteAsync(x =>
-            x.UserId == userId && x.NotificationName == notificationName
-            && x.EntityTypeName == entityTypeName && x.EntityId == entityId);
+            x.TenantKey == tenantKey && x.UserId == userId
+            && x.NotificationNameKey == notificationNameKey && x.ScopeKey == scopeKey);
     }
 
     public virtual async Task<bool> IsSubscribedAsync(
         Guid userId, string notificationName, string? entityTypeName, string? entityId)
     {
+        var tenantKey = NotificationSubscriptionIdentity.GetTenantKey(CurrentTenant.Id);
+        var notificationNameKey = NotificationSubscriptionIdentity.GetNotificationNameKey(notificationName);
+        var scopeKey = NotificationSubscriptionIdentity.GetScopeKey(entityTypeName, entityId);
         var query = await SubscriptionRepository.GetQueryableAsync();
         return await AsyncExecuter.AnyAsync(query.Where(x =>
-            x.UserId == userId && x.NotificationName == notificationName
-            && x.EntityTypeName == entityTypeName && x.EntityId == entityId));
+            x.TenantKey == tenantKey && x.UserId == userId
+            && x.NotificationNameKey == notificationNameKey && x.ScopeKey == scopeKey));
     }
 
     public virtual async Task<List<NotificationSubscriptionInfo>> GetSubscriptionsAsync(
         string notificationName, string? entityTypeName, string? entityId)
     {
-        var entities = await SubscriptionRepository.GetListAsync(x =>
-            x.NotificationName == notificationName && x.EntityTypeName == entityTypeName && x.EntityId == entityId);
+        var tenantKey = NotificationSubscriptionIdentity.GetTenantKey(CurrentTenant.Id);
+        var notificationNameKey = NotificationSubscriptionIdentity.GetNotificationNameKey(notificationName);
+        var requestedScopeKey = NotificationSubscriptionIdentity.GetScopeKey(entityTypeName, entityId);
+        var definitionWideScopeKey = NotificationSubscriptionIdentity.GetScopeKey(null, null);
+
+        var entities = entityTypeName == null
+            ? await SubscriptionRepository.GetListAsync(x =>
+                x.TenantKey == tenantKey && x.NotificationNameKey == notificationNameKey
+                && x.ScopeKey == definitionWideScopeKey)
+            : await SubscriptionRepository.GetListAsync(x =>
+                x.TenantKey == tenantKey && x.NotificationNameKey == notificationNameKey
+                && (x.ScopeKey == definitionWideScopeKey || x.ScopeKey == requestedScopeKey));
 
         return entities.Select(MapToSubscriptionInfo).ToList();
     }
 
     public virtual async Task<List<NotificationSubscriptionInfo>> GetSubscriptionsAsync(Guid userId)
     {
-        var entities = await SubscriptionRepository.GetListAsync(x => x.UserId == userId);
+        var tenantKey = NotificationSubscriptionIdentity.GetTenantKey(CurrentTenant.Id);
+        var entities = await SubscriptionRepository.GetListAsync(x =>
+            x.TenantKey == tenantKey && x.UserId == userId);
         return entities.Select(MapToSubscriptionInfo).ToList();
     }
 

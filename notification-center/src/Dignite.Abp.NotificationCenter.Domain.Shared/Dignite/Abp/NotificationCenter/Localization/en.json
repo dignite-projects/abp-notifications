@@ -9,6 +9,8 @@
     "Subscriptions": "Notification subscriptions",
     "NotificationType": "Notification type",
     "Description": "Description",
-    "Subscribed": "Subscribed"
+    "Subscribed": "Subscribed",
+    "SubscriptionScope": "Scope",
+    "AllEntities": "All entities"
   }
 }

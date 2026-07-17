@@ -19,13 +19,18 @@ namespace Dignite.Abp.NotificationCenter;
 public abstract class NotificationDistribution_Tests<TStartupModule> : NotificationCenterTestBase<TStartupModule>
     where TStartupModule : IAbpModule
 {
-    private static NotificationInfo NewNotification(Guid id)
+    private static NotificationInfo NewNotification(
+        Guid id,
+        string? entityTypeName = null,
+        string? entityId = null)
     {
         return new NotificationInfo
         {
             Id = id,
             NotificationName = "order.shipped",
             Data = new MessageNotificationData("hi"),
+            EntityTypeName = entityTypeName,
+            EntityId = entityId,
             Severity = NotificationSeverity.Info,
             CreationTime = DateTime.UtcNow
         };
@@ -61,7 +66,10 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
         });
     }
 
-    private async Task InsertSubscriptionAsync(Guid userId)
+    private async Task InsertSubscriptionAsync(
+        Guid userId,
+        string? entityTypeName = null,
+        string? entityId = null)
     {
         await WithUnitOfWorkAsync(async () =>
         {
@@ -69,7 +77,9 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
                 new NotificationSubscriptionInfo
                 {
                     UserId = userId,
-                    NotificationName = "order.shipped"
+                    NotificationName = "order.shipped",
+                    EntityTypeName = entityTypeName,
+                    EntityId = entityId
                 });
         });
     }
@@ -155,5 +165,46 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
         published!.UserIds.ShouldBe(new[] { u1, u2 });
         published.UserIds.Distinct().Count().ShouldBe(2);
         await eventBus.Received(1).PublishAsync(Arg.Any<NotificationDeliveryEto>());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Entity_distribution_uses_definition_wide_fallback_and_exact_scope_once_per_user(bool background)
+    {
+        var definitionWide = Guid.NewGuid();
+        var exact = Guid.NewGuid();
+        var otherEntity = Guid.NewGuid();
+        var both = Guid.NewGuid();
+
+        await InsertSubscriptionAsync(definitionWide);
+        await InsertSubscriptionAsync(exact, "Demo.Order", "42");
+        await InsertSubscriptionAsync(otherEntity, "Demo.Order", "99");
+        await InsertSubscriptionAsync(both);
+        await InsertSubscriptionAsync(both, "Demo.Order", "42");
+
+        var eventBus = Substitute.For<IDistributedEventBus>();
+        NotificationDeliveryEto? published = null;
+        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryEto>()))
+            .Do(call => published = call.Arg<NotificationDeliveryEto>());
+
+        await DistributeAsync(
+            background,
+            CreateDistributor(eventBus),
+            NewNotification(Guid.NewGuid(), "Demo.Order", "42"),
+            null);
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var store = GetRequiredService<INotificationStore>();
+            (await store.GetUserNotificationCountAsync(definitionWide)).ShouldBe(1);
+            (await store.GetUserNotificationCountAsync(exact)).ShouldBe(1);
+            (await store.GetUserNotificationCountAsync(both)).ShouldBe(1);
+            (await store.GetUserNotificationCountAsync(otherEntity)).ShouldBe(0);
+        });
+
+        published.ShouldNotBeNull();
+        published!.UserIds.ShouldBe(new[] { definitionWide, exact, both }, ignoreOrder: true);
+        published.UserIds.Distinct().Count().ShouldBe(3);
     }
 }

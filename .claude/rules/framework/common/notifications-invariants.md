@@ -82,3 +82,20 @@ view (or at least strip `UserIds` down before it reaches the client), don't forw
 Core logic (publish, distribute, definitions) must function with `NullNotificationStore` (no
 Center installed) as well as a real store. Don't add a feature to Core that silently assumes
 `NotificationCenter` is present — see "Two operation modes" in `template/app.md`.
+
+## 6. Subscription scope is part of the identity
+
+A subscription is identified by tenant, user, notification definition name, and its optional entity
+scope. `EntityTypeName` and `EntityId` are an all-or-nothing pair: both null means every entity for the
+definition; both present means one exact entity. Never flatten stored subscriptions to the definition
+name in application contracts or UI state.
+
+- Exact checks and deletes operate on the complete identity. Removing one entity scope must not remove
+  the definition-wide row or a different entity scope.
+- A notification without an entity matches only definition-wide rows. A notification with an entity
+  matches definition-wide rows plus its exact entity row, and the distributor deduplicates users in
+  that union.
+- `SubscribeToAllAvailableNotificationsAsync` creates definition-wide rows only. An existing exact
+  entity row does not make the definition-wide row redundant.
+- Persistence uniqueness includes the tenant and complete scope. Nullable database uniqueness differs
+  across providers, so use the normalized non-null identity keys mapped by both EF Core and MongoDB.

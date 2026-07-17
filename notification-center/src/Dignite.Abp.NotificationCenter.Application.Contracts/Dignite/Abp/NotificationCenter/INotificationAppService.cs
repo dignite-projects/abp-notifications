@@ -26,4 +26,10 @@ public interface INotificationAppService : IApplicationService
     Task SubscribeAsync(string notificationName);
 
     Task UnsubscribeAsync(string notificationName);
+
+    /// <summary>Subscribes the current user to exactly the supplied definition-wide or entity scope.</summary>
+    Task SubscribeScopedAsync(NotificationSubscriptionScopeDto input);
+
+    /// <summary>Removes exactly the supplied definition-wide or entity scope.</summary>
+    Task UnsubscribeScopedAsync(NotificationSubscriptionScopeDto input);
 }
