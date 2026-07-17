@@ -11,6 +11,7 @@
     "Description": "説明",
     "Subscribed": "購読済み",
     "SubscriptionScope": "範囲",
-    "AllEntities": "すべてのエンティティ"
+    "AllEntities": "すべてのエンティティ",
+    "UnsupportedNotification": "このバージョンではこの通知を表示できません。"
   }
 }

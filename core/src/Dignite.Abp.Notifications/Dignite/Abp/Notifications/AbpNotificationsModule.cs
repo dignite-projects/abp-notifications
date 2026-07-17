@@ -6,7 +6,6 @@ using Volo.Abp.BackgroundJobs;
 using Volo.Abp.EventBus;
 using Volo.Abp.Features;
 using Volo.Abp.Guids;
-using Volo.Abp.Json.SystemTextJson;
 using Volo.Abp.Modularity;
 using Volo.Abp.Timing;
 
@@ -18,8 +17,7 @@ namespace Dignite.Abp.Notifications;
     typeof(AbpTimingModule),
     typeof(AbpBackgroundJobsAbstractionsModule),
     typeof(AbpGuidsModule),
-    typeof(AbpEventBusModule),
-    typeof(AbpJsonSystemTextJsonModule)
+    typeof(AbpEventBusModule)
     )]
 public class AbpNotificationsModule : AbpModule
 {
@@ -32,14 +30,6 @@ public class AbpNotificationsModule : AbpModule
     {
         context.Services.AddHostedService<NotificationDefinitionStartupService>();
 
-        // Make NotificationData serialize/deserialize polymorphically (stable discriminator) everywhere ABP's
-        // System.Text.Json is used — distributed event bus, HTTP API, etc. — not just via INotificationDataSerializer.
-        context.Services
-            .AddOptions<AbpSystemTextJsonSerializerOptions>()
-            .Configure<INotificationDataTypeRegistry>((options, registry) =>
-            {
-                options.JsonSerializerOptions.Converters.Add(new NotificationDataJsonConverter(registry));
-            });
     }
 
     private static void AutoAddDefinitionProviders(IServiceCollection services)

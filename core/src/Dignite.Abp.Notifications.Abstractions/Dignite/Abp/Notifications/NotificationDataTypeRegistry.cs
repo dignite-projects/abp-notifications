@@ -1,19 +1,30 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Text.Json.Nodes;
 using Microsoft.Extensions.Options;
 using Volo.Abp.DependencyInjection;
 
 namespace Dignite.Abp.Notifications;
 
-public class NotificationDataTypeRegistry : INotificationDataTypeRegistry, ISingletonDependency
+public class NotificationDataTypeRegistry :
+    INotificationDataTypeRegistry,
+    INotificationDataEvolutionRegistry,
+    ISingletonDependency
 {
     private readonly Dictionary<string, Type> _byDiscriminator;
     private readonly Dictionary<Type, string> _byType;
+    private readonly Dictionary<string, SortedDictionary<int, NotificationDataUpcaster>> _upcasters;
 
     public NotificationDataTypeRegistry(IOptions<NotificationDataOptions> options)
     {
+        options.Value.ValidateEvolution();
         _byDiscriminator = new Dictionary<string, Type>(StringComparer.Ordinal);
         _byType = new Dictionary<Type, string>();
+        _upcasters = options.Value.Upcasters.ToDictionary(
+            pair => pair.Key,
+            pair => new SortedDictionary<int, NotificationDataUpcaster>(pair.Value),
+            StringComparer.Ordinal);
 
         foreach (var pair in options.Value.DataTypes)
         {
@@ -37,6 +48,31 @@ public class NotificationDataTypeRegistry : INotificationDataTypeRegistry, ISing
     public Type? GetTypeOrNull(string discriminator)
     {
         return _byDiscriminator.TryGetValue(discriminator, out var type) ? type : null;
+    }
+
+    public int GetCurrentSchemaVersion(string discriminator)
+    {
+        if (!_byDiscriminator.TryGetValue(discriminator, out var dataType))
+        {
+            throw new InvalidOperationException(
+                $"Notification data discriminator '{discriminator}' is not registered.");
+        }
+
+        return NotificationDataTypeAttribute.GetSchemaVersionOrDefault(dataType);
+    }
+
+    public JsonObject Upcast(string discriminator, int fromVersion, JsonObject payload)
+    {
+        var currentVersion = GetCurrentSchemaVersion(discriminator);
+        var currentPayload = payload;
+        for (var version = fromVersion; version < currentVersion; version++)
+        {
+            currentPayload = _upcasters[discriminator][version](currentPayload)
+                ?? throw new InvalidOperationException(
+                    $"Notification data upcaster '{discriminator}' v{version}→v{version + 1} returned null.");
+        }
+
+        return currentPayload;
     }
 
     private static string GetTypeName(Type type)

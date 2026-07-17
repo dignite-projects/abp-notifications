@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Dignite.Abp.Notifications.TestProviderA;
 using Dignite.Abp.Notifications.TestProviderB;
@@ -11,6 +12,7 @@ using Microsoft.Extensions.Options;
 using Shouldly;
 using Volo.Abp;
 using Volo.Abp.DependencyInjection;
+using Volo.Abp.Json.SystemTextJson;
 using Volo.Abp.Localization;
 using Volo.Abp.Modularity;
 using Xunit;
@@ -238,6 +240,61 @@ public class NotificationRegistration_Tests
         genericFirst.Message.ShouldContain("Test.Definition.Unregistered");
         genericFirst.Message.ShouldContain(typeof(DefinitionContractData).FullName!);
         genericFirst.Message.ShouldContain(typeof(DefinitionContractAliasData).FullName!);
+    }
+
+    [Fact]
+    public async Task Missing_upcast_step_fails_host_start_with_the_exact_gap()
+    {
+        var exception = await Should.ThrowAsync<Exception>(
+            () => StartHostAsync<MissingUpcastStepStartupModule>());
+
+        exception.ToString().ShouldContain("Test.EvolvingOrder");
+        exception.ToString().ShouldContain("v2→v3");
+    }
+
+    [Fact]
+    public async Task Duplicate_upcast_registration_fails_host_start_clearly()
+    {
+        var exception = await Should.ThrowAsync<Exception>(
+            () => StartHostAsync<DuplicateUpcastStepStartupModule>());
+
+        exception.ToString().ShouldContain("Duplicate notification data upcaster");
+        exception.ToString().ShouldContain("Test.EvolvingOrder");
+        exception.ToString().ShouldContain("v1");
+    }
+
+    [Fact]
+    public async Task Complete_upcast_chain_allows_reverse_registration_order_at_host_start()
+    {
+        await StartHostAsync<CompleteUpcastChainStartupModule>();
+    }
+
+    [Fact]
+    public async Task Abstractions_only_host_registers_one_tolerant_global_converter()
+    {
+        using var host = BuildHost<AbstractionsOnlyStartupModule>();
+        await host.StartAsync();
+
+        var serializerOptions = host.Services
+            .GetRequiredService<IOptions<AbpSystemTextJsonSerializerOptions>>()
+            .Value
+            .JsonSerializerOptions;
+
+        serializerOptions.Converters
+            .OfType<NotificationDataJsonConverter>()
+            .Count()
+            .ShouldBe(1);
+
+        var data = JsonSerializer.Deserialize<NotificationData>(
+            """{"type":"Other.Product.Payload","schemaVersion":7,"value":"opaque"}""",
+            serializerOptions);
+
+        var unsupported = data.ShouldBeOfType<UnsupportedNotificationData>();
+        unsupported.Reason.ShouldBe(UnsupportedNotificationDataReason.UnknownDiscriminator);
+        unsupported.OriginalDiscriminator.ShouldBe("Other.Product.Payload");
+        unsupported.OriginalSchemaVersion.ShouldBe(7);
+
+        await host.StopAsync();
     }
 
     [Fact]
@@ -517,6 +574,52 @@ public class StringThenGenericPayloadContractStartupModule : AbpModule
             options.DefinitionProviders.Add(typeof(StringThenGenericPayloadContractProvider)));
         Configure<NotificationDataOptions>(options => options.Add<DefinitionContractAliasData>());
     }
+}
+
+[DependsOn(typeof(AbpNotificationsModule))]
+public class MissingUpcastStepStartupModule : AbpModule
+{
+    public override void ConfigureServices(ServiceConfigurationContext context)
+    {
+        Configure<NotificationDataOptions>(options =>
+        {
+            options.Add<EvolvingOrderNotificationData>();
+            options.AddUpcaster<EvolvingOrderNotificationData>(1, payload => payload);
+        });
+    }
+}
+
+[DependsOn(typeof(AbpNotificationsModule))]
+public class DuplicateUpcastStepStartupModule : AbpModule
+{
+    public override void ConfigureServices(ServiceConfigurationContext context)
+    {
+        Configure<NotificationDataOptions>(options =>
+        {
+            options.Add<EvolvingOrderNotificationData>();
+            options.AddUpcaster<EvolvingOrderNotificationData>(1, payload => payload);
+            options.AddUpcaster<EvolvingOrderNotificationData>(1, payload => payload);
+        });
+    }
+}
+
+[DependsOn(typeof(AbpNotificationsModule))]
+public class CompleteUpcastChainStartupModule : AbpModule
+{
+    public override void ConfigureServices(ServiceConfigurationContext context)
+    {
+        Configure<NotificationDataOptions>(options =>
+        {
+            options.Add<EvolvingOrderNotificationData>();
+            options.AddUpcaster<EvolvingOrderNotificationData>(2, payload => payload);
+            options.AddUpcaster<EvolvingOrderNotificationData>(1, payload => payload);
+        });
+    }
+}
+
+[DependsOn(typeof(AbpNotificationsAbstractionsModule))]
+public class AbstractionsOnlyStartupModule : AbpModule
+{
 }
 
 [DependsOn(typeof(AbpNotificationsModule))]

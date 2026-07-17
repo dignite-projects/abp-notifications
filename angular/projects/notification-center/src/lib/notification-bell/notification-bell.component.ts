@@ -17,7 +17,8 @@ import {
  * Refreshes on startup and when the ABP-mapped SignalR hub receives a notification. Each item's body is
  * dispatched by discriminator through NotificationDataComponentsService (mirrors the MVC UI's
  * NotificationCenterWebOptions.DataViewComponents), falling back to a generic image-only rendering when no
- * renderer is registered for it.
+ * renderer is registered for it. Server-side tolerant placeholders use the built-in
+ * "Dignite.Unsupported" renderer, so unreadable payloads still produce a visible safe fallback.
  */
 @Component({
   selector: 'abp-notification-bell',

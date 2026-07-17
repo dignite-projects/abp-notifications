@@ -21,4 +21,8 @@
     <ProjectReference Include="..\..\src\Dignite.Abp.NotificationCenter.Application\Dignite.Abp.NotificationCenter.Application.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Fixtures\*.json" LogicalName="Fixtures.%(Filename)%(Extension)" />
+  </ItemGroup>
+
 </Project>

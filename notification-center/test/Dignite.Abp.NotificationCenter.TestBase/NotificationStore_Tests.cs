@@ -81,8 +81,73 @@ public abstract class NotificationStore_Tests<TStartupModule> : NotificationCent
 
             entity.Data.ShouldNotBeNull();
             entity.Data!.ShouldContain("\"type\":\"Test.OrderShipped\"");
+            entity.Data.ShouldContain("\"schemaVersion\":1");
             entity.Data.ShouldNotContain("Version=");
             entity.Data.ShouldNotContain("OrderShippedNotificationData");
+        });
+    }
+
+    [Fact]
+    public async Task Historical_payload_fixtures_degrade_individually_without_failing_the_inbox_page()
+    {
+        var userId = Guid.NewGuid();
+        var legacyId = Guid.NewGuid();
+        var unknownId = Guid.NewGuid();
+        var futureId = Guid.NewGuid();
+        var malformedId = Guid.NewGuid();
+        var throwingSetterId = Guid.NewGuid();
+        await InsertRawAsync(
+            legacyId,
+            userId,
+            HistoricalPayloadFixtures.Read("legacy-order-shipped-v1.json"),
+            DateTime.UtcNow.AddMinutes(-4));
+        await InsertRawAsync(
+            unknownId,
+            userId,
+            HistoricalPayloadFixtures.Read("unknown-payload-v1.json"),
+            DateTime.UtcNow.AddMinutes(-3));
+        await InsertRawAsync(
+            futureId,
+            userId,
+            HistoricalPayloadFixtures.Read("future-order-shipped-v99.json"),
+            DateTime.UtcNow.AddMinutes(-2));
+        await InsertRawAsync(
+            malformedId,
+            userId,
+            HistoricalPayloadFixtures.Read("malformed-order-shipped-v1.json"),
+            DateTime.UtcNow.AddMinutes(-1));
+        await InsertRawAsync(
+            throwingSetterId,
+            userId,
+            HistoricalPayloadFixtures.Read("malformed-throwing-order-v1.json"),
+            DateTime.UtcNow);
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var rows = await GetRequiredService<INotificationStore>().GetUserNotificationsAsync(userId);
+
+            rows.Count.ShouldBe(5);
+            var legacy = rows.Single(row => row.Notification.Id == legacyId)
+                .Notification.Data.ShouldBeOfType<OrderShippedNotificationData>();
+            legacy.OrderNumber.ShouldBe("SO-LEGACY");
+            legacy.SchemaVersion.ShouldBe(NotificationDataSchema.LegacyVersion);
+
+            var unknown = rows.Single(row => row.Notification.Id == unknownId)
+                .Notification.Data.ShouldBeOfType<UnsupportedNotificationData>();
+            unknown.Reason.ShouldBe(UnsupportedNotificationDataReason.UnknownDiscriminator);
+            unknown.OriginalDiscriminator.ShouldBe("Removed.Module.Payload");
+
+            rows.Single(row => row.Notification.Id == futureId)
+                .Notification.Data.ShouldBeOfType<UnsupportedNotificationData>()
+                .Reason.ShouldBe(UnsupportedNotificationDataReason.UnsupportedFutureVersion);
+            var malformed = rows.Single(row => row.Notification.Id == malformedId)
+                .Notification.Data.ShouldBeOfType<UnsupportedNotificationData>();
+            malformed.Reason.ShouldBe(UnsupportedNotificationDataReason.MalformedPayload);
+            malformed.RawJson.ShouldContain("not-an-integer");
+            var throwingSetter = rows.Single(row => row.Notification.Id == throwingSetterId)
+                .Notification.Data.ShouldBeOfType<UnsupportedNotificationData>();
+            throwingSetter.Reason.ShouldBe(UnsupportedNotificationDataReason.MalformedPayload);
+            throwingSetter.RawJson.ShouldContain("THROW-FORMAT");
         });
     }
 
@@ -263,5 +328,34 @@ public abstract class NotificationStore_Tests<TStartupModule> : NotificationCent
             EntityId = entityId,
             CreationTime = DateTime.UtcNow
         };
+    }
+
+    private async Task InsertRawAsync(
+        Guid notificationId,
+        Guid userId,
+        string data,
+        DateTime creationTime)
+    {
+        await WithUnitOfWorkAsync(async () =>
+        {
+            await GetRequiredService<IRepository<Notification, Guid>>().InsertAsync(
+                new Notification(
+                    notificationId,
+                    "order.shipped",
+                    data,
+                    null,
+                    null,
+                    NotificationSeverity.Info,
+                    creationTime,
+                    null));
+            await GetRequiredService<IRepository<UserNotification, Guid>>().InsertAsync(
+                new UserNotification(
+                    Guid.NewGuid(),
+                    userId,
+                    notificationId,
+                    UserNotificationState.Unread,
+                    creationTime,
+                    null));
+        });
     }
 }

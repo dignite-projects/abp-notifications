@@ -20,6 +20,9 @@ changes.
   restricted to explicit recipients.
 - Added opt-in notification-definition contracts for stable payload discriminators and forbidden/optional/required
   entity identity, including optional stable entity type constraints and startup validation of referenced payloads.
+- Added explicit notification payload schema versions, deterministic consecutive JSON upcasters with startup chain
+  validation, typed strict-read failures, and a safe `UnsupportedNotificationData` tolerant-read representation.
+  MVC and Angular now render unsupported payloads with a localized fallback.
 
 ### Changed
 
@@ -52,6 +55,13 @@ changes.
   requires `INotificationDataTypeRegistry`, so both the pre-enqueue and persistence/event boundaries validate
   definition contracts. Normal dependency-injection resolution requires no changes. Definitions without
   payload/entity contracts retain their previous permissive behavior and can migrate independently.
+- Newly serialized notification payloads always include `schemaVersion`; versionless historical JSON is read as
+  schema v1 and upgraded lazily without a database migration or eager row rewrite. Notification Center store
+  queries and distributed-event/HTTP converters now tolerate unknown, future, malformed, and failed-upcast payloads
+  by returning safe placeholder data, while `INotificationDataSerializer.Deserialize` retains strict behavior.
+- **Breaking behavior for payload authors.** Per-instance assignments to `NotificationData.SchemaVersion` no longer
+  select the wire version. The converter now writes the current version declared by
+  `[NotificationDataType("...", version)]`; move shape changes to that declaration and registered upcasters.
 
 ### Fixed
 

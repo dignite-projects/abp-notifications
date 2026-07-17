@@ -20,8 +20,17 @@ Newtonsoft.Json anywhere in this pipeline.
 - All serialization — storage (EF Core / MongoDB), the distributed event bus, and the HTTP API —
   must go through the shared `INotificationDataTypeRegistry` / `NotificationDataJsonConverter`
   (registered once, globally, on `AbpSystemTextJsonSerializerOptions` in
-  `AbpNotificationsModule.ConfigureServices`), not a one-off converter or a hand-rolled switch
+  `AbpNotificationsAbstractionsModule.ConfigureServices`, so independently hosted Notifiers receive it too),
+  not a one-off converter or a hand-rolled switch
   statement in a specific layer.
+- The payload envelope always writes an explicit positive integer `schemaVersion`; versionless historical
+  JSON is schema v1. A breaking payload-shape change keeps the discriminator, advances the attribute's current
+  version, and registers every deterministic N→N+1 JSON upcaster. Duplicate, missing, or out-of-range steps fail
+  at startup; never make an upcaster depend on ambient tenant/user/time or mutate the reserved envelope members.
+- Trusted reads stay strict and expose a typed failure reason. Durable inbox, distributed-event, and HTTP reads
+  are tolerant: unknown discriminators, future versions, malformed known data, and failed upcasts become
+  `UnsupportedNotificationData`. Preserve raw JSON only as escaped diagnostic data; never interpret it as a CLR
+  name or show it in the fallback UI.
 - **Why**: the legacy implementation wrote with System.Text.Json + `AssemblyQualifiedName`, read
   back with Newtonsoft + `Type.GetType()`, and had a separate hardcoded switch (only 2 types) in
   the HTTP client converter. Result: an assembly version bump could make historical notifications
@@ -29,7 +38,9 @@ Newtonsoft.Json anywhere in this pipeline.
   client. This was priority **P0** — the "load-bearing wall" bug, because every Notifier and every
   remote consumer sits downstream of it.
 - Add a round-trip test for any new `NotificationData` subclass: publish → persist → deserialize on
-  a "remote" client, and assert the JSON contains your discriminator string, not a CLR type name.
+  a "remote" client, and assert the JSON contains your discriminator + current schema version, not a CLR type name.
+  A version bump also needs historical JSON fixtures and old-producer/new-consumer plus
+  new-producer/older-schema-aware-consumer event tests.
 
 **The same rule governs `EntityTypeName`.** `NotificationEntityIdentifier` takes a stable,
 caller-chosen string — `new NotificationEntityIdentifier("Demo.Order", orderId)`, never

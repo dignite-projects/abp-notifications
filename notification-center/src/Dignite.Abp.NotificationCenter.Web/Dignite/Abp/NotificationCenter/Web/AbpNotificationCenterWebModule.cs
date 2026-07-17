@@ -54,6 +54,8 @@ public class AbpNotificationCenterWebModule : AbpModule
                 typeof(Components.MessageNotificationData.MessageNotificationDataViewComponent);
             options.DataViewComponents[LocalizableMessageDiscriminator] =
                 typeof(Components.LocalizableMessageNotificationData.LocalizableMessageNotificationDataViewComponent);
+            options.DataViewComponents[UnsupportedDiscriminator] =
+                typeof(Components.UnsupportedNotificationData.UnsupportedNotificationDataViewComponent);
         });
     }
 
@@ -62,4 +64,7 @@ public class AbpNotificationCenterWebModule : AbpModule
 
     private static readonly string LocalizableMessageDiscriminator =
         NotificationDataTypeAttribute.GetNameOrNull(typeof(LocalizableMessageNotificationData))!;
+
+    private static readonly string UnsupportedDiscriminator =
+        NotificationDataTypeAttribute.GetNameOrNull(typeof(UnsupportedNotificationData))!;
 }

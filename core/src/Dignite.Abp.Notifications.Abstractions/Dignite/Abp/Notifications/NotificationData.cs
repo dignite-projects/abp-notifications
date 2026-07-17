@@ -12,9 +12,11 @@ namespace Dignite.Abp.Notifications;
 public abstract class NotificationData
 {
     /// <summary>
-    /// Schema version of this payload. Lets consumers migrate old data forward across breaking changes.
+    /// Schema version of this payload after deserialization/upcasting. The shared JSON converter owns the
+    /// wire-level value and writes the current version declared by <see cref="NotificationDataTypeAttribute"/>.
     /// </summary>
-    public int SchemaVersion { get; set; } = 1;
+    [JsonIgnore]
+    public int SchemaVersion { get; set; } = NotificationDataSchema.LegacyVersion;
 
     /// <summary>
     /// Captures JSON properties not mapped to a CLR property — e.g. fields added by a newer schema version.

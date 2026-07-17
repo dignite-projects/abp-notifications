@@ -301,6 +301,65 @@ Discriminators use ordinal, case-sensitive comparison. Registering the same disc
 types, or the same CLR type under two discriminators, fails during application startup with both sides
 named in the error. Repeating the exact same discriminator/type pair is safe and idempotent.
 
+### Evolving a persisted payload
+
+Every new write carries both the stable `type` and an explicit integer `schemaVersion`. Existing JSON
+without `schemaVersion` is defined as legacy **v1**, so current v1 payload declarations need no change.
+When a breaking JSON-shape change is necessary, keep the discriminator, advance the version on the
+attribute, and register every consecutive JSON upcast step:
+
+```csharp
+[NotificationDataType("Demo.OrderShipped", 3)]
+public class OrderShippedNotificationData : NotificationData
+{
+    public string OrderId { get; set; } = default!;
+    public int Quantity { get; set; }
+}
+
+Configure<NotificationDataOptions>(options =>
+{
+    options.Add<OrderShippedNotificationData>();
+    options.AddUpcaster<OrderShippedNotificationData>(1, payload =>
+    {
+        payload["orderId"] = payload["orderNumber"]?.DeepClone();
+        payload.Remove("orderNumber");
+        return payload;
+    });
+    options.AddUpcaster<OrderShippedNotificationData>(2, payload =>
+    {
+        payload["quantity"] = payload["itemCount"]?.DeepClone();
+        payload.Remove("itemCount");
+        return payload;
+    });
+});
+```
+
+An upcaster transforms payload members from N to N+1; the framework owns the reserved `type` and
+`schemaVersion` envelope. Registration order does not affect execution order. Duplicate steps, a step
+beyond the declared current version, or any missing v1→current link fails at application startup. Upcasting
+is lazy: persisted rows are not rewritten and no EF Core/MongoDB migration is required.
+
+`INotificationDataSerializer.Deserialize` remains strict for trusted boundaries and throws a typed
+`NotificationDataReadException`. Its `Reason` distinguishes an unknown discriminator, unsupported future
+version, malformed known payload, and failed upcast. Notification Center inbox reads, distributed-event
+deserialization, and HTTP server/client converters use tolerant mode: they return
+`UnsupportedNotificationData`, preserving the original discriminator, version, and escaped raw JSON without
+activating an arbitrary CLR type. One bad historical row therefore cannot fail the rest of an inbox page.
+The MVC and Angular libraries render this known placeholder as a generic unsupported-notification message and
+do not display its raw diagnostic JSON.
+
+Rolling-upgrade expectations are explicit:
+
+| Producer | Consumer | Result |
+|---|---|---|
+| versionless/v1 producer | newer consumer with a complete upcast chain | deterministically upcast to the current CLR model |
+| newer producer | older **schema-aware** tolerant consumer | `UnsupportedNotificationData`; processing/page continues |
+| newer producer | pre-versioning consumer | not guaranteed; it may misread or reject the new shape |
+
+Deploy schema-aware readers (including notifier/event consumers) before enabling producers that emit a newer
+schema. Upcasters only help newer consumers read older data; they cannot make an already-deployed legacy
+consumer understand a future breaking shape.
+
 **3. Register the notification definition** through an `INotificationDefinitionProvider` — its name,
 display text, optional feature/permission gating, and explicit channel routing:
 
@@ -624,9 +683,10 @@ Center provider, hosts should opt in to ABP's transactional outbox (see [Configu
 so "persist the notification" + "publish the event" commit together.
 
 > **Serialization invariant:** every `NotificationData` subclass must carry a stable
-> `[NotificationDataType]` discriminator and round-trip through System.Text.Json only — never a CLR
-> type name / `AssemblyQualifiedName`, never Newtonsoft. That is what keeps historical and remote
-> payloads readable and lets non-.NET clients render them.
+> `[NotificationDataType]` discriminator plus an explicit schema version and round-trip through
+> System.Text.Json only — never a CLR type name / `AssemblyQualifiedName`, never Newtonsoft. Versionless
+> historical JSON is v1; breaking shapes advance the attribute version and provide every deterministic
+> N→N+1 upcaster. That is what keeps historical and remote payloads readable and lets non-.NET clients render them.
 
 ## Build & test
 
