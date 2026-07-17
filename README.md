@@ -312,6 +312,8 @@ public class ShopNotificationDefinitionProvider : NotificationDefinitionProvider
         context.Add(new NotificationDefinition(
             "Demo.OrderShipped",
             new FixedLocalizableString("Order shipped"))
+            .WithPayload<OrderShippedNotificationData>()
+            .WithEntityContract(NotificationEntityRequirement.Required, "Demo.Order")
             .UseChannels(SignalRNotifier.ChannelName));
     }
 }
@@ -321,6 +323,30 @@ Definition names also use ordinal, case-sensitive comparison. Every duplicate na
 and the error identifies both provider types; an equivalent-looking second definition is not treated as
 idempotent because definitions are mutable after construction. Provider types are convention-discovered
 across modules; registering the same provider type more than once is idempotent and the provider executes once.
+
+Definitions can opt into publish-time contracts independently for payload and entity identity:
+
+| Declaration | Publish-time rule |
+|---|---|
+| no `WithPayload(...)` | Legacy compatibility: any or no registered payload is accepted |
+| `WithPayload<TData>()` | A payload is required and its registered stable discriminator must exactly match `TData` |
+| no `WithEntityContract(...)` | Legacy compatibility: an entity identity may be present or absent |
+| `Forbidden` | Entity identity must be absent |
+| `Optional` | Entity identity may be absent; when present, its type must match the optional stable type constraint |
+| `Required` | Entity identity must be present and must match the optional stable type constraint |
+
+`WithPayload<TData>()` reads `TData`'s `[NotificationDataType]` value; it never stores a CLR type name on a
+wire or persistence contract. Host startup fails if that discriminator is not registered in
+`NotificationDataOptions` or maps to a different CLR type. A string overload is available when a module knows
+only the stable discriminator. Entity type constraints such as `"Demo.Order"` are likewise caller-chosen stable
+names and compare ordinally/case-sensitively—they are never converted to or from a CLR `Type`.
+
+The publisher validates opted-in contracts before creating durable notification work, enqueueing a background
+job, writing an inbox row, or publishing an external event. The trusted-recipient eligibility bypass does not
+bypass payload/entity contracts. An explicitly empty `userIds` array remains a true no-op and returns before
+definition resolution. Existing definitions are unchanged until they opt into either contract, so applications
+can migrate definition by definition: register the payload first, add `WithPayload<TData>()`, then declare the
+entity requirement that matches existing publisher call sites.
 
 **4. Publish** from your business code via `INotificationPublisher`:
 

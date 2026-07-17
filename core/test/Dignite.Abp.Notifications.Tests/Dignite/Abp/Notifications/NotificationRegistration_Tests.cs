@@ -125,6 +125,29 @@ public class NotificationRegistration_Tests
     }
 
     [Fact]
+    public void Definition_contract_records_stable_payload_and_entity_metadata()
+    {
+        var definition = NewDefinition("Test.Contract")
+            .WithPayload<DistinctDataA>()
+            .WithEntityContract(NotificationEntityRequirement.Required, "Demo.Order");
+
+        definition.PayloadDiscriminator.ShouldBe("Test.DistinctA");
+        definition.EntityRequirement.ShouldBe(NotificationEntityRequirement.Required);
+        definition.ExpectedEntityTypeName.ShouldBe("Demo.Order");
+    }
+
+    [Fact]
+    public void Entity_contract_rejects_ambiguous_configuration()
+    {
+        Should.Throw<ArgumentOutOfRangeException>(() =>
+            NewDefinition("Test.Unspecified")
+                .WithEntityContract(NotificationEntityRequirement.Unspecified));
+        Should.Throw<ArgumentException>(() =>
+            NewDefinition("Test.Forbidden")
+                .WithEntityContract(NotificationEntityRequirement.Forbidden, "Demo.Order"));
+    }
+
+    [Fact]
     public async Task Duplicate_definition_providers_fail_host_start_independent_of_provider_order()
     {
         var forward = await Should.ThrowAsync<InvalidOperationException>(
@@ -169,6 +192,23 @@ public class NotificationRegistration_Tests
     public async Task Distinct_registrations_and_exact_data_repeat_allow_host_start()
     {
         await StartHostAsync<ValidRegistrationsStartupModule>();
+    }
+
+    [Fact]
+    public async Task Definition_referencing_unregistered_payload_discriminator_fails_host_start()
+    {
+        var exception = await Should.ThrowAsync<InvalidOperationException>(
+            () => StartHostAsync<UnregisteredPayloadContractStartupModule>());
+
+        exception.Message.ShouldContain("Test.UnregisteredPayloadContract");
+        exception.Message.ShouldContain("Test.Definition.Unregistered");
+        exception.Message.ShouldContain(nameof(NotificationDataOptions));
+    }
+
+    [Fact]
+    public async Task Definition_referencing_registered_payload_discriminator_allows_host_start()
+    {
+        await StartHostAsync<RegisteredPayloadContractStartupModule>();
     }
 
     [Fact]
@@ -247,6 +287,22 @@ internal sealed class CaseSensitiveDataUpper : NotificationData
 [NotificationDataType("test.case")]
 internal sealed class CaseSensitiveDataLower : NotificationData
 {
+}
+
+[NotificationDataType("Test.Definition.Unregistered")]
+internal sealed class DefinitionContractData : NotificationData
+{
+}
+
+internal sealed class DefinitionContractProvider : INotificationDefinitionProvider
+{
+    public void Define(INotificationDefinitionContext context)
+    {
+        context.Add(new NotificationDefinition(
+                "Test.UnregisteredPayloadContract",
+                new FixedLocalizableString("Payload contract"))
+            .WithPayload<DefinitionContractData>());
+    }
 }
 
 internal sealed class ProviderDependencyDefinitionProvider : INotificationDefinitionProvider
@@ -355,6 +411,29 @@ public class ValidRegistrationsStartupModule : AbpModule
             options.Add<DistinctDataA>();
             options.Add<DistinctDataB>();
         });
+    }
+}
+
+[DependsOn(typeof(AbpNotificationsModule))]
+public class UnregisteredPayloadContractStartupModule : AbpModule
+{
+    public override void ConfigureServices(ServiceConfigurationContext context)
+    {
+        context.Services.AddTransient<DefinitionContractProvider>();
+        Configure<NotificationOptions>(options =>
+            options.DefinitionProviders.Add(typeof(DefinitionContractProvider)));
+    }
+}
+
+[DependsOn(typeof(AbpNotificationsModule))]
+public class RegisteredPayloadContractStartupModule : AbpModule
+{
+    public override void ConfigureServices(ServiceConfigurationContext context)
+    {
+        context.Services.AddTransient<DefinitionContractProvider>();
+        Configure<NotificationOptions>(options =>
+            options.DefinitionProviders.Add(typeof(DefinitionContractProvider)));
+        Configure<NotificationDataOptions>(options => options.Add<DefinitionContractData>());
     }
 }
 

@@ -7,8 +7,8 @@ using Volo.Abp.Localization;
 namespace Dignite.Abp.Notifications;
 
 /// <summary>
-/// A notification type registered by a business module: its stable name, display text, and optional
-/// permission/feature gating and free-form attributes (e.g. channel routing hints).
+/// A notification type registered by a business module: its stable name, display text, optional
+/// permission/feature gating, opt-in stable payload/entity contracts, and free-form attributes.
 /// </summary>
 public class NotificationDefinition
 {
@@ -30,6 +30,25 @@ public class NotificationDefinition
     /// </summary>
     public string? FeatureName { get; private set; }
 
+    /// <summary>
+    /// The stable discriminator required for a published payload, or <see langword="null"/> when this legacy
+    /// definition has not opted into payload validation.
+    /// </summary>
+    public string? PayloadDiscriminator { get; private set; }
+
+    /// <summary>
+    /// Whether publish calls must omit, may include, or must include an entity identity. The default
+    /// <see cref="NotificationEntityRequirement.Unspecified"/> preserves existing definition behavior.
+    /// </summary>
+    public NotificationEntityRequirement EntityRequirement { get; private set; }
+
+    /// <summary>
+    /// An optional stable entity type name enforced when an entity identity is supplied. This is never a CLR type name.
+    /// </summary>
+    public string? ExpectedEntityTypeName { get; private set; }
+
+    internal Type? PayloadType { get; private set; }
+
     /// <summary>Free-form extension bag — e.g. explicit external channel routing.</summary>
     public IDictionary<string, object?> Attributes { get; }
 
@@ -50,6 +69,62 @@ public class NotificationDefinition
     public NotificationDefinition RequireFeature(string featureName)
     {
         FeatureName = featureName;
+        return this;
+    }
+
+    /// <summary>
+    /// Requires payloads registered under the stable discriminator declared by <typeparamref name="TData"/>'s
+    /// <see cref="NotificationDataTypeAttribute"/>.
+    /// </summary>
+    public NotificationDefinition WithPayload<TData>() where TData : NotificationData
+    {
+        var dataType = typeof(TData);
+        var discriminator = NotificationDataTypeAttribute.GetNameOrNull(dataType)
+            ?? throw new ArgumentException(
+                $"'{dataType.FullName}' must be annotated with [NotificationDataType(\"...\")] " +
+                "before it can be used by a notification definition.",
+                nameof(TData));
+
+        PayloadDiscriminator = discriminator;
+        PayloadType = dataType;
+        return this;
+    }
+
+    /// <summary>Requires payloads registered under the supplied stable discriminator.</summary>
+    public NotificationDefinition WithPayload(string discriminator)
+    {
+        PayloadDiscriminator = Check.NotNullOrWhiteSpace(discriminator, nameof(discriminator));
+        PayloadType = null;
+        return this;
+    }
+
+    /// <summary>
+    /// Declares the entity-identity contract. An expected entity type, when supplied, is a stable caller-chosen name
+    /// such as <c>"Demo.Order"</c>, never a CLR <see cref="Type.FullName"/>.
+    /// </summary>
+    public NotificationDefinition WithEntityContract(
+        NotificationEntityRequirement requirement,
+        string? expectedEntityTypeName = null)
+    {
+        if (requirement == NotificationEntityRequirement.Unspecified || !Enum.IsDefined(requirement))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(requirement),
+                requirement,
+                "Specify Forbidden, Optional, or Required. Omit WithEntityContract(...) for legacy behavior.");
+        }
+
+        if (requirement == NotificationEntityRequirement.Forbidden && expectedEntityTypeName != null)
+        {
+            throw new ArgumentException(
+                "A definition that forbids entity identity cannot constrain an entity type name.",
+                nameof(expectedEntityTypeName));
+        }
+
+        EntityRequirement = requirement;
+        ExpectedEntityTypeName = expectedEntityTypeName == null
+            ? null
+            : Check.NotNullOrWhiteSpace(expectedEntityTypeName, nameof(expectedEntityTypeName));
         return this;
     }
 

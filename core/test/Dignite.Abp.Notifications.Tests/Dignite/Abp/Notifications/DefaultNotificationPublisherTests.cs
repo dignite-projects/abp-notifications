@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using Shouldly;
+using Volo.Abp;
 using Volo.Abp.BackgroundJobs;
 using Volo.Abp.EventBus.Distributed;
 using Volo.Abp.Guids;
@@ -20,6 +21,22 @@ public class DefaultNotificationPublisherTests
 {
     private readonly INotificationDistributor _distributor = Substitute.For<INotificationDistributor>();
     private readonly IBackgroundJobManager _backgroundJobManager = Substitute.For<IBackgroundJobManager>();
+    private readonly INotificationDefinitionManager _definitionManager =
+        Substitute.For<INotificationDefinitionManager>();
+    private readonly INotificationDataTypeRegistry _dataTypeRegistry;
+
+    public DefaultNotificationPublisherTests()
+    {
+        _definitionManager.Get(Arg.Any<string>()).Returns(call =>
+            new NotificationDefinition(
+                call.Arg<string>(),
+                new FixedLocalizableString(call.Arg<string>())));
+
+        var dataOptions = new NotificationDataOptions();
+        dataOptions.Add<MessageNotificationData>();
+        dataOptions.Add<LocalizableMessageNotificationData>();
+        _dataTypeRegistry = new NotificationDataTypeRegistry(Options.Create(dataOptions));
+    }
 
     private DefaultNotificationPublisher CreatePublisher(int threshold, Guid? tenantId = null)
     {
@@ -43,7 +60,9 @@ public class DefaultNotificationPublisherTests
             _backgroundJobManager,
             guidGenerator,
             clock,
-            currentTenant);
+            currentTenant,
+            _definitionManager,
+            _dataTypeRegistry);
     }
 
     [Fact]
@@ -196,6 +215,178 @@ public class DefaultNotificationPublisherTests
         await _backgroundJobManager.Received(1).EnqueueAsync(
             Arg.Is<NotificationDistributionJobArgs>(args => args.UserIds == null));
         await _distributor.DidNotReceiveWithAnyArgs().DistributeAsync(default!, default, default);
+    }
+
+    [Fact]
+    public async Task Matching_payload_and_required_entity_contract_publish_normally()
+    {
+        var definition = new NotificationDefinition("typed", new FixedLocalizableString("Typed"))
+            .WithPayload<MessageNotificationData>()
+            .WithEntityContract(NotificationEntityRequirement.Required, "Demo.Order");
+        _definitionManager.Get("typed").Returns(definition);
+        var publisher = CreatePublisher(threshold: 3);
+
+        await publisher.PublishAsync(
+            "typed",
+            new MessageNotificationData("ok"),
+            new NotificationEntityIdentifier("Demo.Order", "42"),
+            userIds: new[] { Guid.NewGuid() });
+
+        await _distributor.Received(1).DistributeAsync(
+            Arg.Is<NotificationInfo>(notification =>
+                notification.Data is MessageNotificationData &&
+                notification.EntityTypeName == "Demo.Order" &&
+                notification.EntityId == "42"),
+            Arg.Any<Guid[]?>(),
+            Arg.Any<Guid[]?>());
+        await _backgroundJobManager.DidNotReceiveWithAnyArgs()
+            .EnqueueAsync(Arg.Any<NotificationDistributionJobArgs>());
+    }
+
+    [Fact]
+    public async Task Mismatched_payload_discriminator_fails_before_any_side_effect()
+    {
+        _definitionManager.Get("typed").Returns(
+            new NotificationDefinition("typed", new FixedLocalizableString("Typed"))
+                .WithPayload<MessageNotificationData>());
+        var publisher = CreatePublisher(threshold: 3);
+
+        var exception = await Should.ThrowAsync<AbpException>(() => publisher.PublishAsync(
+            "typed",
+            new LocalizableMessageNotificationData("Test", "Wrong"),
+            userIds: new[] { Guid.NewGuid() }));
+
+        exception.Message.ShouldContain("Dignite.Message");
+        exception.Message.ShouldContain("Dignite.LocalizableMessage");
+        await ShouldHaveNoPublishSideEffectsAsync();
+    }
+
+    [Fact]
+    public async Task Missing_required_payload_fails_before_background_enqueue()
+    {
+        _definitionManager.Get("typed").Returns(
+            new NotificationDefinition("typed", new FixedLocalizableString("Typed"))
+                .WithPayload<MessageNotificationData>());
+        var publisher = CreatePublisher(threshold: 0);
+
+        var exception = await Should.ThrowAsync<AbpException>(() => publisher.PublishAsync(
+            "typed",
+            userIds: new[] { Guid.NewGuid() }));
+
+        exception.Message.ShouldContain("no payload");
+        await ShouldHaveNoPublishSideEffectsAsync();
+    }
+
+    [Fact]
+    public async Task Required_entity_must_be_present_before_publish()
+    {
+        _definitionManager.Get("entity.required").Returns(
+            new NotificationDefinition("entity.required", new FixedLocalizableString("Required"))
+                .WithEntityContract(NotificationEntityRequirement.Required, "Demo.Order"));
+        var publisher = CreatePublisher(threshold: 3);
+
+        var exception = await Should.ThrowAsync<AbpException>(() => publisher.PublishAsync(
+            "entity.required",
+            userIds: new[] { Guid.NewGuid() }));
+
+        exception.Message.ShouldContain("requires an entity identity");
+        await ShouldHaveNoPublishSideEffectsAsync();
+    }
+
+    [Fact]
+    public async Task Forbidden_entity_must_be_absent_before_publish()
+    {
+        _definitionManager.Get("entity.forbidden").Returns(
+            new NotificationDefinition("entity.forbidden", new FixedLocalizableString("Forbidden"))
+                .WithEntityContract(NotificationEntityRequirement.Forbidden));
+        var publisher = CreatePublisher(threshold: 3);
+
+        var exception = await Should.ThrowAsync<AbpException>(() => publisher.PublishAsync(
+            "entity.forbidden",
+            entityIdentifier: new NotificationEntityIdentifier("Demo.Order", "42"),
+            userIds: new[] { Guid.NewGuid() }));
+
+        exception.Message.ShouldContain("forbids an entity identity");
+        await ShouldHaveNoPublishSideEffectsAsync();
+    }
+
+    [Fact]
+    public async Task Optional_entity_may_be_absent()
+    {
+        _definitionManager.Get("entity.optional").Returns(
+            new NotificationDefinition("entity.optional", new FixedLocalizableString("Optional"))
+                .WithEntityContract(NotificationEntityRequirement.Optional, "Demo.Order"));
+        var publisher = CreatePublisher(threshold: 3);
+
+        await publisher.PublishAsync("entity.optional", userIds: new[] { Guid.NewGuid() });
+
+        await _distributor.Received(1).DistributeAsync(
+            Arg.Is<NotificationInfo>(notification =>
+                notification.EntityTypeName == null && notification.EntityId == null),
+            Arg.Any<Guid[]?>(),
+            Arg.Any<Guid[]?>());
+    }
+
+    [Fact]
+    public async Task Entity_type_name_constraint_is_ordinal_and_fails_before_publish()
+    {
+        _definitionManager.Get("entity.typed").Returns(
+            new NotificationDefinition("entity.typed", new FixedLocalizableString("Entity typed"))
+                .WithEntityContract(NotificationEntityRequirement.Optional, "Demo.Order"));
+        var publisher = CreatePublisher(threshold: 3);
+
+        var exception = await Should.ThrowAsync<AbpException>(() => publisher.PublishAsync(
+            "entity.typed",
+            entityIdentifier: new NotificationEntityIdentifier("demo.order", "42"),
+            userIds: new[] { Guid.NewGuid() }));
+
+        exception.Message.ShouldContain("Demo.Order");
+        exception.Message.ShouldContain("demo.order");
+        await ShouldHaveNoPublishSideEffectsAsync();
+    }
+
+    [Fact]
+    public async Task Legacy_definition_without_contract_remains_permissive()
+    {
+        var publisher = CreatePublisher(threshold: 3);
+
+        await publisher.PublishAsync(
+            "legacy",
+            new LocalizableMessageNotificationData("Test", "AnyPayload"),
+            new NotificationEntityIdentifier("Any.Entity", "42"),
+            userIds: new[] { Guid.NewGuid() });
+
+        await _distributor.Received(1).DistributeAsync(
+            Arg.Is<NotificationInfo>(notification =>
+                notification.Data is LocalizableMessageNotificationData &&
+                notification.EntityTypeName == "Any.Entity"),
+            Arg.Any<Guid[]?>(),
+            Arg.Any<Guid[]?>());
+    }
+
+    [Fact]
+    public async Task Trusted_recipient_bypass_does_not_bypass_definition_contracts()
+    {
+        _definitionManager.Get("typed").Returns(
+            new NotificationDefinition("typed", new FixedLocalizableString("Typed"))
+                .WithPayload<MessageNotificationData>());
+        var publisher = CreatePublisher(threshold: 3);
+
+        await Should.ThrowAsync<AbpException>(() =>
+            publisher.PublishToExplicitRecipientsWithoutEligibilityChecksAsync(
+                "typed",
+                new[] { Guid.NewGuid() }));
+
+        await ShouldHaveNoPublishSideEffectsAsync();
+    }
+
+    private async Task ShouldHaveNoPublishSideEffectsAsync()
+    {
+        await _distributor.DidNotReceiveWithAnyArgs().DistributeAsync(default!, default, default);
+        await _distributor.DidNotReceiveWithAnyArgs()
+            .DistributeToExplicitRecipientsWithoutEligibilityChecksAsync(default!, default!, default);
+        await _backgroundJobManager.DidNotReceiveWithAnyArgs()
+            .EnqueueAsync(Arg.Any<NotificationDistributionJobArgs>());
     }
 
     /// <summary>

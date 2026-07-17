@@ -117,3 +117,20 @@ caller-supplied exclusions and before inbox persistence or channel publication.
   subscriptions, must bypass both permission and feature requirements together, and must remain observable.
 - A failed requirement filters that candidate before any `UserNotificationInfo` or `NotificationDeliveryEto`
   is produced. Publishing authorization is a separate application-layer concern.
+
+## 8. Definition payload/entity contracts validate before side effects
+
+A definition may bind itself to a stable payload discriminator and to a forbidden, optional, or required entity
+identity. Treat these as publish-time contracts, not hints for a downstream Notifier or UI.
+
+- `WithPayload<TData>()` derives its contract from `[NotificationDataType]`; startup must verify that exact
+  discriminator is registered to the intended CLR type. Runtime matching uses the registry and ordinal stable
+  discriminator, never `Type.FullName`, `AssemblyQualifiedName`, or Newtonsoft metadata.
+- An opted-in payload contract requires data. Reject missing, unregistered, or differently discriminated data
+  before background enqueue, store writes, or distributed event publication.
+- Entity requirements use the complete `NotificationEntityIdentifier`. If a definition constrains an entity type,
+  compare its stable caller-chosen name ordinally. Never translate it back to a CLR `Type`.
+- The trusted-recipient eligibility bypass does not bypass payload/entity validation; the policies answer different
+  questions.
+- `Unspecified` is the compatibility state. A definition that has not opted into a dimension remains permissive for
+  that dimension so migration can happen definition by definition.
