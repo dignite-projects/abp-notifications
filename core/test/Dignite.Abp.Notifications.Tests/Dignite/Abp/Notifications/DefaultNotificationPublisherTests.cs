@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -61,6 +62,35 @@ public class DefaultNotificationPublisherTests
     }
 
     [Fact]
+    public async Task Empty_explicit_recipient_list_is_a_no_op()
+    {
+        var publisher = CreatePublisher(threshold: 3);
+
+        await publisher.PublishAsync("test", userIds: Array.Empty<Guid>());
+
+        await _distributor.DidNotReceiveWithAnyArgs().DistributeAsync(default!, default, default);
+        await _backgroundJobManager.DidNotReceiveWithAnyArgs()
+            .EnqueueAsync(Arg.Any<NotificationDistributionJobArgs>());
+    }
+
+    [Fact]
+    public async Task Duplicate_recipients_are_normalized_before_the_inline_threshold_is_evaluated()
+    {
+        var publisher = CreatePublisher(threshold: 2);
+        var u1 = Guid.NewGuid();
+        var u2 = Guid.NewGuid();
+
+        await publisher.PublishAsync("test", userIds: new[] { u1, u1, u2 });
+
+        await _distributor.Received(1).DistributeAsync(
+            Arg.Any<NotificationInfo>(),
+            Arg.Is<Guid[]>(users => users.Length == 2 && users[0] == u1 && users[1] == u2),
+            Arg.Any<Guid[]?>());
+        await _backgroundJobManager.DidNotReceiveWithAnyArgs()
+            .EnqueueAsync(Arg.Any<NotificationDistributionJobArgs>());
+    }
+
+    [Fact]
     public async Task Publishes_the_caller_supplied_entity_type_name_verbatim()
     {
         var publisher = CreatePublisher(threshold: 3);
@@ -93,6 +123,36 @@ public class DefaultNotificationPublisherTests
         await _distributor.DidNotReceiveWithAnyArgs().DistributeAsync(default!, default, default);
     }
 
+    [Fact]
+    public async Task Duplicate_recipients_are_normalized_before_the_background_threshold_is_evaluated()
+    {
+        var publisher = CreatePublisher(threshold: 1);
+        var u1 = Guid.NewGuid();
+        var u2 = Guid.NewGuid();
+
+        await publisher.PublishAsync("test", userIds: new[] { u1, u1, u2, u2 });
+
+        await _backgroundJobManager.Received(1).EnqueueAsync(
+            Arg.Is<NotificationDistributionJobArgs>(args =>
+                args.UserIds != null
+                && args.UserIds.Length == 2
+                && args.UserIds[0] == u1
+                && args.UserIds[1] == u2));
+        await _distributor.DidNotReceiveWithAnyArgs().DistributeAsync(default!, default, default);
+    }
+
+    [Fact]
+    public async Task Null_recipient_list_is_preserved_for_subscription_distribution()
+    {
+        var publisher = CreatePublisher(threshold: 3);
+
+        await publisher.PublishAsync("test", userIds: null);
+
+        await _backgroundJobManager.Received(1).EnqueueAsync(
+            Arg.Is<NotificationDistributionJobArgs>(args => args.UserIds == null));
+        await _distributor.DidNotReceiveWithAnyArgs().DistributeAsync(default!, default, default);
+    }
+
     /// <summary>
     /// The background worker is the only context that has to restore a tenant: ABP's BackgroundJobExecuter only does
     /// it for IMultiTenant job args, and NotificationDistributionJobArgs is not one. So these tests run the job over a
@@ -116,6 +176,13 @@ public class DefaultNotificationPublisherTests
             definitionManager.Get("test")
                 .Returns(new NotificationDefinition("test", new FixedLocalizableString("Test")).UseChannels("Test"));
 
+            var subscribedUser = Guid.NewGuid();
+            Store.GetSubscriptionsAsync("test", null, null).Returns(new List<NotificationSubscriptionInfo>
+            {
+                new() { UserId = subscribedUser, NotificationName = "test" }
+            });
+            definitionManager.IsAvailableAsync("test", subscribedUser).Returns(true);
+
             Store.When(x => x.InsertNotificationAsync(Arg.Any<NotificationInfo>()))
                 .Do(_ =>
                 {
@@ -136,6 +203,11 @@ public class DefaultNotificationPublisherTests
 
         public Task ExecuteAsync(Guid? notificationTenantId)
         {
+            return ExecuteAsync(notificationTenantId, new[] { Guid.NewGuid() });
+        }
+
+        public Task ExecuteAsync(Guid? notificationTenantId, Guid[]? userIds)
+        {
             return CreateJob().ExecuteAsync(new NotificationDistributionJobArgs(
                 new NotificationInfo
                 {
@@ -143,7 +215,7 @@ public class DefaultNotificationPublisherTests
                     NotificationName = "test",
                     TenantId = notificationTenantId
                 },
-                new[] { Guid.NewGuid() },
+                userIds,
                 null));
         }
     }
@@ -178,5 +250,17 @@ public class DefaultNotificationPublisherTests
         pipeline.TenantSeenByPublish.ShouldBeNull();
         pipeline.Published.ShouldNotBeNull();
         pipeline.Published!.TenantId.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Distribution_job_preserves_an_empty_explicit_list_as_a_no_op()
+    {
+        var pipeline = new JobPipeline();
+
+        await pipeline.ExecuteAsync(Guid.NewGuid(), Array.Empty<Guid>());
+
+        pipeline.StoreWasCalled.ShouldBeFalse();
+        pipeline.Published.ShouldBeNull();
+        await pipeline.Store.DidNotReceiveWithAnyArgs().GetSubscriptionsAsync(default!, default, default);
     }
 }

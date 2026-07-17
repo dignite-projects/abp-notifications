@@ -300,8 +300,10 @@ await _publisher.PublishAsync(
 ```
 
 `PublishAsync` distributes small explicit fan-outs inline and larger ones via a background job (the
-threshold is configurable — see [Configuration](#configuration)). In Notification Center mode, omit
-`userIds` to fan out to the notification's **subscribers** instead of explicit recipients.
+threshold is configurable — see [Configuration](#configuration)). Recipient semantics are deliberate:
+`userIds: null` resolves **subscribers**, an empty array is an intentional no-op, and a non-empty array
+targets those users explicitly. Duplicate explicit IDs are removed before the threshold is evaluated,
+inbox rows are persisted, or channel delivery is published.
 
 ## Notifiers
 

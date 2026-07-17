@@ -7,6 +7,10 @@ public class NotificationDistributionJobArgs
 {
     public NotificationInfo Notification { get; set; } = default!;
 
+    /// <summary>
+    /// <see langword="null"/> selects subscription resolution; an empty array is an intentional no-op; a
+    /// non-empty array contains explicit recipients.
+    /// </summary>
     public Guid[]? UserIds { get; set; }
 
     public Guid[]? ExcludedUserIds { get; set; }
