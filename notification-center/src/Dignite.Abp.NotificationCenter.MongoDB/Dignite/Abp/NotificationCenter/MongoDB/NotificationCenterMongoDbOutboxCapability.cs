@@ -18,6 +18,9 @@ public sealed class NotificationCenterMongoDbOutboxCapability
     /// <summary>Whether the deployment advertises logical-session support.</summary>
     public bool SupportsLogicalSessions { get; }
 
+    /// <summary>Whether an actual multi-collection transaction probe committed successfully.</summary>
+    public bool TransactionProbeSucceeded { get; }
+
     /// <summary>A human-readable explanation of the capability decision.</summary>
     public string Diagnostic { get; }
 
@@ -27,12 +30,14 @@ public sealed class NotificationCenterMongoDbOutboxCapability
         NotificationCenterMongoDbTopology topology,
         int maxWireVersion,
         bool supportsLogicalSessions,
+        bool transactionProbeSucceeded,
         string diagnostic)
     {
         IsSupported = isSupported;
         Topology = topology;
         MaxWireVersion = maxWireVersion;
         SupportsLogicalSessions = supportsLogicalSessions;
+        TransactionProbeSucceeded = transactionProbeSucceeded;
         Diagnostic = diagnostic;
     }
 }

@@ -1,7 +1,11 @@
 using System;
+using System.Linq;
+using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Dignite.Abp.NotificationCenter.MongoDB;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using MongoDB.Bson;
 using MongoDB.Driver;
@@ -9,15 +13,11 @@ using MongoDB.Driver.Linq;
 using MongoSandbox;
 using Shouldly;
 using Volo.Abp;
+using Volo.Abp.DependencyInjection;
 using Volo.Abp.EventBus;
 using Volo.Abp.EventBus.Distributed;
-using Volo.Abp.EventBus.Local;
-using Volo.Abp.Guids;
 using Volo.Abp.MongoDB;
 using Volo.Abp.MongoDB.DistributedEvents;
-using Volo.Abp.MultiTenancy;
-using Volo.Abp.Timing;
-using Volo.Abp.Tracing;
 using Volo.Abp.Uow;
 using Xunit;
 
@@ -71,7 +71,17 @@ public class Notification_Outbox_Tests :
         capability.IsSupported.ShouldBeTrue();
         capability.Topology.ShouldBe(NotificationCenterMongoDbTopology.ReplicaSet);
         capability.SupportsLogicalSessions.ShouldBeTrue();
+        capability.TransactionProbeSucceeded.ShouldBeTrue();
         capability.MaxWireVersion.ShouldBeGreaterThanOrEqualTo(7);
+    }
+
+    [Fact]
+    public async Task Host_lifecycle_validator_accepts_the_verified_replica_set()
+    {
+        var validator = ServiceProvider.GetServices<IHostedService>().Single(service =>
+            service.GetType().Name == "NotificationCenterMongoDbOutboxCapabilityHostedService");
+
+        await validator.StartAsync(CancellationToken.None);
     }
 
     [Fact]
@@ -96,23 +106,24 @@ public class Notification_Outbox_Tests :
                     { nameof(IncomingEventRecord.Status), 1 },
                     { nameof(IncomingEventRecord.CreationTime), 1 }
                 });
-            incomingIndexes.ShouldContain(index =>
+            var messageIdIndex = incomingIndexes.Single(index =>
                 index["key"].AsBsonDocument == new BsonDocument(nameof(IncomingEventRecord.MessageId), 1));
+            messageIdIndex["unique"].AsBoolean.ShouldBeTrue();
         });
     }
 
     [Fact]
-    public async Task ABP_inbox_semantics_ignore_a_redelivery_with_the_same_message_id()
+    public async Task Concurrent_inbox_redeliveries_leave_one_record_and_invoke_the_handler_once()
     {
         var messageId = Guid.NewGuid().ToString("N");
-        var eventBus = ActivatorUtilities.CreateInstance<TestLocalDistributedEventBus>(ServiceProvider);
+        var eventName = EventNameAttribute.GetNameOrDefault(typeof(MongoInboxEto));
+        var eventData = JsonSerializer.SerializeToUtf8Bytes(new MongoInboxEto { Value = "test" });
+        MongoInboxEtoHandler.Reset();
 
-        await WithUnitOfWorkAsync(
-            () => eventBus.AddToInboxForTestAsync(messageId),
-            isTransactional: true);
-        await WithUnitOfWorkAsync(
-            () => eventBus.AddToInboxForTestAsync(messageId),
-            isTransactional: true);
+        var results = await Task.WhenAll(
+            EnqueueIncomingAsync(messageId, eventName, eventData),
+            EnqueueIncomingAsync(messageId, eventName, eventData));
+        results.Count(result => result).ShouldBe(1);
 
         await WithUnitOfWorkAsync(async () =>
         {
@@ -121,6 +132,27 @@ public class Notification_Outbox_Tests :
             var count = await dbContext.IncomingEvents.AsQueryable()
                 .CountAsync(record => record.MessageId == messageId);
             count.ShouldBe(1);
+        });
+
+        var eventBusOptions = GetRequiredService<IOptions<AbpDistributedEventBusOptions>>().Value;
+        var inboxConfig = eventBusOptions.Inboxes.Values.Single();
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var inbox = (IEventInbox)ServiceProvider.GetRequiredService(inboxConfig.ImplementationType);
+            var waiting = await inbox.GetWaitingEventsAsync(10);
+            waiting.Count.ShouldBe(1);
+
+            await GetRequiredService<IDistributedEventBus>()
+                .AsSupportsEventBoxes()
+                .ProcessFromInboxAsync(waiting[0], inboxConfig);
+            await inbox.MarkAsProcessedAsync(waiting[0].Id);
+        }, isTransactional: true);
+
+        MongoInboxEtoHandler.InvocationCount.ShouldBe(1);
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var inbox = (IEventInbox)ServiceProvider.GetRequiredService(inboxConfig.ImplementationType);
+            (await inbox.GetWaitingEventsAsync(10)).ShouldBeEmpty();
         });
     }
 
@@ -136,51 +168,89 @@ public class Notification_Outbox_Tests :
 
         using var application = await AbpApplicationFactory
             .CreateAsync<AbpNotificationCenterStandaloneMongoDbOutboxTestModule>();
+        await application.InitializeAsync();
+
+        var validator = application.ServiceProvider.GetServices<IHostedService>().Single(service =>
+            service.GetType().Name == "NotificationCenterMongoDbOutboxCapabilityHostedService");
 
         var exception = await Should.ThrowAsync<AbpInitializationException>(
-            () => application.InitializeAsync());
-        exception.Message.ShouldContain("requires a transaction-capable replica set");
+            () => validator.StartAsync(CancellationToken.None));
+        exception.Message.ShouldContain("requires a verified transaction-capable replica set");
         exception.Message.ShouldContain("Detected Standalone");
+        await application.ShutdownAsync();
     }
 
-    private sealed class TestLocalDistributedEventBus : LocalDistributedEventBus
+    private async Task<bool> EnqueueIncomingAsync(string messageId, string eventName, byte[] eventData)
     {
-        public TestLocalDistributedEventBus(
-            IServiceScopeFactory serviceScopeFactory,
-            ICurrentTenant currentTenant,
-            IUnitOfWorkManager unitOfWorkManager,
-            IOptions<AbpDistributedEventBusOptions> distributedEventBusOptions,
-            IGuidGenerator guidGenerator,
-            IClock clock,
-            IEventHandlerInvoker eventHandlerInvoker,
-            ILocalEventBus localEventBus,
-            ICorrelationIdProvider correlationIdProvider)
-            : base(
-                serviceScopeFactory,
-                currentTenant,
-                unitOfWorkManager,
-                distributedEventBusOptions,
-                guidGenerator,
-                clock,
-                eventHandlerInvoker,
-                localEventBus,
-                correlationIdProvider)
+        try
         {
-        }
-
-        public Task<bool> AddToInboxForTestAsync(string messageId)
-        {
-            return AddToInboxAsync(
+            using var unitOfWork = GetRequiredService<IUnitOfWorkManager>().Begin(
+                requiresNew: true,
+                isTransactional: true);
+            var inboxConfig = GetRequiredService<IOptions<AbpDistributedEventBusOptions>>()
+                .Value.Inboxes.Values.Single();
+            var inbox = (IEventInbox)ServiceProvider.GetRequiredService(inboxConfig.ImplementationType);
+            await inbox.EnqueueAsync(new IncomingEventInfo(
+                Guid.NewGuid(),
                 messageId,
-                "Dignite.Abp.NotificationCenter.MongoDB.Tests.InboxEto",
-                typeof(InboxEto),
-                new InboxEto { Value = "test" },
-                correlationId: null);
+                eventName,
+                eventData,
+                DateTime.UtcNow));
+            await unitOfWork.CompleteAsync();
+            return true;
+        }
+        catch (Exception exception) when (IsConcurrentDuplicate(exception))
+        {
+            // A broker redelivery retries after this loser transaction; ABP's MessageId check then
+            // observes the winner. The unique index prevents two handler-visible inbox records.
+            return false;
         }
     }
 
-    private sealed class InboxEto
+    private static bool IsConcurrentDuplicate(Exception exception)
     {
-        public string Value { get; set; } = default!;
+        if (exception is MongoWriteException writeException &&
+            writeException.WriteError?.Category == ServerErrorCategory.DuplicateKey)
+        {
+            return true;
+        }
+
+        if (exception is MongoCommandException commandException && commandException.Code == 11000)
+        {
+            return true;
+        }
+
+        if (exception is MongoException mongoException &&
+            mongoException.HasErrorLabel("TransientTransactionError"))
+        {
+            return true;
+        }
+
+        return exception.InnerException != null && IsConcurrentDuplicate(exception.InnerException);
+    }
+}
+
+public sealed class MongoInboxEto
+{
+    public string Value { get; set; } = default!;
+}
+
+public sealed class MongoInboxEtoHandler :
+    IDistributedEventHandler<MongoInboxEto>,
+    ITransientDependency
+{
+    private static int _invocationCount;
+
+    public static int InvocationCount => Volatile.Read(ref _invocationCount);
+
+    public static void Reset()
+    {
+        Volatile.Write(ref _invocationCount, 0);
+    }
+
+    public Task HandleEventAsync(MongoInboxEto eventData)
+    {
+        Interlocked.Increment(ref _invocationCount);
+        return Task.CompletedTask;
     }
 }

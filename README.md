@@ -276,12 +276,14 @@ The shipped MongoDB context has an equivalent one-line opt-in; it configures bot
 Configure<AbpDistributedEventBusOptions>(options => options.UseNotificationCenterMongoDbOutbox());
 ```
 
-This opt-in deliberately fails application startup unless the active Notification Center connection reports a
-transaction-capable replica set (MongoDB 4.0 or later) or sharded cluster (MongoDB 4.2 or later), including logical
-session support. A standalone `mongod` is rejected instead of silently downgrading the atomicity guarantee. The
-host must also use transactional ABP units of work; do not set `AbpUnitOfWorkDefaultOptions.TransactionBehavior`
-to `Disabled`. For production with more than one application instance, configure an ABP distributed-lock provider
-for the outbox sender and inbox processor.
+This opt-in registers a host-lifecycle validator that fails startup unless the active Notification Center connection
+is a transaction-capable replica set running MongoDB 4.0 or later with logical sessions. It does not infer the
+guarantee from topology metadata alone: the validator commits an insert-and-delete transaction spanning
+`AbpEventOutbox` and `AbpEventInbox`, leaving no probe rows. Standalone servers are rejected. Sharded clusters are
+diagnosed but currently rejected because this package does not run a real sharded-cluster integration suite and
+therefore does not advertise an unverified guarantee. The host must also use transactional ABP units of work; do
+not set `AbpUnitOfWorkDefaultOptions.TransactionBehavior` to `Disabled`. For production with more than one
+application instance, configure an ABP distributed-lock provider for the outbox sender and inbox processor.
 
 `INotificationCenterMongoDbOutboxCapabilityChecker` exposes the same diagnostic used at startup. The automatic
 check runs against the host/default connection. Applications that resolve a different connection per tenant must
@@ -293,17 +295,40 @@ visiting those databases. The one-line setup assumes the usual shared Notificati
 
 Existing MongoDB hosts should upgrade in this order:
 
-1. convert the deployment to a replica set or supported sharded cluster and verify transactions independently;
+1. convert the deployment to a MongoDB 4.0+ replica set and verify transactions independently;
 2. ensure the application role can create indexes and read/write the ABP event-box collections;
-3. deploy the new provider package and add `UseNotificationCenterMongoDbOutbox()`;
-4. keep notification distribution inside transactional units of work, then monitor the startup capability log and
+3. inspect existing `AbpEventInbox` records and collapse duplicate non-empty `MessageId` values before the new
+   unique index is created (retain the processed/discarded record when one exists, otherwise the oldest pending row);
+4. deploy the new provider package and add `UseNotificationCenterMongoDbOutbox()`;
+5. keep notification distribution inside transactional units of work, then monitor the startup capability log and
    ABP outbox/inbox workers before enabling traffic.
 
-No data backfill or collection rename is required. The provider uses ABP's conventional `AbpEventOutbox` and
+Notification business data needs no backfill and no collection is renamed. The provider uses ABP's conventional `AbpEventOutbox` and
 `AbpEventInbox` names and creates indexes matching the EF Core query shapes: `CreationTime` for outbox sending,
-`Status + CreationTime` for inbox processing/cleanup, and `MessageId` for duplicate detection. `MessageId` is not a
-unique index because ABP performs its inbox existence check before insertion; consumers should not replace this
-with a different duplicate contract.
+`Status + CreationTime` for inbox processing/cleanup, and `MessageId` for duplicate detection. MongoDB makes
+`MessageId` unique so two concurrent check-then-insert deliveries cannot create two handler-visible records. A
+losing concurrent transaction is retried by the broker; ABP's normal existence check then observes the winner.
+EF Core retains ABP's conventional non-unique `MessageId` index, which is a remaining provider difference.
+
+**Breaking for custom context implementers:** `INotificationCenterMongoDbContext` now extends ABP's
+`IHasEventInbox` and `IHasEventOutbox`. A consumer-owned implementation must expose
+`IMongoCollection<IncomingEventRecord> IncomingEvents` and `IMongoCollection<OutgoingEventRecord> OutgoingEvents`,
+call `ConfigureEventInbox()` and `ConfigureEventOutbox()` from `CreateModel`, and add the three indexes described
+above (including MongoDB's unique `MessageId` index). The non-generic
+`UseNotificationCenterMongoDbOutbox()` targets the shipped `NotificationCenterMongoDbContext`; a custom context
+must instead configure both boxes explicitly:
+
+```csharp
+Configure<AbpDistributedEventBusOptions>(options =>
+{
+    options.Outboxes.Configure(config => config.UseMongoDbContext<MyHostMongoDbContext>());
+    options.Inboxes.Configure(config => config.UseMongoDbContext<MyHostMongoDbContext>());
+});
+```
+
+That custom route does not activate the shipped-context hosted validator. Run an equivalent committed transaction
+probe for every resolved database during the host lifecycle before accepting traffic; merely checking `setName`,
+logical sessions, or wire version is not sufficient.
 
 Processed/discarded inbox records are retained for ABP's deduplication window and then removed by ABP's built-in
 cleanup worker. Tune `AbpEventBusBoxesOptions.WaitTimeToDeleteProcessedInboxEvents` and
@@ -312,9 +337,10 @@ successful broker publication. Operational TTL indexes are not created because t
 cleanup semantics.
 
 EF Core requires host-owned schema migrations for `AbpEventOutbox`/`AbpEventInbox`; MongoDB creates collections
-and indexes through its model initialization instead. Both providers otherwise use the same terminology and ABP
-dispatcher/inbox semantics, and both require a transactional unit of work for atomic persist-and-record. Neither
-provider claims exactly-once external delivery or atomicity across all independently scheduled fan-out jobs.
+and indexes through its model initialization instead. Both providers use ABP's dispatcher/inbox terminology and
+require a transactional unit of work for atomic persist-and-record. The MongoDB-specific unique inbox index and
+replica-set startup probe are the remaining reliability/configuration differences. Neither provider claims
+exactly-once external delivery or atomicity across all independently scheduled fan-out jobs.
 
 Without the opt-in, a crash between the store write and publish can still leave a notification with no channel
 delivery, and redelivery can invoke a notifier again. Cancellation remains a boundary for stopping new work, not
@@ -775,8 +801,8 @@ Configure<AbpDistributedEventBusOptions>(options =>
     options.UseNotificationCenterEfCoreOutbox();
 });
 
-// MongoDB hosts use the equivalent opt-in. Startup rejects standalone MongoDB; use a
-// transaction-capable replica set/sharded cluster and transactional ABP units of work.
+// MongoDB hosts use the equivalent opt-in. Host startup performs a real transaction probe;
+// use a transaction-capable MongoDB 4.0+ replica set and transactional ABP units of work.
 Configure<AbpDistributedEventBusOptions>(options =>
 {
     options.UseNotificationCenterMongoDbOutbox();

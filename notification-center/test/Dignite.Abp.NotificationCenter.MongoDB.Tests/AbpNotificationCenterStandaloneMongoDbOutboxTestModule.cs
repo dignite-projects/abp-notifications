@@ -20,6 +20,8 @@ public class AbpNotificationCenterStandaloneMongoDbOutboxTestModule : AbpModule
         Configure<AbpDistributedEventBusOptions>(options =>
         {
             options.UseNotificationCenterMongoDbOutbox();
+            options.Outboxes.Configure(config => config.IsSendingEnabled = false);
+            options.Inboxes.Configure(config => config.IsProcessingEnabled = false);
         });
     }
 }

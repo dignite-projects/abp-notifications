@@ -40,7 +40,8 @@ public class NotificationCenterMongoDbContext : AbpMongoDbContext, INotification
 
                 indexes.CreateOne(new CreateIndexModel<BsonDocument>(
                     Builders<BsonDocument>.IndexKeys
-                        .Ascending(nameof(IncomingEventRecord.MessageId))));
+                        .Ascending(nameof(IncomingEventRecord.MessageId)),
+                    new CreateIndexOptions { Unique = true }));
             });
         });
 
