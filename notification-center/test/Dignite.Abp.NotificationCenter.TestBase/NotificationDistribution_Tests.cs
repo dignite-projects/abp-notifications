@@ -411,9 +411,9 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
         var options = new NotificationOptions
         {
             DirectDistributionUserThreshold = 1,
-            RecipientBatchSize = 2,
-            UserNotificationWriteBatchSize = 2,
-            DeliveryEventRecipientLimit = 2
+            RecipientBatchSize = 256,
+            UserNotificationWriteBatchSize = 256,
+            DeliveryEventRecipientLimit = 100
         };
         var eventBus = Substitute.For<IDistributedEventBus>();
         var deliveries = new List<NotificationDeliveryEto>();
@@ -431,7 +431,10 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
             GetRequiredService<INotificationDefinitionManager>(),
             GetRequiredService<INotificationDataTypeRegistry>(),
             GetRequiredService<INotificationStore>());
-        var users = Enumerable.Range(0, 5).Select(_ => Guid.NewGuid()).ToArray();
+        var distinctUsers = Enumerable.Range(0, 2_001).Select(_ => Guid.NewGuid()).ToArray();
+        var users = distinctUsers
+            .Concat(new[] { distinctUsers[0], distinctUsers[255], distinctUsers[256], distinctUsers[^1] })
+            .ToArray();
 
         await WithUnitOfWorkAsync(() => publisher.PublishAsync(
             "order.shipped",
@@ -440,12 +443,12 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
         var jobs = backgroundJobManager.ReceivedCalls()
             .SelectMany(call => call.GetArguments().OfType<NotificationDistributionJobArgs>())
             .ToList();
-        jobs.Count.ShouldBe(3);
+        jobs.Count.ShouldBe(8);
         foreach (var job in jobs)
         {
             job.NotificationAlreadyPersisted.ShouldBeTrue();
             job.UserIds.ShouldNotBeNull();
-            job.UserIds!.Length.ShouldBeLessThanOrEqualTo(2);
+            job.UserIds!.Length.ShouldBeLessThanOrEqualTo(256);
         }
 
         foreach (var args in jobs.AsEnumerable().Reverse())
@@ -463,11 +466,11 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
                 .FindAsync(notificationId)).ShouldNotBeNull();
             var rows = await GetRequiredService<IRepository<UserNotification, Guid>>()
                 .GetListAsync(row => row.NotificationId == notificationId);
-            rows.Count.ShouldBe(5);
-            rows.Select(row => row.UserId).ShouldBe(users, ignoreOrder: true);
+            rows.Count.ShouldBe(distinctUsers.Length);
+            rows.Select(row => row.UserId).ShouldBe(distinctUsers, ignoreOrder: true);
         });
-        deliveries.Count.ShouldBe(3);
-        deliveries.ShouldAllBe(delivery => delivery.UserIds.Length <= 2);
-        deliveries.SelectMany(delivery => delivery.UserIds).ShouldBe(users, ignoreOrder: true);
+        deliveries.Count.ShouldBe(24);
+        deliveries.ShouldAllBe(delivery => delivery.UserIds.Length <= 100);
+        deliveries.SelectMany(delivery => delivery.UserIds).ShouldBe(distinctUsers, ignoreOrder: true);
     }
 }

@@ -220,10 +220,6 @@ public class DefaultNotificationDistributor :
                 }
 
                 var channels = ResolveExternalChannelsOrNull(notification.NotificationName);
-                var excluded = excludedUserIds is { Length: > 0 }
-                    ? new HashSet<Guid>(excludedUserIds)
-                    : null;
-
                 if (UsesLegacyExtensionPointOverrides())
                 {
                     await DistributeUsingLegacyExtensionPointsAsync(
@@ -242,42 +238,15 @@ public class DefaultNotificationDistributor :
                 stage = "candidate_resolution";
                 if (userIds != null)
                 {
-                    // The legacy public boundary already supplies an array. Avoid creating another all-recipient
-                    // list: normalize it incrementally into bounded batches. The set is required only to preserve
-                    // the public "one recipient once" contract for unsorted duplicate IDs.
-                    var seen = new HashSet<Guid>();
-                    var batch = new List<Guid>(Options.RecipientBatchSize);
-                    foreach (var userId in userIds)
+                    foreach (var batch in BoundedRecipientBatcher.GetDistinctBatches(
+                                 userIds,
+                                 Options.RecipientBatchSize))
                     {
                         cancellationToken.ThrowIfCancellationRequested();
-                        if (!seen.Add(userId))
-                        {
-                            continue;
-                        }
-
-                        batch.Add(userId);
-                        if (batch.Count == Options.RecipientBatchSize)
-                        {
-                            await ProcessCandidateBatchAsync(
-                                notification,
-                                batch,
-                                excluded,
-                                channels,
-                                source,
-                                recipientEligibilityMode,
-                                state,
-                                cancellationToken,
-                                currentStage => stage = currentStage);
-                            batch = new List<Guid>(Options.RecipientBatchSize);
-                        }
-                    }
-
-                    if (batch.Count > 0)
-                    {
                         await ProcessCandidateBatchAsync(
                             notification,
                             batch,
-                            excluded,
+                            excludedUserIds,
                             channels,
                             source,
                             recipientEligibilityMode,
@@ -306,7 +275,7 @@ public class DefaultNotificationDistributor :
                         await ProcessCandidateBatchAsync(
                             notification,
                             batch,
-                            excluded,
+                            excludedUserIds,
                             channels,
                             source,
                             recipientEligibilityMode,
@@ -397,7 +366,7 @@ public class DefaultNotificationDistributor :
     private async Task ProcessCandidateBatchAsync(
         NotificationInfo notification,
         IReadOnlyCollection<Guid> resolvedCandidates,
-        HashSet<Guid>? excluded,
+        Guid[]? excludedUserIds,
         string[]? channels,
         string source,
         NotificationRecipientEligibilityMode recipientEligibilityMode,
@@ -415,9 +384,10 @@ public class DefaultNotificationDistributor :
             1,
             CreateTags(notification, source, stage: "candidate"));
 
-        var candidates = excluded == null
-            ? resolvedCandidates.ToList()
-            : resolvedCandidates.Where(userId => !excluded.Contains(userId)).ToList();
+        var candidates = BoundedRecipientBatcher.RemoveExcludedRecipients(
+                resolvedCandidates.ToArray(),
+                excludedUserIds)
+            .ToList();
         var callerFilteredCount = resolvedCandidates.Count - candidates.Count;
         if (callerFilteredCount > 0)
         {

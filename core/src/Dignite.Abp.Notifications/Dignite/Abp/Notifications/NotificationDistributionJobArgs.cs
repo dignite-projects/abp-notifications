@@ -43,8 +43,22 @@ public class NotificationDistributionJobArgs
         NotificationInfo notification,
         Guid[]? userIds,
         Guid[]? excludedUserIds,
+        NotificationRecipientEligibilityMode recipientEligibilityMode)
+        : this(
+            notification,
+            userIds,
+            excludedUserIds,
+            recipientEligibilityMode,
+            notificationAlreadyPersisted: false)
+    {
+    }
+
+    public NotificationDistributionJobArgs(
+        NotificationInfo notification,
+        Guid[]? userIds,
+        Guid[]? excludedUserIds,
         NotificationRecipientEligibilityMode recipientEligibilityMode,
-        bool notificationAlreadyPersisted = false)
+        bool notificationAlreadyPersisted)
     {
         Notification = notification;
         UserIds = userIds;

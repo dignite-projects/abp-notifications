@@ -46,10 +46,11 @@ public class NotificationOptions
 
     internal void ValidateDistributionBatching()
     {
-        if (DirectDistributionUserThreshold < 0)
+        if (DirectDistributionUserThreshold < 0 ||
+            DirectDistributionUserThreshold > MaxDistributionBatchSize)
         {
             throw new InvalidOperationException(
-                $"{nameof(DirectDistributionUserThreshold)} cannot be negative.");
+                $"{nameof(DirectDistributionUserThreshold)} must be between 0 and {MaxDistributionBatchSize}.");
         }
 
         ValidateBatchSize(RecipientBatchSize, nameof(RecipientBatchSize));

@@ -68,10 +68,13 @@ changes.
   by returning safe placeholder data, while `INotificationDataSerializer.Deserialize` retains strict behavior.
 - Distribution can now publish multiple `NotificationDeliveryEto` work items for one notification. Built-in EF Core,
   MongoDB, and null stores use keyset pages and bounded writes; large explicit fan-outs prepare the notification once
-  and enqueue bounded recipient jobs. EF Core flushes and detaches each inbox group while retaining an ambient
-  transaction when one exists. Existing custom `INotificationStore` implementations remain compatible through the
-  legacy materializing/per-row path and should add the new capabilities before large fan-outs. No database migration
-  or delivery-ledger/retry policy is included.
+  and enqueue bounded recipient jobs. Explicit normalization uses bounded keyset windows rather than a
+  notification-wide duplicate set, and the inline threshold now shares the 10,000 hard maximum. EF Core flushes and
+  detaches each inbox group while retaining an ambient transaction when one exists. Existing custom
+  `INotificationStore` implementations remain compatible through the legacy materializing/per-row path and should
+  add the new capabilities before large fan-outs. The original four-parameter `NotificationDistributionJobArgs`
+  constructor remains available for binary compatibility. No database migration or delivery-ledger/retry policy is
+  included.
 - **Breaking behavior for payload authors.** Per-instance assignments to `NotificationData.SchemaVersion` no longer
   select the wire version. The converter now writes the current version declared by
   `[NotificationDataType("...", version)]`; move shape changes to that declaration and registered upcasters.

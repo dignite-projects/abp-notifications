@@ -161,12 +161,18 @@ public class DefaultNotificationDistributorTests
             eventBus,
             evaluator,
             options: options);
-        var userIds = Enumerable.Range(0, 513).Select(_ => Guid.NewGuid()).ToArray();
+        var distinctUserIds = Enumerable.Range(0, 512)
+            .Select(_ => Guid.NewGuid())
+            .Append(Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff"))
+            .ToArray();
+        var userIds = distinctUserIds
+            .Concat(new[] { distinctUserIds[0], distinctUserIds[255], distinctUserIds[^1] })
+            .ToArray();
 
         await distributor.DistributeAsync(
             new NotificationInfo { Id = Guid.NewGuid(), NotificationName = notificationName },
             userIds,
-            new[] { userIds[^1] });
+            new[] { distinctUserIds[^1] });
 
         // The final one-recipient candidate batch is removed by caller exclusion before policy evaluation.
         candidateBatchSizes.ShouldBe(new[] { 128, 128, 128, 128 });
@@ -359,6 +365,23 @@ public class DefaultNotificationDistributorTests
             options: options));
 
         exception.Message.ShouldContain(nameof(NotificationOptions.RecipientBatchSize));
+    }
+
+    [Fact]
+    public void Inline_threshold_cannot_create_an_unbounded_normalization_window()
+    {
+        var options = new NotificationOptions
+        {
+            DirectDistributionUserThreshold = NotificationOptions.MaxDistributionBatchSize + 1
+        };
+
+        var exception = Should.Throw<InvalidOperationException>(() => CreateDistributor(
+            Substitute.For<INotificationStore>(),
+            Substitute.For<INotificationDefinitionManager>(),
+            Substitute.For<IDistributedEventBus>(),
+            options: options));
+
+        exception.Message.ShouldContain(nameof(NotificationOptions.DirectDistributionUserThreshold));
     }
 
     [Fact]

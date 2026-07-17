@@ -155,7 +155,8 @@ the same bounded candidate → eligibility → persistence → delivery pipeline
   multi-insert only an already-bounded inbox group. Never use offset paging for a mutable subscription set.
   Matching definition-wide and exact entity subscriptions must not create duplicate inbox rows.
 - A background job must not carry the whole explicit fan-out. Prepare shared notification state once, then schedule
-  bounded explicit batches; preserve tenant and eligibility mode on every job.
+  bounded explicit batches; preserve tenant and eligibility mode on every job. Exact explicit deduplication must use
+  bounded keyset windows over the caller-owned array, never a notification-wide `HashSet` or normalized copy.
 - EF Core must flush and detach each completed inbox group so the change tracker does not become a hidden
   notification-wide collection. Atomic rollback requires an ambient transactional UoW.
 - Never put every recipient into one `NotificationDeliveryEto`; respect

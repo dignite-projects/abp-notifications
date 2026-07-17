@@ -494,10 +494,15 @@ observed between candidate, persistence, and delivery batches, not during a prov
 For explicit arrays above `DirectDistributionUserThreshold`, the built-in publisher removes exclusions, prepares
 the notification once, and enqueues `RecipientBatchSize` recipients per job through
 `IPreparedNotificationDistributor`; no job payload contains the complete fan-out. The existing public `Guid[]`
-boundary still means the caller supplies the explicit input in memory, and exact cross-batch duplicate removal
-keeps compact ID state while scheduling. Custom publishers/distributors keep their previous single-job behavior
-until they opt into the prepared-distribution capability. Subscription scans use an exclusive user-ID keyset
-cursor rather than offset paging, so inserts/deletes before the cursor cannot repeat or skip later recipients.
+boundary still means the caller supplies the explicit input in memory. The built-in path repeatedly scans that
+caller-owned array with an exclusive GUID cursor and retains at most one `RecipientBatchSize` sorted window, so
+exact cross-batch duplicate removal creates no notification-wide collection. This intentionally trades additional
+CPU scans and GUID-ordered large batches for a hard memory bound; recipient order is not a delivery contract. Prefer
+subscription-driven resolution for very large audiences already modeled as subscriptions.
+`DirectDistributionUserThreshold` is capped by the same 10,000 hard safeguard as batch sizes so inline normalization
+is also bounded. Custom publishers/distributors keep their previous single-job behavior until they opt into the
+prepared-distribution capability. Subscription scans use an exclusive user-ID keyset cursor rather than offset
+paging, so inserts/deletes before the cursor cannot repeat or skip later recipients.
 
 The EF Core package replaces the provider-neutral inbox writer with a flush-and-detach implementation. It saves
 only the configured write group and immediately detaches those `UserNotification` entities; a regression test

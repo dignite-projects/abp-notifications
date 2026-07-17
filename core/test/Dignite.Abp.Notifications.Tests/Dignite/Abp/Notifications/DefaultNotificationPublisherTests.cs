@@ -220,7 +220,7 @@ public class DefaultNotificationPublisherTests
             job.NotificationAlreadyPersisted &&
             job.ExcludedUserIds == null &&
             job.Notification.Id == jobs[0].Notification.Id);
-        jobs.SelectMany(job => job.UserIds!).ShouldBe(users.Take(5));
+        jobs.SelectMany(job => job.UserIds!).ShouldBe(users.Take(5), ignoreOrder: true);
     }
 
     [Fact]
@@ -623,6 +623,18 @@ public class DefaultNotificationPublisherTests
             cancellation.Token);
         await distributor.DidNotReceiveWithAnyArgs().DistributeAsync(default!, default, default);
         currentTenant.Id.ShouldBeNull();
+    }
+
+    [Fact]
+    public void Distribution_job_args_retains_the_four_parameter_constructor()
+    {
+        typeof(NotificationDistributionJobArgs).GetConstructor(new[]
+        {
+            typeof(NotificationInfo),
+            typeof(Guid[]),
+            typeof(Guid[]),
+            typeof(NotificationRecipientEligibilityMode)
+        }).ShouldNotBeNull();
     }
 
     [Fact]
