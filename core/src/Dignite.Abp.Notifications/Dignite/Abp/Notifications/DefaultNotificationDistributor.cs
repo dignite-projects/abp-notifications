@@ -24,13 +24,16 @@ public class DefaultNotificationDistributor : INotificationDistributor, ITransie
 
     protected ILogger<DefaultNotificationDistributor> Logger { get; }
 
+    protected INotificationDataTypeRegistry DataTypeRegistry { get; }
+
     public DefaultNotificationDistributor(
         INotificationStore store,
         INotificationDefinitionManager definitionManager,
         IDistributedEventBus distributedEventBus,
         INotificationRecipientEligibilityEvaluator recipientEligibilityEvaluator,
         ICurrentTenant currentTenant,
-        ILogger<DefaultNotificationDistributor> logger)
+        ILogger<DefaultNotificationDistributor> logger,
+        INotificationDataTypeRegistry dataTypeRegistry)
     {
         Store = store;
         DefinitionManager = definitionManager;
@@ -38,6 +41,7 @@ public class DefaultNotificationDistributor : INotificationDistributor, ITransie
         RecipientEligibilityEvaluator = recipientEligibilityEvaluator;
         CurrentTenant = currentTenant;
         Logger = logger;
+        DataTypeRegistry = dataTypeRegistry;
     }
 
     public virtual Task DistributeAsync(
@@ -76,6 +80,12 @@ public class DefaultNotificationDistributor : INotificationDistributor, ITransie
         {
             return;
         }
+
+        var definition = DefinitionManager.Get(notification.NotificationName);
+        NotificationDefinitionContractValidator.ValidateDistribution(
+            definition,
+            notification,
+            DataTypeRegistry);
 
         using (CurrentTenant.Change(notification.TenantId, null))
         {

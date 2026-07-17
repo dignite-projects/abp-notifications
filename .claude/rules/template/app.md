@@ -100,8 +100,10 @@ core publish/distribute logic has to work with `NullNotificationStore` too.
    `Abstractions` if it's shared across modules), tagged with a **stable, short discriminator** via
    `[NotificationDataType("...")]` — never rely on the CLR type name. See
    `.claude/rules/framework/common/notifications-invariants.md`.
-2. Register it through an `INotificationDefinitionProvider` (name, display text, optional
-   feature/permission gating, allowed channels).
+2. Register the payload in `NotificationDataOptions`, then define it through an
+   `INotificationDefinitionProvider` (name, display text, optional feature/permission gating, stable
+   `WithPayload<TData>()` / `WithEntityContract(...)` contracts, and allowed channels). Stable entity type
+   names are never CLR type names.
 3. Publish via `INotificationPublisher`. No entity/EF/Mongo changes needed — `Notification` /
    `UserNotification` are generic containers for any `NotificationData`.
 

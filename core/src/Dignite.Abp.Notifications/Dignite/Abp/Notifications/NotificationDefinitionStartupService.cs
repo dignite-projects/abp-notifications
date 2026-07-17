@@ -11,15 +11,22 @@ namespace Dignite.Abp.Notifications;
 internal sealed class NotificationDefinitionStartupService : IHostedLifecycleService
 {
     private readonly INotificationDefinitionManager _definitionManager;
+    private readonly INotificationDataTypeRegistry _dataTypeRegistry;
 
-    public NotificationDefinitionStartupService(INotificationDefinitionManager definitionManager)
+    public NotificationDefinitionStartupService(
+        INotificationDefinitionManager definitionManager,
+        INotificationDataTypeRegistry dataTypeRegistry)
     {
         _definitionManager = definitionManager;
+        _dataTypeRegistry = dataTypeRegistry;
     }
 
     public Task StartingAsync(CancellationToken cancellationToken)
     {
-        _definitionManager.GetAll();
+        foreach (var definition in _definitionManager.GetAll())
+        {
+            NotificationDefinitionContractValidator.ValidateRegistration(definition, _dataTypeRegistry);
+        }
         return Task.CompletedTask;
     }
 

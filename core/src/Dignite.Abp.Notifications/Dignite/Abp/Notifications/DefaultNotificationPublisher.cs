@@ -24,13 +24,19 @@ public class DefaultNotificationPublisher : INotificationPublisher, ITransientDe
 
     protected ICurrentTenant CurrentTenant { get; }
 
+    protected INotificationDefinitionManager DefinitionManager { get; }
+
+    protected INotificationDataTypeRegistry DataTypeRegistry { get; }
+
     public DefaultNotificationPublisher(
         IOptions<NotificationOptions> options,
         INotificationDistributor distributor,
         IBackgroundJobManager backgroundJobManager,
         IGuidGenerator guidGenerator,
         IClock clock,
-        ICurrentTenant currentTenant)
+        ICurrentTenant currentTenant,
+        INotificationDefinitionManager definitionManager,
+        INotificationDataTypeRegistry dataTypeRegistry)
     {
         Options = options.Value;
         Distributor = distributor;
@@ -38,6 +44,8 @@ public class DefaultNotificationPublisher : INotificationPublisher, ITransientDe
         GuidGenerator = guidGenerator;
         Clock = clock;
         CurrentTenant = currentTenant;
+        DefinitionManager = definitionManager;
+        DataTypeRegistry = dataTypeRegistry;
     }
 
     public virtual Task PublishAsync(
@@ -92,6 +100,13 @@ public class DefaultNotificationPublisher : INotificationPublisher, ITransientDe
         {
             return;
         }
+
+        var definition = DefinitionManager.Get(notificationName);
+        NotificationDefinitionContractValidator.ValidatePublish(
+            definition,
+            data,
+            entityIdentifier,
+            DataTypeRegistry);
 
         var notification = new NotificationInfo
         {

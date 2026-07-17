@@ -10,11 +10,12 @@ namespace Dignite.Abp.Notifications;
 public interface INotificationPublisher
 {
     /// <summary>
-    /// Publishes a notification to subscribers or to an explicit set of users.
+    /// Publishes a notification to subscribers or to an explicit set of users. Opted-in payload and entity
+    /// definition contracts are validated before background enqueue, persistence, or event publication.
     /// </summary>
     /// <param name="notificationName">The registered notification name.</param>
-    /// <param name="data">The optional notification payload.</param>
-    /// <param name="entityIdentifier">The optional stable identifier of the related entity.</param>
+    /// <param name="data">The payload, optional unless the definition declares a payload discriminator.</param>
+    /// <param name="entityIdentifier">The stable related-entity identity, subject to the definition's entity contract.</param>
     /// <param name="severity">The notification severity.</param>
     /// <param name="userIds">
     /// The recipients. <see langword="null"/> resolves recipients from subscriptions; an empty array is an
@@ -33,7 +34,8 @@ public interface INotificationPublisher
 
     /// <summary>
     /// Publishes a trusted-system notification to explicit users without evaluating the notification definition's
-    /// feature or permission requirements. The bypass is logged and cannot be used for subscription resolution.
+    /// feature or permission requirements. The bypass is logged and cannot be used for subscription resolution;
+    /// payload and entity definition contracts are still validated before any side effect.
     /// </summary>
     /// <param name="notificationName">The registered notification name.</param>
     /// <param name="userIds">The explicit recipients. An empty array is an intentional no-op.</param>

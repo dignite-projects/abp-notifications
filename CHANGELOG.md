@@ -18,6 +18,8 @@ changes.
 - Added a replaceable, batch-shaped `INotificationRecipientEligibilityEvaluator` shared by explicit and
   subscription-derived recipients, plus a narrowly named and warning-logged trusted-system bypass that is
   restricted to explicit recipients.
+- Added opt-in notification-definition contracts for stable payload discriminators and forbidden/optional/required
+  entity identity, including optional stable entity type constraints and startup validation of referenced payloads.
 
 ### Changed
 
@@ -45,6 +47,11 @@ changes.
 - **Breaking behavior for direct distributor callers.** `NotificationInfo.TenantId` is now authoritative for
   subscription lookup, eligibility, persistence, and event/outbox publication. `null` always means host and no
   longer falls back to an ambient tenant, so tenant-side callers of `INotificationDistributor` must set it explicitly.
+- **Breaking for manual construction.** `DefaultNotificationPublisher` now requires
+  `INotificationDefinitionManager` and `INotificationDataTypeRegistry`, and `DefaultNotificationDistributor` also
+  requires `INotificationDataTypeRegistry`, so both the pre-enqueue and persistence/event boundaries validate
+  definition contracts. Normal dependency-injection resolution requires no changes. Definitions without
+  payload/entity contracts retain their previous permissive behavior and can migrate independently.
 
 ### Fixed
 

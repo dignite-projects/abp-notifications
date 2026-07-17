@@ -5,6 +5,7 @@ using Dignite.Abp.Notifications;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using Shouldly;
+using Volo.Abp;
 using Volo.Abp.Domain.Repositories;
 using Volo.Abp.EventBus.Distributed;
 using Volo.Abp.Modularity;
@@ -45,7 +46,8 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
             eventBus,
             GetRequiredService<INotificationRecipientEligibilityEvaluator>(),
             GetRequiredService<ICurrentTenant>(),
-            GetRequiredService<ILogger<DefaultNotificationDistributor>>());
+            GetRequiredService<ILogger<DefaultNotificationDistributor>>(),
+            GetRequiredService<INotificationDataTypeRegistry>());
     }
 
     private Task DistributeAsync(
@@ -266,5 +268,27 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
         published!.TenantId.ShouldBe(notificationTenantId);
         published.UserIds.ShouldBe(new[] { notificationTenantSubscriber });
         currentTenant.Id.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Direct_distribution_rejects_a_mismatched_payload_before_store_or_event_side_effects()
+    {
+        var notificationId = Guid.NewGuid();
+        var notification = NewNotification(notificationId);
+        notification.Data = new LocalizableMessageNotificationData("Test", "WrongPayload");
+        var eventBus = Substitute.For<IDistributedEventBus>();
+
+        await Should.ThrowAsync<AbpException>(() => DistributeAsync(
+            background: false,
+            CreateDistributor(eventBus),
+            notification,
+            new[] { Guid.NewGuid() }));
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            (await GetRequiredService<IRepository<Notification, Guid>>()
+                .FindAsync(notificationId)).ShouldBeNull();
+        });
+        await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<NotificationDeliveryEto>());
     }
 }

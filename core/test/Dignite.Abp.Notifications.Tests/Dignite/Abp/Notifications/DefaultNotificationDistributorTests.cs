@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 using Shouldly;
 using Volo.Abp;
@@ -318,6 +319,71 @@ public class DefaultNotificationDistributorTests
             Equals(call.GetArguments().FirstOrDefault(), LogLevel.Warning)).ShouldBeTrue();
     }
 
+    [Fact]
+    public async Task Direct_distribution_rejects_definition_contract_mismatch_before_side_effects()
+    {
+        var store = Substitute.For<INotificationStore>();
+        var definitionManager = Substitute.For<INotificationDefinitionManager>();
+        var eventBus = Substitute.For<IDistributedEventBus>();
+        definitionManager.Get("typed").Returns(
+            new NotificationDefinition("typed", new FixedLocalizableString("Typed"))
+                .WithPayload<MessageNotificationData>()
+                .UseChannels("Test"));
+        var dataOptions = new NotificationDataOptions();
+        dataOptions.Add<MessageNotificationData>();
+        dataOptions.Add<LocalizableMessageNotificationData>();
+        var distributor = CreateDistributor(
+            store,
+            definitionManager,
+            eventBus,
+            dataTypeRegistry: new NotificationDataTypeRegistry(Options.Create(dataOptions)));
+
+        var exception = await Should.ThrowAsync<AbpException>(() => distributor.DistributeAsync(
+            new NotificationInfo
+            {
+                Id = Guid.NewGuid(),
+                NotificationName = "typed",
+                Data = new LocalizableMessageNotificationData("Test", "Wrong"),
+                CreationTime = DateTime.UtcNow
+            },
+            new[] { Guid.NewGuid() }));
+
+        exception.Message.ShouldContain("Dignite.Message");
+        exception.Message.ShouldContain("Dignite.LocalizableMessage");
+        await store.DidNotReceiveWithAnyArgs().GetSubscriptionsAsync(default!, default, default);
+        await store.DidNotReceiveWithAnyArgs().InsertNotificationAsync(default!);
+        await store.DidNotReceiveWithAnyArgs().InsertUserNotificationAsync(default!);
+        await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<NotificationDeliveryEto>());
+    }
+
+    [Fact]
+    public async Task Direct_distribution_rejects_partial_raw_entity_identity_for_an_opted_in_contract()
+    {
+        var store = Substitute.For<INotificationStore>();
+        var definitionManager = Substitute.For<INotificationDefinitionManager>();
+        var eventBus = Substitute.For<IDistributedEventBus>();
+        definitionManager.Get("entity-aware").Returns(
+            new NotificationDefinition("entity-aware", new FixedLocalizableString("Entity aware"))
+                .WithEntityContract(NotificationEntityRequirement.Optional, "Demo.Order")
+                .UseChannels("Test"));
+        var distributor = CreateDistributor(store, definitionManager, eventBus);
+
+        var exception = await Should.ThrowAsync<AbpException>(() => distributor.DistributeAsync(
+            new NotificationInfo
+            {
+                Id = Guid.NewGuid(),
+                NotificationName = "entity-aware",
+                EntityTypeName = "Demo.Order",
+                EntityId = null,
+                CreationTime = DateTime.UtcNow
+            },
+            new[] { Guid.NewGuid() }));
+
+        exception.Message.ShouldContain("incomplete entity identity");
+        await store.DidNotReceiveWithAnyArgs().InsertNotificationAsync(default!);
+        await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<NotificationDeliveryEto>());
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -381,7 +447,8 @@ public class DefaultNotificationDistributorTests
         IDistributedEventBus eventBus,
         INotificationRecipientEligibilityEvaluator? evaluator = null,
         ICurrentTenant? currentTenant = null,
-        ILogger<DefaultNotificationDistributor>? logger = null)
+        ILogger<DefaultNotificationDistributor>? logger = null,
+        INotificationDataTypeRegistry? dataTypeRegistry = null)
     {
         currentTenant ??= new TestCurrentTenant();
         evaluator ??= new DefaultNotificationRecipientEligibilityEvaluator(
@@ -395,7 +462,9 @@ public class DefaultNotificationDistributorTests
             eventBus,
             evaluator,
             currentTenant,
-            logger ?? NullLogger<DefaultNotificationDistributor>.Instance);
+            logger ?? NullLogger<DefaultNotificationDistributor>.Instance,
+            dataTypeRegistry ?? new NotificationDataTypeRegistry(
+                Options.Create(new NotificationDataOptions())));
     }
 
     private static NotificationDefinition DefinitionWithChannels()
