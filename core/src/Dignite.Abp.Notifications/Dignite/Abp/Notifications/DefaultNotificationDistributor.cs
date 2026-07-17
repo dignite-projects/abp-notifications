@@ -240,7 +240,8 @@ public class DefaultNotificationDistributor :
                 {
                     foreach (var batch in BoundedRecipientBatcher.GetDistinctBatches(
                                  userIds,
-                                 Options.RecipientBatchSize))
+                                 Options.RecipientBatchSize,
+                                 cancellationToken))
                     {
                         cancellationToken.ThrowIfCancellationRequested();
                         await ProcessCandidateBatchAsync(

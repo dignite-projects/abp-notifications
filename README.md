@@ -489,7 +489,8 @@ through its original materializing path and emits a warning; migrate those custo
 and evaluator contracts to obtain bounded guarantees.
 Likewise, the default distributor implements the additive `ICancellableNotificationDistributor`; the background
 job passes the host shutdown token, and manual job/distributor runners can pass their own token. Cancellation is
-observed between candidate, persistence, and delivery batches, not during a provider operation already in flight.
+observed while scanning explicit normalization windows and between candidate, persistence, and delivery batches,
+not during a provider operation already in flight.
 
 For explicit arrays above `DirectDistributionUserThreshold`, the built-in publisher removes exclusions, prepares
 the notification once, and enqueues `RecipientBatchSize` recipients per job through

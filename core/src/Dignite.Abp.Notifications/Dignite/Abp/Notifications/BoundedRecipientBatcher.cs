@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 
 namespace Dignite.Abp.Notifications;
 
@@ -13,12 +14,14 @@ internal static class BoundedRecipientBatcher
     public static bool TryNormalizeWithinLimit(
         Guid[] userIds,
         int maxResultCount,
-        out Guid[] normalizedUserIds)
+        out Guid[] normalizedUserIds,
+        CancellationToken cancellationToken = default)
     {
         var seen = new HashSet<Guid>();
         var ordered = new List<Guid>(Math.Min(userIds.Length, maxResultCount));
         foreach (var userId in userIds)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (!seen.Add(userId))
             {
                 continue;
@@ -39,9 +42,14 @@ internal static class BoundedRecipientBatcher
 
     public static IEnumerable<Guid[]> GetDistinctBatches(
         Guid[] userIds,
-        int batchSize)
+        int batchSize,
+        CancellationToken cancellationToken = default)
     {
-        if (TryNormalizeWithinLimit(userIds, batchSize, out var singleBatch))
+        if (TryNormalizeWithinLimit(
+                userIds,
+                batchSize,
+                out var singleBatch,
+                cancellationToken))
         {
             if (singleBatch.Length > 0)
             {
@@ -54,9 +62,11 @@ internal static class BoundedRecipientBatcher
         Guid? afterUserId = null;
         while (true)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var nextBatch = new SortedSet<Guid>();
             foreach (var userId in userIds)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 if (afterUserId.HasValue && userId.CompareTo(afterUserId.Value) <= 0)
                 {
                     continue;

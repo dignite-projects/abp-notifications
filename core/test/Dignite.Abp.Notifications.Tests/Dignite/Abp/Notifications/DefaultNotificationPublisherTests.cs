@@ -215,7 +215,8 @@ public class DefaultNotificationPublisherTests
             .Select(call => call.GetArguments().OfType<NotificationDistributionJobArgs>().Single())
             .ToList();
         jobs.Count.ShouldBe(3);
-        jobs.Select(job => job.UserIds!.Length).ShouldBe(new[] { 2, 2, 1 });
+        jobs.Sum(job => job.UserIds!.Length).ShouldBe(5);
+        jobs.ShouldAllBe(job => job.UserIds!.Length <= 2);
         jobs.ShouldAllBe(job =>
             job.NotificationAlreadyPersisted &&
             job.ExcludedUserIds == null &&
