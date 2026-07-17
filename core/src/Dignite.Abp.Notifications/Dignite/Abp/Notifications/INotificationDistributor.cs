@@ -23,7 +23,7 @@ public interface INotificationDistributor
 
     /// <summary>
     /// Distributes to explicit trusted-system recipients without definition eligibility checks. The bypass is
-    /// observable through the eligibility evaluator and cannot resolve recipients from subscriptions.
+    /// warning-logged by the distributor and cannot resolve recipients from subscriptions.
     /// </summary>
     Task DistributeToExplicitRecipientsWithoutEligibilityChecksAsync(
         NotificationInfo notification,

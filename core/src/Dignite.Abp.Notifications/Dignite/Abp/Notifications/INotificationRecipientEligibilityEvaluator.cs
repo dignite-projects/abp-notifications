@@ -6,7 +6,9 @@ namespace Dignite.Abp.Notifications;
 
 /// <summary>
 /// Applies notification-definition eligibility policy to a batch of candidate recipients. Implementations may
-/// replace the default per-user checks with a more efficient batched permission/feature evaluation.
+/// replace the default per-user checks with a more efficient batched permission/feature evaluation. Implementations
+/// must preserve the supplied tenant/host boundary and provide suitable diagnostics for excluded recipients; the
+/// distributor audits trusted-system bypass use independently of this replaceable policy.
 /// </summary>
 public interface INotificationRecipientEligibilityEvaluator
 {

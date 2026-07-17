@@ -38,6 +38,10 @@ changes.
   `DefaultNotificationDistributor` subclasses overriding its three-argument `GetTargetUserIdsAsync` remain
   active for candidate selection, after which the shared eligibility policy is applied; replace
   `INotificationRecipientEligibilityEvaluator` to customize eligibility for both recipient sources.
+- **Breaking for manual construction.** The three-argument `DefaultNotificationDistributor` constructor was
+  removed because it could neither establish the notification's tenant/host context nor guarantee bypass audit
+  logging. Manual callers must now supply `INotificationRecipientEligibilityEvaluator`, `ICurrentTenant`, and
+  `ILogger<DefaultNotificationDistributor>`; normal dependency-injection resolution requires no changes.
 
 ### Fixed
 

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using Shouldly;
@@ -242,7 +243,16 @@ public class DefaultNotificationPublisherTests
                 });
 
             return new NotificationDistributionJob(
-                new DefaultNotificationDistributor(Store, definitionManager, EventBus),
+                new DefaultNotificationDistributor(
+                    Store,
+                    definitionManager,
+                    EventBus,
+                    new DefaultNotificationRecipientEligibilityEvaluator(
+                        definitionManager,
+                        CurrentTenant,
+                        NullLogger<DefaultNotificationRecipientEligibilityEvaluator>.Instance),
+                    CurrentTenant,
+                    NullLogger<DefaultNotificationDistributor>.Instance),
                 CurrentTenant);
         }
 

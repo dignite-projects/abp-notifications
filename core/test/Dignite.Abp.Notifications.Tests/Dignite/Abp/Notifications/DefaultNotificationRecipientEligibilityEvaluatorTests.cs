@@ -85,14 +85,13 @@ public class DefaultNotificationRecipientEligibilityEvaluatorTests
     }
 
     [Fact]
-    public async Task Bypass_is_observable_and_skips_definition_checks()
+    public async Task Bypass_skips_definition_checks()
     {
         var definitionManager = Substitute.For<INotificationDefinitionManager>();
-        var logger = Substitute.For<ILogger<DefaultNotificationRecipientEligibilityEvaluator>>();
         var evaluator = new DefaultNotificationRecipientEligibilityEvaluator(
             definitionManager,
             new TestCurrentTenant(),
-            logger);
+            Substitute.For<ILogger<DefaultNotificationRecipientEligibilityEvaluator>>());
         var userIds = new[] { Guid.NewGuid(), Guid.NewGuid() };
 
         var result = await evaluator.EvaluateAsync(
@@ -104,15 +103,15 @@ public class DefaultNotificationRecipientEligibilityEvaluatorTests
         result.EligibleUserIds.ShouldBe(userIds);
         result.ExcludedUserIds.ShouldBeEmpty();
         await definitionManager.DidNotReceiveWithAnyArgs().IsAvailableAsync(default!, default);
-        logger.ReceivedCalls().Any(call =>
-            Equals(call.GetArguments().FirstOrDefault(), LogLevel.Warning)).ShouldBeTrue();
     }
 
     [Fact]
     public async Task Unknown_policy_mode_is_rejected()
     {
         var evaluator = new DefaultNotificationRecipientEligibilityEvaluator(
-            Substitute.For<INotificationDefinitionManager>());
+            Substitute.For<INotificationDefinitionManager>(),
+            new TestCurrentTenant(),
+            Substitute.For<ILogger<DefaultNotificationRecipientEligibilityEvaluator>>());
 
         await Should.ThrowAsync<ArgumentOutOfRangeException>(() => evaluator.EvaluateAsync(
             "test",

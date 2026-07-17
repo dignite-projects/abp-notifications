@@ -2,9 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using Volo.Abp;
 using Volo.Abp.DependencyInjection;
 using Volo.Abp.EventBus.Distributed;
+using Volo.Abp.MultiTenancy;
 
 namespace Dignite.Abp.Notifications;
 
@@ -18,31 +20,24 @@ public class DefaultNotificationDistributor : INotificationDistributor, ITransie
 
     protected INotificationRecipientEligibilityEvaluator RecipientEligibilityEvaluator { get; }
 
-    /// <summary>
-    /// Preserves manual construction compatibility. DI uses the fuller constructor with the replaceable evaluator.
-    /// </summary>
-    public DefaultNotificationDistributor(
-        INotificationStore store,
-        INotificationDefinitionManager definitionManager,
-        IDistributedEventBus distributedEventBus)
-        : this(
-            store,
-            definitionManager,
-            distributedEventBus,
-            new DefaultNotificationRecipientEligibilityEvaluator(definitionManager))
-    {
-    }
+    protected ICurrentTenant CurrentTenant { get; }
+
+    protected ILogger<DefaultNotificationDistributor> Logger { get; }
 
     public DefaultNotificationDistributor(
         INotificationStore store,
         INotificationDefinitionManager definitionManager,
         IDistributedEventBus distributedEventBus,
-        INotificationRecipientEligibilityEvaluator recipientEligibilityEvaluator)
+        INotificationRecipientEligibilityEvaluator recipientEligibilityEvaluator,
+        ICurrentTenant currentTenant,
+        ILogger<DefaultNotificationDistributor> logger)
     {
         Store = store;
         DefinitionManager = definitionManager;
         DistributedEventBus = distributedEventBus;
         RecipientEligibilityEvaluator = recipientEligibilityEvaluator;
+        CurrentTenant = currentTenant;
+        Logger = logger;
     }
 
     public virtual Task DistributeAsync(
@@ -82,44 +77,65 @@ public class DefaultNotificationDistributor : INotificationDistributor, ITransie
             return;
         }
 
-        var channels = ResolveExternalChannelsOrNull(notification.NotificationName);
-        if (recipientEligibilityMode == NotificationRecipientEligibilityMode.BypassDefinitionRequirements &&
-            userIds == null)
+        using (CurrentTenant.Change(notification.TenantId, null))
         {
-            throw new ArgumentException(
-                "Definition requirements can only be bypassed for explicit recipients.",
-                nameof(userIds));
-        }
+            if (recipientEligibilityMode == NotificationRecipientEligibilityMode.BypassDefinitionRequirements)
+            {
+                if (userIds == null)
+                {
+                    throw new ArgumentException(
+                        "Definition requirements can only be bypassed for explicit recipients.",
+                        nameof(userIds));
+                }
 
-        var candidateUserIds = (await GetTargetUserIdsAsync(notification, userIds, excludedUserIds))
-            .Distinct()
-            .ToList();
-        if (candidateUserIds.Count == 0)
-        {
-            return;
-        }
+                // Audit outside the replaceable evaluator so a custom policy cannot make a trusted-system bypass
+                // invisible. An explicitly empty list returned before entering this scope and remains a true no-op.
+                Logger.LogWarning(
+                    "Bypassing notification definition requirements for {RecipientCount} explicit recipients of " +
+                    "'{NotificationName}' in tenant {TenantId}.",
+                    userIds.Distinct().Count(),
+                    notification.NotificationName,
+                    notification.TenantId);
+            }
+            else if (recipientEligibilityMode != NotificationRecipientEligibilityMode.EnforceDefinitionRequirements)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(recipientEligibilityMode),
+                    recipientEligibilityMode,
+                    "Unknown recipient eligibility mode.");
+            }
 
-        // Eligibility deliberately runs after the established candidate-selection extension point so custom
-        // distributor subclasses cannot accidentally restore the historical explicit-recipient bypass.
-        var evaluation = await RecipientEligibilityEvaluator.EvaluateAsync(
-            notification.NotificationName,
-            candidateUserIds,
-            notification.TenantId,
-            recipientEligibilityMode);
-        var targetUserIds = evaluation.EligibleUserIds.Distinct().ToList();
-        if (targetUserIds.Count == 0)
-        {
-            return;
-        }
+            var channels = ResolveExternalChannelsOrNull(notification.NotificationName);
+            var candidateUserIds = (await GetTargetUserIdsAsync(notification, userIds, excludedUserIds))
+                .Distinct()
+                .ToList();
+            if (candidateUserIds.Count == 0)
+            {
+                return;
+            }
 
-        // These two commit together only when the host enables ABP's transactional outbox — with NotificationCenter
-        // on EF Core that is Configure<AbpDistributedEventBusOptions>(o => o.UseNotificationCenterEfCoreOutbox()).
-        // Without it, and always on the MongoDB provider (which wires no outbox), a crash between the two keeps the
-        // rows and drops the event. Notification_Outbox_Tests covers the case where the guarantee does hold.
-        await SaveUserNotificationsAsync(notification, targetUserIds);
-        if (channels != null)
-        {
-            await PublishNotificationDeliveryAsync(notification, targetUserIds, channels);
+            // Eligibility deliberately runs after the established candidate-selection extension point so custom
+            // distributor subclasses cannot accidentally restore the historical explicit-recipient bypass.
+            var evaluation = await RecipientEligibilityEvaluator.EvaluateAsync(
+                notification.NotificationName,
+                candidateUserIds,
+                notification.TenantId,
+                recipientEligibilityMode);
+            var targetUserIds = evaluation.EligibleUserIds.Distinct().ToList();
+            if (targetUserIds.Count == 0)
+            {
+                return;
+            }
+
+            // These two commit together only when the host enables ABP's transactional outbox — with NotificationCenter
+            // on EF Core that is Configure<AbpDistributedEventBusOptions>(o => o.UseNotificationCenterEfCoreOutbox()).
+            // Without it, and always on the MongoDB provider (which wires no outbox), a crash between the two keeps the
+            // rows and drops the event. Notification_Outbox_Tests covers the case where the guarantee does hold.
+            await SaveUserNotificationsAsync(notification, targetUserIds);
+            if (channels != null)
+            {
+                await PublishNotificationDeliveryAsync(notification, targetUserIds, channels);
+            }
         }
     }
 

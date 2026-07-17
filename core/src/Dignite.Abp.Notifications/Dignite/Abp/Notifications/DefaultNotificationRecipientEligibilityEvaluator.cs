@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using Volo.Abp.DependencyInjection;
 using Volo.Abp.MultiTenancy;
 
@@ -11,7 +10,8 @@ namespace Dignite.Abp.Notifications;
 
 /// <summary>
 /// Default recipient policy: definition requirements govern both subscription and delivery eligibility.
-/// Denied candidates are filtered, while the narrowly named explicit-recipient bypass is logged.
+/// Denied candidates are filtered with diagnostics. The distributor independently audits the narrowly named
+/// explicit-recipient bypass so replacing this policy cannot suppress that warning.
 /// </summary>
 public class DefaultNotificationRecipientEligibilityEvaluator :
     INotificationRecipientEligibilityEvaluator,
@@ -19,25 +19,13 @@ public class DefaultNotificationRecipientEligibilityEvaluator :
 {
     protected INotificationDefinitionManager DefinitionManager { get; }
 
-    protected ICurrentTenant? CurrentTenant { get; }
+    protected ICurrentTenant CurrentTenant { get; }
 
     protected ILogger<DefaultNotificationRecipientEligibilityEvaluator> Logger { get; }
 
-    /// <summary>
-    /// Preserves manual construction compatibility. DI uses the fuller constructor so tenant switching and logs
-    /// are active; manual callers still enforce requirements in their ambient tenant.
-    /// </summary>
-    public DefaultNotificationRecipientEligibilityEvaluator(INotificationDefinitionManager definitionManager)
-        : this(
-            definitionManager,
-            null,
-            NullLogger<DefaultNotificationRecipientEligibilityEvaluator>.Instance)
-    {
-    }
-
     public DefaultNotificationRecipientEligibilityEvaluator(
         INotificationDefinitionManager definitionManager,
-        ICurrentTenant? currentTenant,
+        ICurrentTenant currentTenant,
         ILogger<DefaultNotificationRecipientEligibilityEvaluator> logger)
     {
         DefinitionManager = definitionManager;
@@ -56,13 +44,6 @@ public class DefaultNotificationRecipientEligibilityEvaluator :
         var candidates = candidateUserIds.Distinct().ToList();
         if (mode == NotificationRecipientEligibilityMode.BypassDefinitionRequirements)
         {
-            Logger.LogWarning(
-                "Bypassing notification definition requirements for {RecipientCount} explicit recipients of " +
-                "'{NotificationName}' in tenant {TenantId}.",
-                candidates.Count,
-                notificationName,
-                tenantId);
-
             return new NotificationRecipientEligibilityResult(candidates, Array.Empty<Guid>());
         }
 
@@ -71,7 +52,7 @@ public class DefaultNotificationRecipientEligibilityEvaluator :
             throw new ArgumentOutOfRangeException(nameof(mode), mode, "Unknown recipient eligibility mode.");
         }
 
-        using var tenantChange = CurrentTenant?.Change(tenantId, null);
+        using var tenantChange = CurrentTenant.Change(tenantId, null);
         var eligible = new List<Guid>(candidates.Count);
         var excluded = new List<Guid>();
         foreach (var userId in candidates)
