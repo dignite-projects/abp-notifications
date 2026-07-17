@@ -12,6 +12,8 @@ using Shouldly;
 using Volo.Abp.Application.Dtos;
 using Volo.Abp.Data;
 using Volo.Abp.Domain.Repositories;
+using Volo.Abp.Guids;
+using Volo.Abp.Linq;
 using Volo.Abp.Modularity;
 using Volo.Abp.MultiTenancy;
 using Volo.Abp.Timing;
@@ -110,13 +112,44 @@ public abstract class NotificationDeliveryStore_Tests<TStartupModule> : Notifica
     {
         var now = DateTime.UtcNow;
         var work = CreateWork(Guid.NewGuid(), Guid.NewGuid(), "FirstEmail", tenantId: null, now);
+        using var beforeInsert = new Barrier(participantCount: 2);
 
         var claims = await Task.WhenAll(
-            MaterializeAndClaimInScopeAsync(work, now),
-            MaterializeAndClaimInScopeAsync(work, now));
+            Task.Run(() => MaterializeAndClaimInScopeAsync(work, now, beforeInsert)),
+            Task.Run(() => MaterializeAndClaimInScopeAsync(work, now, beforeInsert)));
 
         claims.Count(claim => claim != null).ShouldBe(1);
         (await GetRecordsAsync(work.TenantId, work.NotificationId)).Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Existing_claim_provider_failure_is_not_misclassified_as_a_lost_initial_insert()
+    {
+        var now = DateTime.UtcNow;
+        var work = CreateWork(Guid.NewGuid(), Guid.NewGuid(), "FailingEmail", tenantId: null, now);
+        await WithTenantUnitOfWorkAsync(work.TenantId, () =>
+            GetRequiredService<INotificationDeliveryStore>().EnsureCreatedAsync(work));
+
+        using var scope = GetRequiredService<IServiceScopeFactory>().CreateScope();
+        var serviceProvider = scope.ServiceProvider;
+        var store = new FailingClaimUpdateNotificationDeliveryStore(
+            serviceProvider.GetRequiredService<IRepository<NotificationDeliveryRecord, Guid>>(),
+            serviceProvider.GetRequiredService<INotificationDataSerializer>(),
+            serviceProvider.GetRequiredService<IGuidGenerator>(),
+            serviceProvider.GetRequiredService<IAsyncQueryableExecuter>(),
+            serviceProvider.GetRequiredService<IDataFilter>(),
+            serviceProvider.GetRequiredService<IUnitOfWorkManager>());
+
+        var exception = await Should.ThrowAsync<InvalidOperationException>(() =>
+            store.EnsureCreatedAndTryClaimAsync(
+                work,
+                now,
+                TimeSpan.FromMinutes(2),
+                3));
+
+        exception.Message.ShouldBe("simulated-claim-provider-failure");
+        (await GetRecordsAsync(work.TenantId, work.NotificationId)).Single().State
+            .ShouldBe(NotificationDeliveryState.Pending);
     }
 
     [Fact]
@@ -444,15 +477,26 @@ public abstract class NotificationDeliveryStore_Tests<TStartupModule> : Notifica
 
     private async Task<NotificationDeliveryClaim?> MaterializeAndClaimInScopeAsync(
         NotificationDeliveryWorkEto work,
-        DateTime now)
+        DateTime now,
+        Barrier? beforeInsert = null)
     {
         using var scope = GetRequiredService<IServiceScopeFactory>().CreateScope();
-        return await scope.ServiceProvider.GetRequiredService<INotificationDeliveryStore>()
-            .EnsureCreatedAndTryClaimAsync(
-                work,
-                now,
-                TimeSpan.FromMinutes(2),
-                3);
+        var serviceProvider = scope.ServiceProvider;
+        var store = beforeInsert == null
+            ? serviceProvider.GetRequiredService<INotificationDeliveryStore>()
+            : new BarrierNotificationDeliveryStore(
+                serviceProvider.GetRequiredService<IRepository<NotificationDeliveryRecord, Guid>>(),
+                serviceProvider.GetRequiredService<INotificationDataSerializer>(),
+                serviceProvider.GetRequiredService<IGuidGenerator>(),
+                serviceProvider.GetRequiredService<IAsyncQueryableExecuter>(),
+                serviceProvider.GetRequiredService<IDataFilter>(),
+                serviceProvider.GetRequiredService<IUnitOfWorkManager>(),
+                beforeInsert);
+        return await store.EnsureCreatedAndTryClaimAsync(
+            work,
+            now,
+            TimeSpan.FromMinutes(2),
+            3);
     }
 
     private async Task<System.Collections.Generic.List<NotificationDeliveryRecord>> GetRecordsAsync(
@@ -485,6 +529,67 @@ public abstract class NotificationDeliveryStore_Tests<TStartupModule> : Notifica
         {
             Interlocked.Increment(ref _invocationCount);
             return Task.FromResult(NotificationDeliveryResult.Succeeded());
+        }
+    }
+
+    private sealed class BarrierNotificationDeliveryStore : NotificationDeliveryStore
+    {
+        private readonly Barrier _beforeInsert;
+
+        public BarrierNotificationDeliveryStore(
+            IRepository<NotificationDeliveryRecord, Guid> deliveryRepository,
+            INotificationDataSerializer dataSerializer,
+            IGuidGenerator guidGenerator,
+            IAsyncQueryableExecuter asyncExecuter,
+            IDataFilter dataFilter,
+            IUnitOfWorkManager unitOfWorkManager,
+            Barrier beforeInsert)
+            : base(
+                deliveryRepository,
+                dataSerializer,
+                guidGenerator,
+                asyncExecuter,
+                dataFilter,
+                unitOfWorkManager)
+        {
+            _beforeInsert = beforeInsert;
+        }
+
+        protected override NotificationDeliveryRecord CreateRecord(NotificationDeliveryWorkEto workItem)
+        {
+            if (!_beforeInsert.SignalAndWait(TimeSpan.FromSeconds(15)))
+            {
+                throw new TimeoutException("Both first-delivery workers did not reach the insert barrier.");
+            }
+
+            return base.CreateRecord(workItem);
+        }
+    }
+
+    private sealed class FailingClaimUpdateNotificationDeliveryStore : NotificationDeliveryStore
+    {
+        public FailingClaimUpdateNotificationDeliveryStore(
+            IRepository<NotificationDeliveryRecord, Guid> deliveryRepository,
+            INotificationDataSerializer dataSerializer,
+            IGuidGenerator guidGenerator,
+            IAsyncQueryableExecuter asyncExecuter,
+            IDataFilter dataFilter,
+            IUnitOfWorkManager unitOfWorkManager)
+            : base(
+                deliveryRepository,
+                dataSerializer,
+                guidGenerator,
+                asyncExecuter,
+                dataFilter,
+                unitOfWorkManager)
+        {
+        }
+
+        protected override Task<NotificationDeliveryRecord> UpdateClaimedDeliveryAsync(
+            NotificationDeliveryRecord delivery,
+            System.Threading.CancellationToken cancellationToken)
+        {
+            throw new InvalidOperationException("simulated-claim-provider-failure");
         }
     }
 

@@ -110,6 +110,7 @@ public class NotificationDeliveryStore :
         int maxAttempts,
         CancellationToken cancellationToken)
     {
+        var initialInsertInProgress = false;
         try
         {
             using var unitOfWork = UnitOfWorkManager.Begin(requiresNew: true, isTransactional: false);
@@ -130,10 +131,12 @@ public class NotificationDeliveryStore :
                     // so it never depends on visibility of a Pending row in the ambient event-inbox transaction.
                     entity = CreateRecord(workItem);
                     var initialClaim = entity.Claim(GuidGenerator.Create(), now, leaseDuration);
+                    initialInsertInProgress = true;
                     await DeliveryRepository.InsertAsync(
                         entity,
                         autoSave: true,
                         cancellationToken: cancellationToken);
+                    initialInsertInProgress = false;
                     await unitOfWork.CompleteAsync(cancellationToken);
                     return initialClaim;
                 }
@@ -152,13 +155,13 @@ public class NotificationDeliveryStore :
                 if (entity.AttemptCount >= maxAttempts)
                 {
                     entity.MarkAbandonedDeadLetter(now);
-                    await DeliveryRepository.UpdateAsync(entity, autoSave: true, cancellationToken: cancellationToken);
+                    await UpdateClaimedDeliveryAsync(entity, cancellationToken);
                     await unitOfWork.CompleteAsync(cancellationToken);
                     return null;
                 }
 
                 var claim = entity.Claim(GuidGenerator.Create(), now, leaseDuration);
-                await DeliveryRepository.UpdateAsync(entity, autoSave: true, cancellationToken: cancellationToken);
+                await UpdateClaimedDeliveryAsync(entity, cancellationToken);
                 await unitOfWork.CompleteAsync(cancellationToken);
                 return claim;
             }
@@ -167,7 +170,10 @@ public class NotificationDeliveryStore :
         {
             return null;
         }
-        catch (Exception) when (workItem != null && !cancellationToken.IsCancellationRequested)
+        catch (Exception) when (
+            initialInsertInProgress
+            && workItem != null
+            && !cancellationToken.IsCancellationRequested)
         {
             // A concurrent first event can win the deterministic primary-key insert between our read and write.
             // Provider exceptions differ (for example EF DbUpdateException vs Mongo duplicate-key), so only treat
@@ -350,7 +356,7 @@ public class NotificationDeliveryStore :
         };
     }
 
-    private NotificationDeliveryRecord CreateRecord(NotificationDeliveryWorkEto workItem)
+    protected virtual NotificationDeliveryRecord CreateRecord(NotificationDeliveryWorkEto workItem)
     {
         return new NotificationDeliveryRecord(
             workItem.DeliveryId,
@@ -365,6 +371,16 @@ public class NotificationDeliveryStore :
             workItem.Severity,
             workItem.CreationTime,
             workItem.TenantId);
+    }
+
+    protected virtual Task<NotificationDeliveryRecord> UpdateClaimedDeliveryAsync(
+        NotificationDeliveryRecord delivery,
+        CancellationToken cancellationToken)
+    {
+        return DeliveryRepository.UpdateAsync(
+            delivery,
+            autoSave: true,
+            cancellationToken: cancellationToken);
     }
 
     private async Task<bool> SameDeliveryWasCommittedByCompetitorAsync(
