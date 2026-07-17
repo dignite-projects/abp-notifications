@@ -14,7 +14,6 @@ namespace Dignite.Abp.Notifications;
 [ExposeServices(typeof(INotificationDeliveryStore), typeof(NullNotificationDeliveryStore))]
 public class NullNotificationDeliveryStore :
     INotificationDeliveryStore,
-    IBatchedNotificationDeliveryStore,
     ISingletonDependency
 {
     private readonly object _sync = new object();
@@ -43,16 +42,6 @@ public class NullNotificationDeliveryStore :
         }
 
         return Task.CompletedTask;
-    }
-
-    public async Task EnsureCreatedAsync(
-        IReadOnlyCollection<NotificationDeliveryWorkEto> workItems,
-        CancellationToken cancellationToken = default)
-    {
-        foreach (var workItem in workItems)
-        {
-            await EnsureCreatedAsync(workItem, cancellationToken);
-        }
     }
 
     public Task<NotificationDeliveryClaim?> TryClaimAsync(

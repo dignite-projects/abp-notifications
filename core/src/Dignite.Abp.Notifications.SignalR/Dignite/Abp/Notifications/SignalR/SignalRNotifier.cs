@@ -8,9 +8,8 @@ using Volo.Abp.DependencyInjection;
 namespace Dignite.Abp.Notifications.SignalR;
 
 /// <summary>
-/// Relays <see cref="NotificationDeliveryEto"/> to connected SignalR users. Recipients receive only a
-/// <see cref="NotificationDelivery"/>, which by construction omits the ETO's full recipient list — so one user
-/// can never see the ids of the others (fixes the reference implementation's payload leak).
+/// Relays reliable single-recipient work to connected SignalR users. Recipients receive only a
+/// <see cref="NotificationDelivery"/>, which by construction omits every aggregate recipient list.
 /// </summary>
 [ExposeServices(
     typeof(INotificationNotifier),
@@ -35,6 +34,7 @@ public class SignalRNotifier :
 
     public virtual Task HandleEventAsync(NotificationDeliveryEto eventData)
     {
+        // Legacy wire path only; new work is claimed and dispatched through DeliverAsync.
         // Skip when channel routing excludes SignalR, or there are no recipients.
         if (!NotificationChannels.IsAllowed(eventData.Channels, Name)
             || eventData.UserIds == null

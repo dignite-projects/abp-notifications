@@ -1,15 +1,18 @@
 using System;
 using System.Linq;
 using System.Reflection;
+using System.Threading;
 using System.Threading.Tasks;
 using Dignite.Abp.Notifications;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 using Shouldly;
 using Volo.Abp.Application.Dtos;
+using Volo.Abp.Data;
 using Volo.Abp.Domain.Repositories;
 using Volo.Abp.Modularity;
 using Volo.Abp.MultiTenancy;
+using Volo.Abp.Uow;
 using Xunit;
 
 namespace Dignite.Abp.NotificationCenter;
@@ -61,6 +64,11 @@ public abstract class NotificationDeliveryStore_Tests<TStartupModule> : Notifica
                     work.UserId,
                     "EMAIL",
                     work.IdempotencyKey,
+                    work.NotificationName,
+                    data: null,
+                    work.EntityTypeName,
+                    work.EntityId,
+                    work.Severity,
                     work.CreationTime,
                     work.TenantId),
                 autoSave: true);
@@ -92,6 +100,76 @@ public abstract class NotificationDeliveryStore_Tests<TStartupModule> : Notifica
         (await ClaimInScopeAsync(work, now.AddMinutes(4))).ShouldBeNull();
         (await GetRecordsAsync(work.TenantId, work.NotificationId)).Single().State
             .ShouldBe(NotificationDeliveryState.Succeeded);
+    }
+
+    [Fact]
+    public async Task Concurrency_stamp_forces_two_preloaded_claim_updates_to_have_exactly_one_winner()
+    {
+        var now = DateTime.UtcNow;
+        var work = await CreateAndPersistWorkAsync(now: now);
+        var bothLoaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var loadedCount = 0;
+
+        async Task<bool> UpdatePreloadedRecordAsync()
+        {
+            using var scope = GetRequiredService<IServiceScopeFactory>().CreateScope();
+            var unitOfWorkManager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkManager>();
+            using var unitOfWork = unitOfWorkManager.Begin(requiresNew: true, isTransactional: false);
+            var repository = scope.ServiceProvider
+                .GetRequiredService<IRepository<NotificationDeliveryRecord, Guid>>();
+            var record = await repository.GetAsync(work.DeliveryId);
+            record.Claim(Guid.NewGuid(), now, TimeSpan.FromMinutes(2));
+            if (Interlocked.Increment(ref loadedCount) == 2)
+            {
+                bothLoaded.TrySetResult();
+            }
+
+            await bothLoaded.Task;
+            try
+            {
+                await repository.UpdateAsync(record, autoSave: true);
+                await unitOfWork.CompleteAsync();
+                return true;
+            }
+            catch (AbpDbConcurrencyException)
+            {
+                return false;
+            }
+        }
+
+        var results = await Task.WhenAll(UpdatePreloadedRecordAsync(), UpdatePreloadedRecordAsync());
+
+        results.Count(result => result).ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Durable_retry_reconstructs_a_self_contained_work_item_without_a_local_notification_row()
+    {
+        var now = DateTime.UtcNow;
+        var work = CreateWork(Guid.NewGuid(), Guid.NewGuid(), "RemoteEmail", tenantId: null, now);
+        var store = GetRequiredService<INotificationDeliveryStore>();
+        await WithTenantUnitOfWorkAsync(work.TenantId, () => store.EnsureCreatedAsync(work));
+        var claim = (await store.TryClaimAsync(
+            work.DeliveryId,
+            work.TenantId,
+            now,
+            TimeSpan.FromMinutes(2),
+            3))!;
+        await store.MarkFailedAsync(
+            work.DeliveryId,
+            work.TenantId,
+            claim.LeaseId,
+            now,
+            "channel-execution-failed",
+            now.AddMinutes(1));
+
+        var reconstructed = (await store.GetDueWorkItemsAsync(now.AddMinutes(1), 10))
+            .Single(item => item.DeliveryId == work.DeliveryId);
+
+        reconstructed.NotificationName.ShouldBe(work.NotificationName);
+        reconstructed.Data.ShouldBeOfType<OrderShippedNotificationData>().OrderNumber.ShouldBe("SO-DELIVERY");
+        reconstructed.UserId.ShouldBe(work.UserId);
+        reconstructed.Channel.ShouldBe(work.Channel);
     }
 
     [Fact]

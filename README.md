@@ -221,13 +221,13 @@ backfill before deploying the new unique index.
 
 #### Delivery guarantees, batches, and partial progress
 
-Distributing a notification writes the per-user inbox rows and one delivery-state row per
-tenant/notification/user/channel, then publishes a `NotificationDeliveryWorkEto` for each row. Those writes and
-the event record commit together only when the host enables ABP's transactional outbox. The same call enables
-ABP's event inbox; the delivery-state claim is an additional idempotency boundary for concurrent or redelivered
-work. The EF Core writer flushes and detaches each inbox batch so its change tracker stays bounded. Atomic rollback
-therefore requires an ambient **transactional** ABP unit of work; an outbox cannot make a non-transactional unit
-of work atomic.
+Distributing a notification writes the per-user inbox rows and publishes one `NotificationDeliveryWorkEto` per
+tenant/notification/user/channel. Those writes and outgoing event records commit together only when the host
+enables ABP's transactional outbox. The process that actually hosts the selected channel consumes the work event,
+persists its self-contained payload snapshot and delivery state, then atomically claims a lease. Processes that do
+not host that channel ignore the event without creating or failing state. The EF Core writer flushes and detaches
+each inbox batch so its change tracker stays bounded. Atomic rollback therefore requires an ambient
+**transactional** ABP unit of work; an outbox cannot make a non-transactional unit of work atomic.
 
 | Setup | Inbox batch behavior | Persist + publish atomic | Failure/cancellation after a completed batch |
 |---|---|---|---|
@@ -236,7 +236,7 @@ of work atomic.
 | EF Core, non-transactional UoW | each flushed batch is durable | no | completed inbox batches and already published events can remain |
 | MongoDB, outbox + transactional UoW on a supported topology | each batch participates in the ambient MongoDB transaction | yes, within one distributor/job invocation | the transaction rolls back inbox and outbox records |
 | MongoDB, no outbox or non-transactional UoW | each completed provider batch is durable | no | completed inbox batches and already published events can remain |
-| Core-only null stores | process-local delivery state; no inbox | not durable across process exit | completed external sends remain; pending/retry state is lost on restart |
+| Core-only channel consumer | process-local delivery state; no inbox | not durable across process exit | completed external sends remain; pending/retry state is lost on restart |
 
 If you use the shipped `NotificationCenterDbContext`, one line enables both:
 
@@ -344,9 +344,8 @@ require a transactional unit of work for atomic persist-and-record. The MongoDB-
 replica-set startup probe are the remaining reliability/configuration differences. Neither provider claims
 exactly-once external delivery or atomicity across all independently scheduled fan-out jobs.
 
-Without the opt-in, a crash between the delivery-state write and event publication can still leave a delivery
-pending until the retry worker scans it. Cancellation remains a boundary for stopping new work, not compensation
-for completed work.
+Without the opt-in, a crash between inbox persistence and work-event publication can leave a notification with no
+channel delivery. Cancellation remains a boundary for stopping new work, not compensation for completed work.
 
 #### Delivery reliability, retries, and external side effects
 
@@ -356,13 +355,18 @@ Workers atomically claim a time-limited lease before invoking a notifier; a comp
 the same work concurrently. Expired leases are recoverable, failures use bounded exponential backoff with jitter,
 and exhausted work becomes `DeadLetter`. Intentional channel decisions such as a missing email address return
 `Suppressed` and are not retried automatically. Operators may requeue `Failed`, `Suppressed`, or `DeadLetter`
-work, which begins a fresh attempt cycle.
+work, which begins a fresh attempt cycle. Each channel consumer owns this execution state. In a monolith the one
+Notification Center database contains every channel; independently deployed channel services may use their own
+Notification Center database because the delivery row stores a stable System.Text.Json payload snapshot and does
+not require the producer's `Notification` row to retry. Operational queries therefore report the channels hosted
+by that application/database.
 
 The guarantee is **at-least-once scheduling with a durable internal idempotency boundary**, not exactly-once
 delivery to an external provider. A process can fail after an email, webhook, or push provider accepted the side
 effect but before `Succeeded` was stored. Forward `workItem.IdempotencyKey` to providers that offer an idempotency
-or deduplication key; without provider support, a retry may repeat that external side effect. Stored diagnostics use
-fixed reason codes and sanitized messages and never persist exception text, addresses, recipient IDs, or payloads.
+or deduplication key; without provider support, a retry may repeat that external side effect. Diagnostic fields use
+fixed reason codes and sanitized messages and never contain exception text, addresses, recipient IDs, or payloads;
+the separate payload snapshot follows the normal stable-discriminator/System.Text.Json persistence rules.
 
 Core-only applications continue to work without Notification Center. `NullNotificationDeliveryStore` keeps the
 same state machine and concurrent-claim behavior in process, but restart loses pending work, leases, retry history,
@@ -370,17 +374,22 @@ and operator visibility. Install either Notification Center persistence provider
 or deployment.
 
 **Database upgrade:** this repository does not ship migrations because the consuming host owns its schema history.
-Before enabling producers, EF Core hosts must add the mapped `AbpNotificationDeliveries` table and its unique
+Before enabling durable channel consumers, EF Core hosts must add the mapped `AbpNotificationDeliveries` table and its unique
 `TenantKey + NotificationId + UserId + ChannelKey` index plus the configured due-work indexes. Custom
 `INotificationCenterDbContext` implementations must expose the
 `DbSet<NotificationDeliveryRecord> NotificationDeliveries` property; `ConfigureNotificationCenter()` creates the
 same unique/due indexes. This is a new ledger,
 so historical notifications require no backfill. Custom MongoDB contexts must expose
 `IMongoCollection<NotificationDeliveryRecord> NotificationDeliveries` and configure the collection name plus the
-same unique and due-work indexes in `CreateModel`. For a rolling deployment, upgrade consumers so they understand
-`NotificationDeliveryWorkEto`, apply the schema, and only then deploy producers. Legacy notifier implementations
-remain callable through the singleton `NotificationDeliveryEto` adapter, but old event consumers do not understand
-the new work-event type.
+same unique and due-work indexes in `CreateModel`.
+
+This wire change does **not** support a zero-downtime mixed-version rollout. The old aggregate
+`NotificationDeliveryEto` handler retains its old partial-progress semantics, while old consumers cannot understand
+`NotificationDeliveryWorkEto`. Quiesce notification publication, drain old aggregate events, apply the consumer
+schema and code upgrade, then upgrade producers and resume publication. Legacy notifier *implementations* remain
+source-compatible through the new processor's singleton aggregate-event adapter; that adapter does not make an old
+producer event reliable. The ledger begins with newly consumed work events, so historical notifications require no
+backfill.
 
 Large explicit fan-outs are split into independently scheduled jobs. The publisher prepares the shared
 `Notification` record first, then each job commits or fails independently; no provider promises one transaction
@@ -574,8 +583,8 @@ bounded stages:
 1. normalize one candidate page (the built-in stores use a database-side distinct/order/keyset query);
 2. remove caller exclusions and evaluate definition eligibility for that page;
 3. write inbox rows in bounded multi-insert groups;
-4. create delivery-state rows in bounded scheduling groups, then publish one independently claimable work event
-   for every eligible recipient/channel pair.
+4. publish work events in bounded scheduling groups, one for every eligible recipient/channel pair; the process
+   hosting that channel persists and claims its consumer-owned delivery state.
 
 The defaults are 256 candidates, 256 inbox rows, and 100 recipients converted to work records per scheduling
 operation. Each value must be between 1 and `NotificationOptions.MaxDistributionBatchSize` (10,000), and invalid
@@ -845,7 +854,8 @@ Configure<NotificationEmailOptions>(options =>
 });
 
 // EF Core Notification Center hosts can opt in to ABP's transactional outbox so the persisted
-// inbox/delivery-state rows and NotificationDeliveryWorkEto outbox records commit together.
+// inbox rows and NotificationDeliveryWorkEto outbox records commit together. The channel consumer
+// persists its delivery ledger before claiming the work.
 Configure<AbpDistributedEventBusOptions>(options =>
 {
     options.UseNotificationCenterEfCoreOutbox();
@@ -864,7 +874,7 @@ Configure<AbpDistributedEventBusOptions>(options =>
 ```
 Notifications.Abstractions   ── data model + NotificationDeliveryWorkEto + reliable notifier contract
         │
-Notifications (Core)         ── define → distribute → schedule → claim/retry; null stores remain supported
+Notifications (Core)         ── define → distribute → publish work; channel consumers claim/retry
         │
    ┌────┴───────────────────┐
 Notifiers                 NotificationCenter (optional)
@@ -880,13 +890,14 @@ Notifiers                 NotificationCenter (optional)
    `IBatchedNotificationStore`), checks the definition's feature/permission availability, persists bounded
    inbox groups (a no-op under `NullNotificationStore`), creates one delivery identity per recipient/channel,
    then publishes `NotificationDeliveryWorkEto` when external channels are configured.
-4. The work handler atomically claims a lease, invokes the selected channel notifier, and records success,
-   suppression, retry timing, or dead-letter state. The retry worker republishes due or lease-expired work.
+4. Only a process hosting the selected channel handles the work. It persists a self-contained delivery snapshot,
+   atomically claims a lease, invokes the notifier, and records success, suppression, retry timing, or dead-letter
+   state. Its retry worker republishes due or lease-expired work.
 
 `NotificationDeliveryWorkEto` is the load-bearing boundary between scheduling and delivery and the extension
 point for any new channel. Under either Notification Center persistence provider, hosts should opt in to ABP's
-transactional outbox (see [Configuration](#configuration)) so notification, inbox, delivery ledger, and outgoing
-work records commit together.
+transactional outbox (see [Configuration](#configuration)) so notification, inbox, and outgoing work records
+commit together. The delivery ledger belongs to the consuming channel application and is committed before claim.
 
 > **Serialization invariant:** every `NotificationData` subclass must carry a stable
 > `[NotificationDataType]` discriminator plus an explicit schema version and round-trip through

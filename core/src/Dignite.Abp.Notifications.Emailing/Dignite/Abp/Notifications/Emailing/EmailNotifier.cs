@@ -93,6 +93,8 @@ public class EmailNotifier :
 
     public virtual async Task HandleEventAsync(NotificationDeliveryEto eventData)
     {
+        // Legacy wire path only. Reliable work reaches DeliverAsync through NotificationDeliveryProcessor; an old
+        // producer's aggregate event retains its original partial-progress semantics during migration.
         if (!NotificationChannels.IsAllowed(eventData.Channels, Name)
             || eventData.UserIds == null
             || eventData.UserIds.Length == 0)

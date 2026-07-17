@@ -15,9 +15,8 @@ namespace Dignite.Abp.Notifications.Emailing.Identity;
 /// <see cref="NotificationEmailProviderOrders.Default"/> gets to claim a notification first. It does not replace
 /// services — an application resolver coexists with it rather than displacing it.
 /// <para>
-/// Queries Identity under the ambient tenant and never switches tenants itself. A notifier is an
-/// <c>IDistributedEventHandler&lt;NotificationDeliveryEto&gt;</c>, and ABP's <c>EventBusBase</c> already enters
-/// <c>NotificationDeliveryEto.TenantId</c> before invoking it — in-process and across a message broker alike.
+/// Queries Identity under the ambient tenant and never switches tenants itself. ABP's event bus enters the
+/// delivery event's tenant before invoking the notifier — in-process and across a message broker alike.
 /// Resolvers that reach a user directory outside this process (a remote user service) need the tenant on the wire
 /// instead, which is why <see cref="EmailNotificationAddressResolveContext.TenantId"/> still carries it explicitly.
 /// </para>

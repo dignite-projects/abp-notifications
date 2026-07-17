@@ -19,15 +19,12 @@ namespace Dignite.Abp.NotificationCenter;
 [Dependency(ReplaceServices = true)]
 [ExposeServices(
     typeof(INotificationDeliveryStore),
-    typeof(IBatchedNotificationDeliveryStore),
     typeof(NotificationDeliveryStore))]
 public class NotificationDeliveryStore :
     INotificationDeliveryStore,
-    IBatchedNotificationDeliveryStore,
     ITransientDependency
 {
     protected IRepository<NotificationDeliveryRecord, Guid> DeliveryRepository { get; }
-    protected IRepository<Notification, Guid> NotificationRepository { get; }
     protected INotificationDataSerializer DataSerializer { get; }
     protected IGuidGenerator GuidGenerator { get; }
     protected IAsyncQueryableExecuter AsyncExecuter { get; }
@@ -36,7 +33,6 @@ public class NotificationDeliveryStore :
 
     public NotificationDeliveryStore(
         IRepository<NotificationDeliveryRecord, Guid> deliveryRepository,
-        IRepository<Notification, Guid> notificationRepository,
         INotificationDataSerializer dataSerializer,
         IGuidGenerator guidGenerator,
         IAsyncQueryableExecuter asyncExecuter,
@@ -44,7 +40,6 @@ public class NotificationDeliveryStore :
         IUnitOfWorkManager unitOfWorkManager)
     {
         DeliveryRepository = deliveryRepository;
-        NotificationRepository = notificationRepository;
         DataSerializer = dataSerializer;
         GuidGenerator = guidGenerator;
         AsyncExecuter = asyncExecuter;
@@ -65,65 +60,9 @@ public class NotificationDeliveryStore :
         }
 
         await DeliveryRepository.InsertAsync(
-            new NotificationDeliveryRecord(
-                workItem.DeliveryId,
-                workItem.NotificationId,
-                workItem.UserId,
-                workItem.Channel,
-                workItem.IdempotencyKey,
-                workItem.CreationTime,
-                workItem.TenantId),
+            CreateRecord(workItem),
             autoSave: true,
             cancellationToken: cancellationToken);
-    }
-
-    public virtual async Task EnsureCreatedAsync(
-        IReadOnlyCollection<NotificationDeliveryWorkEto> workItems,
-        CancellationToken cancellationToken = default)
-    {
-        if (workItems.Count == 0)
-        {
-            return;
-        }
-
-        var distinctItems = workItems
-            .GroupBy(workItem => workItem.DeliveryId)
-            .Select(group => group.First())
-            .ToList();
-        foreach (var workItem in distinctItems)
-        {
-            ValidateIdentity(workItem);
-        }
-
-        var ids = distinctItems.Select(workItem => workItem.DeliveryId).ToList();
-        var query = await DeliveryRepository.GetQueryableAsync();
-        var existing = await AsyncExecuter.ToListAsync(
-            query.Where(delivery => ids.Contains(delivery.Id)),
-            cancellationToken);
-        var existingById = existing.ToDictionary(delivery => delivery.Id);
-        foreach (var workItem in distinctItems.Where(workItem => existingById.ContainsKey(workItem.DeliveryId)))
-        {
-            EnsureSameIdentity(existingById[workItem.DeliveryId], workItem);
-        }
-
-        var entities = distinctItems
-            .Where(workItem => !existingById.ContainsKey(workItem.DeliveryId))
-            .Select(workItem => new NotificationDeliveryRecord(
-                workItem.DeliveryId,
-                workItem.NotificationId,
-                workItem.UserId,
-                workItem.Channel,
-                workItem.IdempotencyKey,
-                workItem.CreationTime,
-                workItem.TenantId))
-            .ToList();
-        if (entities.Count > 0)
-        {
-            await DeliveryRepository.InsertManyAsync(
-                entities,
-                autoSave: true,
-                cancellationToken: cancellationToken);
-        }
     }
 
     public virtual async Task<NotificationDeliveryClaim?> TryClaimAsync(
@@ -240,15 +179,8 @@ public class NotificationDeliveryStore :
                 return Array.Empty<NotificationDeliveryWorkEto>();
             }
 
-            var notificationIds = deliveries.Select(delivery => delivery.NotificationId).Distinct().ToList();
-            var notificationQuery = await NotificationRepository.GetQueryableAsync();
-            var notifications = await AsyncExecuter.ToListAsync(
-                notificationQuery.Where(notification => notificationIds.Contains(notification.Id)),
-                cancellationToken);
-            var notificationsById = notifications.ToDictionary(notification => notification.Id);
             var items = deliveries
-                .Where(delivery => notificationsById.ContainsKey(delivery.NotificationId))
-                .Select(delivery => ToWorkItem(delivery, notificationsById[delivery.NotificationId]))
+                .Select(ToWorkItem)
                 .ToList();
             await unitOfWork.CompleteAsync(cancellationToken);
             return items;
@@ -324,25 +256,40 @@ public class NotificationDeliveryStore :
         }
     }
 
-    private NotificationDeliveryWorkEto ToWorkItem(
-        NotificationDeliveryRecord delivery,
-        Notification notification)
+    private NotificationDeliveryWorkEto ToWorkItem(NotificationDeliveryRecord delivery)
     {
         return new NotificationDeliveryWorkEto
         {
             DeliveryId = delivery.Id,
             IdempotencyKey = delivery.IdempotencyKey,
-            NotificationId = notification.Id,
-            NotificationName = notification.NotificationName,
-            Data = DeserializeDurableData(notification.Data),
-            Severity = notification.Severity,
-            CreationTime = notification.CreationTime,
+            NotificationId = delivery.NotificationId,
+            NotificationName = delivery.NotificationName,
+            Data = DeserializeDurableData(delivery.Data),
+            Severity = delivery.Severity,
+            CreationTime = delivery.CreationTime,
             UserId = delivery.UserId,
             Channel = delivery.Channel,
-            EntityTypeName = notification.EntityTypeName,
-            EntityId = notification.EntityId,
+            EntityTypeName = delivery.EntityTypeName,
+            EntityId = delivery.EntityId,
             TenantId = delivery.TenantId
         };
+    }
+
+    private NotificationDeliveryRecord CreateRecord(NotificationDeliveryWorkEto workItem)
+    {
+        return new NotificationDeliveryRecord(
+            workItem.DeliveryId,
+            workItem.NotificationId,
+            workItem.UserId,
+            workItem.Channel,
+            workItem.IdempotencyKey,
+            workItem.NotificationName,
+            DataSerializer.Serialize(workItem.Data),
+            workItem.EntityTypeName,
+            workItem.EntityId,
+            workItem.Severity,
+            workItem.CreationTime,
+            workItem.TenantId);
     }
 
     private static void ValidateIdentity(NotificationDeliveryWorkEto workItem)

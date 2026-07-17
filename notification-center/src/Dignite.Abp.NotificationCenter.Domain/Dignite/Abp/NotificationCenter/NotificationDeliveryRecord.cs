@@ -6,8 +6,11 @@ using Volo.Abp.MultiTenancy;
 namespace Dignite.Abp.NotificationCenter;
 
 /// <summary>Durable state for one tenant/notification/user/channel delivery identity.</summary>
-public class NotificationDeliveryRecord : BasicAggregateRoot<Guid>, IMultiTenant
+public class NotificationDeliveryRecord : BasicAggregateRoot<Guid>, IMultiTenant, IHasConcurrencyStamp
 {
+    /// <summary>Optimistic concurrency token used by both EF Core and MongoDB claim updates.</summary>
+    public virtual string ConcurrencyStamp { get; set; } = Guid.NewGuid().ToString("N");
+
     public virtual Guid? TenantId { get; protected set; }
 
     /// <summary>Non-null tenant key used by provider-independent unique indexes; host is <see cref="Guid.Empty"/>.</summary>
@@ -22,6 +25,20 @@ public class NotificationDeliveryRecord : BasicAggregateRoot<Guid>, IMultiTenant
     public virtual string ChannelKey { get; protected set; } = default!;
 
     public virtual string IdempotencyKey { get; protected set; } = default!;
+
+    public virtual string NotificationName { get; protected set; } = default!;
+
+    /// <summary>
+    /// Stable System.Text.Json payload snapshot used by a separately deployed channel consumer to retry without
+    /// requiring access to the producer's Notification row.
+    /// </summary>
+    public virtual string? Data { get; protected set; }
+
+    public virtual string? EntityTypeName { get; protected set; }
+
+    public virtual string? EntityId { get; protected set; }
+
+    public virtual NotificationSeverity Severity { get; protected set; }
 
     public virtual NotificationDeliveryState State { get; protected set; }
 
@@ -53,6 +70,11 @@ public class NotificationDeliveryRecord : BasicAggregateRoot<Guid>, IMultiTenant
         Guid userId,
         string channel,
         string idempotencyKey,
+        string notificationName,
+        string? data,
+        string? entityTypeName,
+        string? entityId,
+        NotificationSeverity severity,
         DateTime creationTime,
         Guid? tenantId)
         : base(id)
@@ -64,6 +86,11 @@ public class NotificationDeliveryRecord : BasicAggregateRoot<Guid>, IMultiTenant
         Channel = channel.Trim();
         ChannelKey = NotificationDeliveryIdentity.NormalizeChannel(channel);
         IdempotencyKey = idempotencyKey;
+        NotificationName = notificationName;
+        Data = data;
+        EntityTypeName = entityTypeName;
+        EntityId = entityId;
+        Severity = severity;
         CreationTime = creationTime;
         State = NotificationDeliveryState.Pending;
     }

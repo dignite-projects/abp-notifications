@@ -22,8 +22,6 @@ public class DefaultNotificationDistributor :
 {
     protected INotificationStore Store { get; }
 
-    protected INotificationDeliveryStore DeliveryStore { get; }
-
     protected INotificationDefinitionManager DefinitionManager { get; }
 
     protected IDistributedEventBus DistributedEventBus { get; }
@@ -60,12 +58,10 @@ public class DefaultNotificationDistributor :
             currentTenant,
             logger,
             dataTypeRegistry,
-            Microsoft.Extensions.Options.Options.Create(new NotificationOptions()),
-            new NullNotificationDeliveryStore())
+            Microsoft.Extensions.Options.Options.Create(new NotificationOptions()))
     {
     }
 
-    /// <summary>Compatibility constructor for callers compiled before per-channel delivery state was added.</summary>
     public DefaultNotificationDistributor(
         INotificationStore store,
         INotificationDefinitionManager definitionManager,
@@ -75,33 +71,8 @@ public class DefaultNotificationDistributor :
         ILogger<DefaultNotificationDistributor> logger,
         INotificationDataTypeRegistry dataTypeRegistry,
         IOptions<NotificationOptions> options)
-        : this(
-            store,
-            definitionManager,
-            distributedEventBus,
-            recipientEligibilityEvaluator,
-            currentTenant,
-            logger,
-            dataTypeRegistry,
-            options,
-            new NullNotificationDeliveryStore())
-    {
-    }
-
-    [Microsoft.Extensions.DependencyInjection.ActivatorUtilitiesConstructor]
-    public DefaultNotificationDistributor(
-        INotificationStore store,
-        INotificationDefinitionManager definitionManager,
-        IDistributedEventBus distributedEventBus,
-        INotificationRecipientEligibilityEvaluator recipientEligibilityEvaluator,
-        ICurrentTenant currentTenant,
-        ILogger<DefaultNotificationDistributor> logger,
-        INotificationDataTypeRegistry dataTypeRegistry,
-        IOptions<NotificationOptions> options,
-        INotificationDeliveryStore deliveryStore)
     {
         Store = store;
-        DeliveryStore = deliveryStore;
         DefinitionManager = definitionManager;
         DistributedEventBus = distributedEventBus;
         RecipientEligibilityEvaluator = recipientEligibilityEvaluator;
@@ -833,18 +804,6 @@ public class DefaultNotificationDistributor :
             foreach (var channel in channels.Distinct(StringComparer.OrdinalIgnoreCase))
             {
                 workItems.Add(CreateDeliveryWorkItem(notification, userId, channel));
-            }
-        }
-
-        if (DeliveryStore is IBatchedNotificationDeliveryStore batchedStore)
-        {
-            await batchedStore.EnsureCreatedAsync(workItems);
-        }
-        else
-        {
-            foreach (var workItem in workItems)
-            {
-                await DeliveryStore.EnsureCreatedAsync(workItem);
             }
         }
 

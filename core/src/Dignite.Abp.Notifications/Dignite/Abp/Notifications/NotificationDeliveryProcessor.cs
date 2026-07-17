@@ -57,6 +57,18 @@ public class NotificationDeliveryProcessor : ITransientDependency
         NotificationDeliveryWorkEto workItem,
         CancellationToken cancellationToken = default)
     {
+        var notifier = ResolveNotifierOrNull(workItem.Channel);
+        if (notifier == null)
+        {
+            // Distributed event subscribers receive every channel's work type. A process that does not host this
+            // channel must leave the event and its authoritative consumer-owned state untouched.
+            Logger.LogDebug(
+                "Ignoring notification delivery {DeliveryId} because channel {Channel} is not hosted by this process.",
+                workItem.DeliveryId,
+                workItem.Channel);
+            return;
+        }
+
         using (CurrentTenant.Change(workItem.TenantId, null))
         {
             // Consumers may run in another process/database, and source-compatible distributor constructors use a
@@ -79,7 +91,6 @@ public class NotificationDeliveryProcessor : ITransientDependency
 
             try
             {
-                var notifier = ResolveNotifier(workItem.Channel);
                 NotificationDeliveryResult result;
                 if (notifier is INotificationDeliveryNotifier reliableNotifier)
                 {
@@ -175,19 +186,22 @@ public class NotificationDeliveryProcessor : ITransientDependency
         }
     }
 
-    protected virtual INotificationNotifier ResolveNotifier(string channel)
+    protected virtual INotificationNotifier? ResolveNotifierOrNull(string channel)
     {
         var matches = Notifiers
             .Where(notifier => string.Equals(notifier.Name, channel, StringComparison.OrdinalIgnoreCase))
             .GroupBy(notifier => notifier.GetType())
             .Select(group => group.First())
             .ToList();
+        if (matches.Count == 0)
+        {
+            return null;
+        }
+
         if (matches.Count != 1)
         {
             throw new InvalidOperationException(
-                matches.Count == 0
-                    ? $"No notification notifier is registered for channel '{channel}'."
-                    : $"Multiple notification notifiers are registered for channel '{channel}'.");
+                $"Multiple notification notifiers are registered for channel '{channel}'.");
         }
 
         return matches[0];

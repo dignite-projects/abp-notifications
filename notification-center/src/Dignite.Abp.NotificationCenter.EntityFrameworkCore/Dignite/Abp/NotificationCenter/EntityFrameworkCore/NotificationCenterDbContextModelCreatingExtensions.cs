@@ -64,6 +64,11 @@ public static class NotificationCenterDbContextModelCreatingExtensions
             b.Property(x => x.ChannelKey).IsRequired().HasMaxLength(NotificationCenterConsts.MaxDeliveryChannelLength);
             b.Property(x => x.IdempotencyKey).IsRequired().IsUnicode(false)
                 .HasMaxLength(NotificationCenterConsts.DeliveryIdempotencyKeyLength);
+            b.Property(x => x.NotificationName).IsRequired()
+                .HasMaxLength(NotificationCenterConsts.MaxNotificationNameLength);
+            b.Property(x => x.EntityTypeName).HasMaxLength(NotificationCenterConsts.MaxEntityTypeNameLength);
+            b.Property(x => x.EntityId).HasMaxLength(NotificationCenterConsts.MaxEntityIdLength);
+            // Data is a stable System.Text.Json snapshot and remains unbounded.
             b.Property(x => x.LastFailureCode).HasMaxLength(NotificationCenterConsts.MaxDeliveryFailureCodeLength);
             b.Property(x => x.LastFailureMessage).HasMaxLength(NotificationCenterConsts.MaxDeliveryFailureMessageLength);
 

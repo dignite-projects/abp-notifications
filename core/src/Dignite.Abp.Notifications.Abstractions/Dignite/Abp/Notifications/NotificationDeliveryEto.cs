@@ -4,10 +4,10 @@ using Volo.Abp.EventBus;
 namespace Dignite.Abp.Notifications;
 
 /// <summary>
-/// Distributed event published by the core for every notification. Notifiers subscribe to it and relay to their
-/// channel. Carries the recipient <see cref="UserIds"/> for routing — notifiers MUST trim this out of any per-user
-/// payload they push (see <see cref="NotificationDelivery"/>) so one recipient can't see the others.
-/// Note: no culture-baked display name here; the display text is localized at read time per reader.
+/// Legacy aggregate delivery event retained for source and wire compatibility. New producers publish
+/// <see cref="NotificationDeliveryWorkEto"/>; the reliable processor adapts one work item back to a singleton instance
+/// of this type for existing notifier implementations. An aggregate event from an old producer does not gain
+/// per-recipient state or partial-progress reliability merely because a newer consumer can deserialize it.
 /// </summary>
 [EventName("Dignite.Abp.Notifications.NotificationDelivery")]
 [Serializable]

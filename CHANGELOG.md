@@ -45,13 +45,15 @@ changes.
 ### Changed
 
 - **Breaking wire behavior for independently deployed event consumers.** The default distributor now publishes
-  `NotificationDeliveryWorkEto` instead of batched `NotificationDeliveryEto`. Upgrade event consumers before
-  producers in a rolling deployment. Existing notifier source contracts remain supported, but an old process that
-  only subscribes to the legacy event type cannot consume the new work event.
+  `NotificationDeliveryWorkEto` instead of batched `NotificationDeliveryEto`. Mixed versions cannot provide the new
+  reliability guarantee: quiesce publication, drain old aggregate events, upgrade consumer schemas/code, then
+  upgrade producers and resume. Existing notifier source contracts remain supported through a singleton adapter,
+  but old wire-event handlers retain their legacy partial-progress behavior.
 - Notification Center hosts require a host-owned schema migration for the new `AbpNotificationDeliveries` table
   (or the equivalent MongoDB collection) and its unique identity/due-work indexes. Historical notifications need no
-  backfill. Internal scheduling is at least once; exactly-once external effects require the downstream provider to
-  honor the supplied idempotency key.
+  backfill. Delivery state and its stable payload snapshot are consumer-owned, so independently deployed channel
+  services can retry without the producer's Notification row. Internal scheduling is at least once; exactly-once
+  external effects require the downstream provider to honor the supplied idempotency key.
 - **Breaking for implementers.** `INotificationCenterMongoDbContext` now extends ABP's `IHasEventInbox` and
   `IHasEventOutbox`. Consumer-owned implementations must expose and model the two ABP event collections and
   configure both boxes against their custom context. MongoDB's `MessageId` inbox index is now unique; existing

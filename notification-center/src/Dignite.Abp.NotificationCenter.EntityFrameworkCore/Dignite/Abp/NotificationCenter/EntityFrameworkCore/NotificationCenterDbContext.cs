@@ -20,9 +20,9 @@ public class NotificationCenterDbContext :
 
     public DbSet<NotificationDeliveryRecord> NotificationDeliveries { get; set; } = default!;
 
-    // Transactional inbox/outbox support. When an app enables it, persisting notification/delivery state and
-    // publishing NotificationDeliveryWorkEto become atomic. ABP's inbox and the delivery lease make internal work
-    // idempotent; external side effects remain at least once unless the provider honors the idempotency key.
+    // Transactional inbox/outbox support makes notification/inbox persistence and publishing
+    // NotificationDeliveryWorkEto atomic. The channel consumer persists its own delivery state before claiming it;
+    // external side effects remain at least once unless the provider honors the idempotency key.
     public DbSet<IncomingEventRecord> IncomingEvents { get; set; } = default!;
 
     public DbSet<OutgoingEventRecord> OutgoingEvents { get; set; } = default!;

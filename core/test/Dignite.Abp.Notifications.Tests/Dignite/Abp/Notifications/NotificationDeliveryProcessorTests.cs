@@ -160,6 +160,18 @@ public class NotificationDeliveryProcessorTests
             .ShouldNotBe(NotificationDeliveryIdentity.CreateId(tenantId, notificationId, userId, "Email"));
     }
 
+    [Fact]
+    public async Task A_process_that_does_not_host_the_work_channel_does_not_create_or_fail_delivery_state()
+    {
+        var now = DateTime.UtcNow;
+        var (processor, store) = CreateProcessor(now, Array.Empty<INotificationDeliveryNotifier>());
+        var work = CreateWork(Guid.NewGuid(), Guid.NewGuid(), "RemoteEmail");
+
+        await processor.ProcessAsync(work);
+
+        (await store.GetDueWorkItemsAsync(now.AddDays(1), 10)).ShouldBeEmpty();
+    }
+
     private static (NotificationDeliveryProcessor Processor, NullNotificationDeliveryStore Store) CreateProcessor(
         DateTime now,
         INotificationDeliveryNotifier[] reliableNotifiers,
