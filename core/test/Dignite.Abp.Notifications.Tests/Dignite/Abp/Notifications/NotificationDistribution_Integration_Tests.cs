@@ -87,7 +87,7 @@ public class NotificationDistribution_Integration_Tests : DigniteAbpNotification
         var args = _backgroundJobs.EnqueuedArgs.Single().ShouldBeOfType<NotificationDistributionJobArgs>();
         await GetRequiredService<NotificationDistributionJob>().ExecuteAsync(args);
 
-        _received.Items.Single().UserIds.ShouldBe(users);
+        _received.Items.Single().UserIds.ShouldBe(users, ignoreOrder: true);
     }
 
     [Fact]
@@ -172,7 +172,7 @@ public class NotificationDistribution_Integration_Tests : DigniteAbpNotification
         await GetRequiredService<NotificationDistributionJob>().ExecuteAsync(args);
 
         var delivery = _received.Items.Single();
-        delivery.UserIds.ShouldBe(users);
+        delivery.UserIds.ShouldBe(users, ignoreOrder: true);
         delivery.TenantId.ShouldBe(tenantId);
         _currentTenant.Id.ShouldBeNull();
     }

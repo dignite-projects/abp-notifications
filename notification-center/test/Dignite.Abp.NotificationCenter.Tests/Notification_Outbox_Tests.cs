@@ -39,7 +39,7 @@ public class Notification_Outbox_Tests : NotificationCenterTestBase<AbpNotificat
         {
             await GetRequiredService<INotificationDistributor>()
                 .DistributeAsync(NewNotification(notificationId), new[] { Guid.NewGuid() });
-        });
+        }, isTransactional: true);
 
         await WithUnitOfWorkAsync(async () =>
         {
@@ -66,7 +66,7 @@ public class Notification_Outbox_Tests : NotificationCenterTestBase<AbpNotificat
             {
                 await GetRequiredService<INotificationDistributor>()
                     .DistributeAsync(NewNotification(notificationId, tenantId), new[] { Guid.NewGuid() });
-            });
+            }, isTransactional: true);
 
             await WithUnitOfWorkAsync(async () =>
             {
@@ -86,7 +86,9 @@ public class Notification_Outbox_Tests : NotificationCenterTestBase<AbpNotificat
     {
         var notificationId = Guid.NewGuid();
 
-        using (var uow = GetRequiredService<IUnitOfWorkManager>().Begin(requiresNew: true))
+        using (var uow = GetRequiredService<IUnitOfWorkManager>().Begin(
+                   requiresNew: true,
+                   isTransactional: true))
         {
             await GetRequiredService<INotificationDistributor>()
                 .DistributeAsync(NewNotification(notificationId), new[] { Guid.NewGuid() });

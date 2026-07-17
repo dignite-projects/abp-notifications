@@ -23,9 +23,13 @@ public abstract class NotificationCenterTestBase<TStartupModule> : AbpIntegrated
         options.UseAutofac();
     }
 
-    protected virtual async Task WithUnitOfWorkAsync(Func<Task> func)
+    protected virtual async Task WithUnitOfWorkAsync(
+        Func<Task> func,
+        bool? isTransactional = null)
     {
-        using var uow = GetRequiredService<IUnitOfWorkManager>().Begin(requiresNew: true);
+        using var uow = GetRequiredService<IUnitOfWorkManager>().Begin(
+            requiresNew: true,
+            isTransactional: isTransactional ?? false);
         await func();
         await uow.CompleteAsync();
     }

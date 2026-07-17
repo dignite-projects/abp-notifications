@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Options;
 using Volo.Abp.BackgroundJobs;
@@ -28,6 +29,8 @@ public class DefaultNotificationPublisher : INotificationPublisher, ITransientDe
 
     protected INotificationDataTypeRegistry DataTypeRegistry { get; }
 
+    protected INotificationStore? Store { get; }
+
     public DefaultNotificationPublisher(
         IOptions<NotificationOptions> options,
         INotificationDistributor distributor,
@@ -37,6 +40,29 @@ public class DefaultNotificationPublisher : INotificationPublisher, ITransientDe
         ICurrentTenant currentTenant,
         INotificationDefinitionManager definitionManager,
         INotificationDataTypeRegistry dataTypeRegistry)
+        : this(
+            options,
+            distributor,
+            backgroundJobManager,
+            guidGenerator,
+            clock,
+            currentTenant,
+            definitionManager,
+            dataTypeRegistry,
+            store: null)
+    {
+    }
+
+    public DefaultNotificationPublisher(
+        IOptions<NotificationOptions> options,
+        INotificationDistributor distributor,
+        IBackgroundJobManager backgroundJobManager,
+        IGuidGenerator guidGenerator,
+        IClock clock,
+        ICurrentTenant currentTenant,
+        INotificationDefinitionManager definitionManager,
+        INotificationDataTypeRegistry dataTypeRegistry,
+        INotificationStore? store)
     {
         Options = options.Value;
         Distributor = distributor;
@@ -46,6 +72,7 @@ public class DefaultNotificationPublisher : INotificationPublisher, ITransientDe
         CurrentTenant = currentTenant;
         DefinitionManager = definitionManager;
         DataTypeRegistry = dataTypeRegistry;
+        Store = store;
     }
 
     public virtual Task PublishAsync(
@@ -95,11 +122,16 @@ public class DefaultNotificationPublisher : INotificationPublisher, ITransientDe
         Guid[]? excludedUserIds,
         NotificationRecipientEligibilityMode recipientEligibilityMode)
     {
-        var normalizedUserIds = userIds?.Distinct().ToArray();
-        if (normalizedUserIds is { Length: 0 })
+        if (userIds is { Length: 0 })
         {
             return;
         }
+
+        Guid[]? normalizedUserIds = null;
+        var fitsInlineThreshold = userIds == null || BoundedRecipientBatcher.TryNormalizeWithinLimit(
+            userIds,
+            Options.DirectDistributionUserThreshold,
+            out normalizedUserIds);
 
         var definition = DefinitionManager.Get(notificationName);
         NotificationDefinitionContractValidator.ValidatePublish(
@@ -120,13 +152,13 @@ public class DefaultNotificationPublisher : INotificationPublisher, ITransientDe
             TenantId = CurrentTenant.Id
         };
 
-        if (normalizedUserIds != null && normalizedUserIds.Length <= Options.DirectDistributionUserThreshold)
+        if (userIds != null && fitsInlineThreshold)
         {
             if (recipientEligibilityMode == NotificationRecipientEligibilityMode.BypassDefinitionRequirements)
             {
                 await Distributor.DistributeToExplicitRecipientsWithoutEligibilityChecksAsync(
                     notification,
-                    normalizedUserIds,
+                    normalizedUserIds!,
                     excludedUserIds);
             }
             else
@@ -134,8 +166,46 @@ public class DefaultNotificationPublisher : INotificationPublisher, ITransientDe
                 await Distributor.DistributeAsync(notification, normalizedUserIds, excludedUserIds);
             }
         }
+        else if (userIds != null &&
+                 Store is IBatchedNotificationStore batchedStore &&
+                 Distributor is IPreparedNotificationDistributor
+                 {
+                     SupportsPreparedDistribution: true
+                 })
+        {
+            var notificationPrepared = false;
+            foreach (var normalizedBatch in BoundedRecipientBatcher.GetDistinctBatches(
+                         userIds,
+                         Options.RecipientBatchSize))
+            {
+                var recipientBatch = BoundedRecipientBatcher.RemoveExcludedRecipients(
+                    normalizedBatch,
+                    excludedUserIds);
+                if (recipientBatch.Length == 0)
+                {
+                    continue;
+                }
+
+                if (!notificationPrepared)
+                {
+                    await batchedStore.InsertNotificationAsync(notification, CancellationToken.None);
+                    notificationPrepared = true;
+                }
+
+                await BackgroundJobManager.EnqueueAsync(
+                    new NotificationDistributionJobArgs(
+                        notification,
+                        recipientBatch,
+                        excludedUserIds: null,
+                        recipientEligibilityMode,
+                        notificationAlreadyPersisted: true));
+            }
+        }
         else
         {
+            // A custom store/distributor that has not opted into prepared batching keeps the historical one-job
+            // contract. Its compatibility path is intentionally documented as notification-wide and unbounded.
+            normalizedUserIds = userIds?.Distinct().ToArray();
             await BackgroundJobManager.EnqueueAsync(
                 new NotificationDistributionJobArgs(
                     notification,

@@ -1,15 +1,21 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Dignite.Abp.Notifications;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 using Shouldly;
 using Volo.Abp;
+using Volo.Abp.BackgroundJobs;
 using Volo.Abp.Domain.Repositories;
 using Volo.Abp.EventBus.Distributed;
+using Volo.Abp.Guids;
 using Volo.Abp.Modularity;
 using Volo.Abp.MultiTenancy;
+using Volo.Abp.Timing;
 using Xunit;
 
 namespace Dignite.Abp.NotificationCenter;
@@ -38,7 +44,9 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
         };
     }
 
-    private DefaultNotificationDistributor CreateDistributor(IDistributedEventBus eventBus)
+    private DefaultNotificationDistributor CreateDistributor(
+        IDistributedEventBus eventBus,
+        NotificationOptions? options = null)
     {
         return new DefaultNotificationDistributor(
             GetRequiredService<INotificationStore>(),
@@ -47,7 +55,8 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
             GetRequiredService<INotificationRecipientEligibilityEvaluator>(),
             GetRequiredService<ICurrentTenant>(),
             GetRequiredService<ILogger<DefaultNotificationDistributor>>(),
-            GetRequiredService<INotificationDataTypeRegistry>());
+            GetRequiredService<INotificationDataTypeRegistry>(),
+            Options.Create(options ?? new NotificationOptions()));
     }
 
     private Task DistributeAsync(
@@ -290,5 +299,178 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
                 .FindAsync(notificationId)).ShouldBeNull();
         });
         await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<NotificationDeliveryEto>());
+    }
+
+    [Fact]
+    public async Task Thousands_of_duplicate_scope_subscribers_are_paged_persisted_and_published_in_bounded_batches()
+    {
+        const int recipientCount = 2001;
+        var users = Enumerable.Range(0, recipientCount).Select(_ => Guid.NewGuid()).ToArray();
+        var duplicateScopeUsers = users.Take(301).ToArray();
+        var now = DateTime.UtcNow;
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var subscriptions = users.Select(userId => new NotificationSubscription(
+                    Guid.NewGuid(),
+                    userId,
+                    "order.shipped",
+                    null,
+                    null,
+                    now,
+                    null))
+                .Concat(duplicateScopeUsers.Select(userId => new NotificationSubscription(
+                    Guid.NewGuid(),
+                    userId,
+                    "order.shipped",
+                    "Demo.Order",
+                    "42",
+                    now,
+                    null)))
+                .ToList();
+            await GetRequiredService<IRepository<NotificationSubscription, Guid>>()
+                .InsertManyAsync(subscriptions);
+        });
+
+        var eventBus = Substitute.For<IDistributedEventBus>();
+        var deliveryBatches = new List<Guid[]>();
+        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryEto>()))
+            .Do(call => deliveryBatches.Add(call.Arg<NotificationDeliveryEto>().UserIds.ToArray()));
+        var notificationId = Guid.NewGuid();
+        var distributor = CreateDistributor(eventBus, new NotificationOptions
+        {
+            RecipientBatchSize = 256,
+            UserNotificationWriteBatchSize = 256,
+            DeliveryEventRecipientLimit = 100
+        });
+
+        await DistributeAsync(
+            background: false,
+            distributor,
+            NewNotification(notificationId, "Demo.Order", "42"),
+            userIds: null);
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var inboxRows = await GetRequiredService<IRepository<UserNotification, Guid>>()
+                .GetListAsync(row => row.NotificationId == notificationId);
+            inboxRows.Count.ShouldBe(recipientCount);
+            inboxRows.Select(row => row.UserId).Distinct().Count().ShouldBe(recipientCount);
+            (await GetRequiredService<IRepository<Notification, Guid>>()
+                .FindAsync(notificationId)).ShouldNotBeNull();
+        });
+
+        deliveryBatches.Count.ShouldBe(21);
+        deliveryBatches.Take(20).ShouldAllBe(batch => batch.Length == 100);
+        deliveryBatches[^1].Length.ShouldBe(1);
+        deliveryBatches.ShouldAllBe(batch => batch.Length <= 100);
+        deliveryBatches.SelectMany(batch => batch).Distinct().Count().ShouldBe(recipientCount);
+    }
+
+    [Fact]
+    public async Task Cancellation_stops_provider_work_before_the_next_candidate_batch()
+    {
+        var eventBus = Substitute.For<IDistributedEventBus>();
+        using var cancellation = new CancellationTokenSource();
+        var publishedBatches = 0;
+        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryEto>()))
+            .Do(_ =>
+            {
+                publishedBatches++;
+                cancellation.Cancel();
+            });
+        var notificationId = Guid.NewGuid();
+        var distributor = CreateDistributor(eventBus, new NotificationOptions
+        {
+            RecipientBatchSize = 2,
+            UserNotificationWriteBatchSize = 2,
+            DeliveryEventRecipientLimit = 2
+        });
+
+        await Should.ThrowAsync<OperationCanceledException>(() => WithUnitOfWorkAsync(() =>
+            distributor.DistributeAsync(
+                NewNotification(notificationId),
+                Enumerable.Range(0, 5).Select(_ => Guid.NewGuid()).ToArray(),
+                null,
+                cancellation.Token)));
+
+        publishedBatches.ShouldBe(1);
+        await WithUnitOfWorkAsync(async () =>
+        {
+            // EF rolls the ambient transaction back, while the non-transactional Mongo test provider can retain
+            // the completed first batch. Neither provider may advance beyond that cancellation boundary.
+            var retainedRows = await GetRequiredService<IRepository<UserNotification, Guid>>()
+                .GetListAsync(row => row.NotificationId == notificationId);
+            retainedRows.Count.ShouldBeLessThanOrEqualTo(2);
+        });
+    }
+
+    [Fact]
+    public async Task Large_explicit_publish_prepares_once_and_completed_bounded_jobs_can_run_out_of_order()
+    {
+        var options = new NotificationOptions
+        {
+            DirectDistributionUserThreshold = 1,
+            RecipientBatchSize = 256,
+            UserNotificationWriteBatchSize = 256,
+            DeliveryEventRecipientLimit = 100
+        };
+        var eventBus = Substitute.For<IDistributedEventBus>();
+        var deliveries = new List<NotificationDeliveryEto>();
+        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryEto>()))
+            .Do(call => deliveries.Add(call.Arg<NotificationDeliveryEto>()));
+        var distributor = CreateDistributor(eventBus, options);
+        var backgroundJobManager = Substitute.For<IBackgroundJobManager>();
+        var publisher = new DefaultNotificationPublisher(
+            Options.Create(options),
+            distributor,
+            backgroundJobManager,
+            GetRequiredService<IGuidGenerator>(),
+            GetRequiredService<IClock>(),
+            GetRequiredService<ICurrentTenant>(),
+            GetRequiredService<INotificationDefinitionManager>(),
+            GetRequiredService<INotificationDataTypeRegistry>(),
+            GetRequiredService<INotificationStore>());
+        var distinctUsers = Enumerable.Range(0, 2_001).Select(_ => Guid.NewGuid()).ToArray();
+        var users = distinctUsers
+            .Concat(new[] { distinctUsers[0], distinctUsers[255], distinctUsers[256], distinctUsers[^1] })
+            .ToArray();
+
+        await WithUnitOfWorkAsync(() => publisher.PublishAsync(
+            "order.shipped",
+            new MessageNotificationData("prepared"),
+            userIds: users));
+        var jobs = backgroundJobManager.ReceivedCalls()
+            .SelectMany(call => call.GetArguments().OfType<NotificationDistributionJobArgs>())
+            .ToList();
+        jobs.Count.ShouldBe(8);
+        foreach (var job in jobs)
+        {
+            job.NotificationAlreadyPersisted.ShouldBeTrue();
+            job.UserIds.ShouldNotBeNull();
+            job.UserIds!.Length.ShouldBeLessThanOrEqualTo(256);
+        }
+
+        foreach (var args in jobs.AsEnumerable().Reverse())
+        {
+            await WithUnitOfWorkAsync(() => new NotificationDistributionJob(
+                    distributor,
+                    GetRequiredService<ICurrentTenant>())
+                .ExecuteAsync(args));
+        }
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var notificationId = jobs[0].Notification.Id;
+            (await GetRequiredService<IRepository<Notification, Guid>>()
+                .FindAsync(notificationId)).ShouldNotBeNull();
+            var rows = await GetRequiredService<IRepository<UserNotification, Guid>>()
+                .GetListAsync(row => row.NotificationId == notificationId);
+            rows.Count.ShouldBe(distinctUsers.Length);
+            rows.Select(row => row.UserId).ShouldBe(distinctUsers, ignoreOrder: true);
+        });
+        deliveries.Count.ShouldBe(24);
+        deliveries.ShouldAllBe(delivery => delivery.UserIds.Length <= 100);
+        deliveries.SelectMany(delivery => delivery.UserIds).ShouldBe(distinctUsers, ignoreOrder: true);
     }
 }

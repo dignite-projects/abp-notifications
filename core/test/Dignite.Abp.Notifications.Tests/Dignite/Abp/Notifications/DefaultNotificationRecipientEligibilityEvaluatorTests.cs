@@ -48,10 +48,15 @@ public class DefaultNotificationRecipientEligibilityEvaluatorTests
 
         logger.ReceivedCalls().Any(call =>
             Equals(call.GetArguments().FirstOrDefault(), LogLevel.Information)).ShouldBeTrue();
-        logger.ReceivedCalls().Any(call =>
-            Equals(call.GetArguments().FirstOrDefault(), LogLevel.Debug) &&
-            call.GetArguments().Any(argument => argument?.ToString()?.Contains(denied.ToString()) == true))
-            .ShouldBeTrue();
+        foreach (var call in logger.ReceivedCalls())
+        {
+            foreach (var argument in call.GetArguments())
+            {
+                var text = argument?.ToString();
+                (text?.Contains(eligible.ToString()) ?? false).ShouldBeFalse();
+                (text?.Contains(denied.ToString()) ?? false).ShouldBeFalse();
+            }
+        }
     }
 
     [Fact]

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Dignite.Abp.Notifications;
 using Volo.Abp.DependencyInjection;
@@ -21,7 +22,7 @@ namespace Dignite.Abp.NotificationCenter;
 /// </summary>
 [Dependency(ReplaceServices = true)]
 [ExposeServices(typeof(INotificationStore))]
-public class NotificationStore : INotificationStore, ITransientDependency
+public class NotificationStore : INotificationStore, IBatchedNotificationStore, ITransientDependency
 {
     protected IRepository<Notification, Guid> NotificationRepository { get; }
 
@@ -39,6 +40,8 @@ public class NotificationStore : INotificationStore, ITransientDependency
 
     protected IAsyncQueryableExecuter AsyncExecuter { get; }
 
+    protected INotificationBatchPersistence BatchPersistence { get; }
+
     public NotificationStore(
         IRepository<Notification, Guid> notificationRepository,
         IRepository<UserNotification, Guid> userNotificationRepository,
@@ -48,6 +51,29 @@ public class NotificationStore : INotificationStore, ITransientDependency
         IClock clock,
         ICurrentTenant currentTenant,
         IAsyncQueryableExecuter asyncExecuter)
+        : this(
+            notificationRepository,
+            userNotificationRepository,
+            subscriptionRepository,
+            dataSerializer,
+            guidGenerator,
+            clock,
+            currentTenant,
+            asyncExecuter,
+            new NotificationBatchPersistence(userNotificationRepository))
+    {
+    }
+
+    public NotificationStore(
+        IRepository<Notification, Guid> notificationRepository,
+        IRepository<UserNotification, Guid> userNotificationRepository,
+        IRepository<NotificationSubscription, Guid> subscriptionRepository,
+        INotificationDataSerializer dataSerializer,
+        IGuidGenerator guidGenerator,
+        IClock clock,
+        ICurrentTenant currentTenant,
+        IAsyncQueryableExecuter asyncExecuter,
+        INotificationBatchPersistence batchPersistence)
     {
         NotificationRepository = notificationRepository;
         UserNotificationRepository = userNotificationRepository;
@@ -57,9 +83,17 @@ public class NotificationStore : INotificationStore, ITransientDependency
         Clock = clock;
         CurrentTenant = currentTenant;
         AsyncExecuter = asyncExecuter;
+        BatchPersistence = batchPersistence;
     }
 
     public virtual async Task InsertNotificationAsync(NotificationInfo notification)
+    {
+        await InsertNotificationAsync(notification, CancellationToken.None);
+    }
+
+    public virtual async Task InsertNotificationAsync(
+        NotificationInfo notification,
+        CancellationToken cancellationToken)
     {
         var entity = new Notification(
             notification.Id,
@@ -71,7 +105,7 @@ public class NotificationStore : INotificationStore, ITransientDependency
             notification.CreationTime,
             notification.TenantId ?? CurrentTenant.Id);
 
-        await NotificationRepository.InsertAsync(entity);
+        await NotificationRepository.InsertAsync(entity, cancellationToken: cancellationToken);
     }
 
     public virtual async Task InsertUserNotificationAsync(UserNotificationInfo userNotification)
@@ -85,6 +119,26 @@ public class NotificationStore : INotificationStore, ITransientDependency
             userNotification.TenantId ?? CurrentTenant.Id);
 
         await UserNotificationRepository.InsertAsync(entity);
+    }
+
+    public virtual async Task InsertUserNotificationsAsync(
+        IReadOnlyCollection<UserNotificationInfo> userNotifications,
+        CancellationToken cancellationToken = default)
+    {
+        if (userNotifications.Count == 0)
+        {
+            return;
+        }
+
+        var entities = userNotifications.Select(userNotification => new UserNotification(
+            userNotification.Id == Guid.Empty ? GuidGenerator.Create() : userNotification.Id,
+            userNotification.UserId,
+            userNotification.NotificationId,
+            userNotification.State,
+            userNotification.CreationTime == default ? Clock.Now : userNotification.CreationTime,
+            userNotification.TenantId ?? CurrentTenant.Id)).ToList();
+
+        await BatchPersistence.InsertAsync(entities, cancellationToken);
     }
 
     public virtual async Task UpdateUserNotificationStateAsync(Guid userId, Guid notificationId, UserNotificationState state)
@@ -243,6 +297,46 @@ public class NotificationStore : INotificationStore, ITransientDependency
                 && (x.ScopeKey == definitionWideScopeKey || x.ScopeKey == requestedScopeKey));
 
         return entities.Select(MapToSubscriptionInfo).ToList();
+    }
+
+    public virtual async Task<List<Guid>> GetSubscriptionUserIdsAsync(
+        string notificationName,
+        string? entityTypeName,
+        string? entityId,
+        Guid? afterUserId,
+        int maxResultCount,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxResultCount);
+
+        var tenantKey = NotificationSubscriptionIdentity.GetTenantKey(CurrentTenant.Id);
+        var notificationNameKey = NotificationSubscriptionIdentity.GetNotificationNameKey(notificationName);
+        var requestedScopeKey = NotificationSubscriptionIdentity.GetScopeKey(entityTypeName, entityId);
+        var definitionWideScopeKey = NotificationSubscriptionIdentity.GetScopeKey(null, null);
+        var query = await SubscriptionRepository.GetQueryableAsync();
+        query = entityTypeName == null
+            ? query.Where(subscription =>
+                subscription.TenantKey == tenantKey &&
+                subscription.NotificationNameKey == notificationNameKey &&
+                subscription.ScopeKey == definitionWideScopeKey)
+            : query.Where(subscription =>
+                subscription.TenantKey == tenantKey &&
+                subscription.NotificationNameKey == notificationNameKey &&
+                (subscription.ScopeKey == definitionWideScopeKey ||
+                 subscription.ScopeKey == requestedScopeKey));
+
+        var recipientQuery = query.Select(subscription => subscription.UserId).Distinct();
+        if (afterUserId.HasValue)
+        {
+            var cursor = afterUserId.Value;
+            recipientQuery = recipientQuery.Where(userId => userId.CompareTo(cursor) > 0);
+        }
+
+        var recipientPage = recipientQuery
+            .OrderBy(userId => userId)
+            .Take(maxResultCount);
+
+        return await AsyncExecuter.ToListAsync(recipientPage, cancellationToken);
     }
 
     public virtual async Task<List<NotificationSubscriptionInfo>> GetSubscriptionsAsync(Guid userId)

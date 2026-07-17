@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -169,6 +170,58 @@ public class DefaultNotificationPublisherTests
         await _backgroundJobManager.Received(1).EnqueueAsync(
             Arg.Is<NotificationDistributionJobArgs>(args => args.Notification.TenantId == tenantId));
         await _distributor.DidNotReceiveWithAnyArgs().DistributeAsync(default!, default, default);
+    }
+
+    [Fact]
+    public async Task Built_in_capabilities_prepare_once_and_enqueue_only_bounded_explicit_recipient_jobs()
+    {
+        var distributor = Substitute.For<INotificationDistributor, IPreparedNotificationDistributor>();
+        var preparedDistributor = (IPreparedNotificationDistributor)distributor;
+        preparedDistributor.SupportsPreparedDistribution.Returns(true);
+        var store = Substitute.For<INotificationStore, IBatchedNotificationStore>();
+        var batchedStore = (IBatchedNotificationStore)store;
+        var options = Options.Create(new NotificationOptions
+        {
+            DirectDistributionUserThreshold = 1,
+            RecipientBatchSize = 2
+        });
+        var guidGenerator = Substitute.For<IGuidGenerator>();
+        guidGenerator.Create().Returns(_ => Guid.NewGuid());
+        var clock = Substitute.For<IClock>();
+        clock.Now.Returns(DateTime.UtcNow);
+        var currentTenant = Substitute.For<ICurrentTenant>();
+        var publisher = new DefaultNotificationPublisher(
+            options,
+            distributor,
+            _backgroundJobManager,
+            guidGenerator,
+            clock,
+            currentTenant,
+            _definitionManager,
+            _dataTypeRegistry,
+            store);
+        var users = Enumerable.Range(0, 6).Select(_ => Guid.NewGuid()).ToArray();
+
+        await publisher.PublishAsync(
+            "test",
+            userIds: users,
+            excludedUserIds: new[] { users[^1] });
+
+        await batchedStore.Received(1).InsertNotificationAsync(
+            Arg.Any<NotificationInfo>(),
+            CancellationToken.None);
+        var jobs = _backgroundJobManager.ReceivedCalls()
+            .Where(call => call.GetMethodInfo().Name == nameof(IBackgroundJobManager.EnqueueAsync))
+            .Select(call => call.GetArguments().OfType<NotificationDistributionJobArgs>().Single())
+            .ToList();
+        jobs.Count.ShouldBe(3);
+        jobs.Sum(job => job.UserIds!.Length).ShouldBe(5);
+        jobs.ShouldAllBe(job => job.UserIds!.Length <= 2);
+        jobs.ShouldAllBe(job =>
+            job.NotificationAlreadyPersisted &&
+            job.ExcludedUserIds == null &&
+            job.Notification.Id == jobs[0].Notification.Id);
+        jobs.SelectMany(job => job.UserIds!).ShouldBe(users.Take(5), ignoreOrder: true);
     }
 
     [Fact]
@@ -540,6 +593,79 @@ public class DefaultNotificationPublisherTests
         tenantSeen.ShouldBe(tenantId);
         await distributor.Received(1).DistributeToExplicitRecipientsWithoutEligibilityChecksAsync(
             Arg.Any<NotificationInfo>(), userIds, null);
+        await distributor.DidNotReceiveWithAnyArgs().DistributeAsync(default!, default, default);
+        currentTenant.Id.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Distribution_job_forwards_cancellation_to_a_capable_distributor()
+    {
+        var distributor = Substitute.For<INotificationDistributor, ICancellableNotificationDistributor>();
+        var cancellableDistributor = (ICancellableNotificationDistributor)distributor;
+        var currentTenant = new TestCurrentTenant();
+        using var cancellation = new CancellationTokenSource();
+        var notification = new NotificationInfo
+        {
+            Id = Guid.NewGuid(),
+            NotificationName = "test",
+            TenantId = Guid.NewGuid()
+        };
+        var userIds = new[] { Guid.NewGuid() };
+        var job = new NotificationDistributionJob(distributor, currentTenant);
+
+        await job.ExecuteAsync(
+            new NotificationDistributionJobArgs(notification, userIds, null),
+            cancellation.Token);
+
+        await cancellableDistributor.Received(1).DistributeAsync(
+            notification,
+            userIds,
+            null,
+            cancellation.Token);
+        await distributor.DidNotReceiveWithAnyArgs().DistributeAsync(default!, default, default);
+        currentTenant.Id.ShouldBeNull();
+    }
+
+    [Fact]
+    public void Distribution_job_args_retains_the_four_parameter_constructor()
+    {
+        typeof(NotificationDistributionJobArgs).GetConstructor(new[]
+        {
+            typeof(NotificationInfo),
+            typeof(Guid[]),
+            typeof(Guid[]),
+            typeof(NotificationRecipientEligibilityMode)
+        }).ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task Distribution_job_routes_a_prepared_batch_without_reinserting_the_notification()
+    {
+        var distributor = Substitute.For<INotificationDistributor, IPreparedNotificationDistributor>();
+        var preparedDistributor = (IPreparedNotificationDistributor)distributor;
+        preparedDistributor.SupportsPreparedDistribution.Returns(true);
+        var currentTenant = new TestCurrentTenant();
+        var notification = new NotificationInfo
+        {
+            Id = Guid.NewGuid(),
+            NotificationName = "test",
+            TenantId = Guid.NewGuid()
+        };
+        var userIds = new[] { Guid.NewGuid(), Guid.NewGuid() };
+        var job = new NotificationDistributionJob(distributor, currentTenant);
+
+        await job.ExecuteAsync(new NotificationDistributionJobArgs(
+            notification,
+            userIds,
+            excludedUserIds: null,
+            NotificationRecipientEligibilityMode.EnforceDefinitionRequirements,
+            notificationAlreadyPersisted: true));
+
+        await preparedDistributor.Received(1).DistributePreparedAsync(
+            notification,
+            userIds,
+            NotificationRecipientEligibilityMode.EnforceDefinitionRequirements,
+            Arg.Any<CancellationToken>());
         await distributor.DidNotReceiveWithAnyArgs().DistributeAsync(default!, default, default);
         currentTenant.Id.ShouldBeNull();
     }

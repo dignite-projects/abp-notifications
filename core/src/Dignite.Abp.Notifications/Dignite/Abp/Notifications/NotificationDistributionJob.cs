@@ -1,5 +1,7 @@
 using System;
+using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Hosting;
 using Volo.Abp.BackgroundJobs;
 using Volo.Abp.DependencyInjection;
 using Volo.Abp.MultiTenancy;
@@ -15,15 +17,39 @@ public class NotificationDistributionJob : AsyncBackgroundJob<NotificationDistri
 
     protected ICurrentTenant CurrentTenant { get; }
 
+    protected IHostApplicationLifetime? HostApplicationLifetime { get; }
+
     public NotificationDistributionJob(
         INotificationDistributor distributor,
         ICurrentTenant currentTenant)
+        : this(distributor, currentTenant, null)
+    {
+    }
+
+    public NotificationDistributionJob(
+        INotificationDistributor distributor,
+        ICurrentTenant currentTenant,
+        IHostApplicationLifetime? hostApplicationLifetime)
     {
         Distributor = distributor;
         CurrentTenant = currentTenant;
+        HostApplicationLifetime = hostApplicationLifetime;
     }
 
-    public override async Task ExecuteAsync(NotificationDistributionJobArgs args)
+    public override Task ExecuteAsync(NotificationDistributionJobArgs args)
+    {
+        return ExecuteAsync(
+            args,
+            HostApplicationLifetime?.ApplicationStopping ?? CancellationToken.None);
+    }
+
+    /// <summary>
+    /// Executes with explicit cancellation. ABP's background-job contract has no token parameter, so the normal
+    /// override supplies the host shutdown token; direct/custom job runners can pass their own token.
+    /// </summary>
+    public virtual async Task ExecuteAsync(
+        NotificationDistributionJobArgs args,
+        CancellationToken cancellationToken)
     {
         // Restore the tenant before invoking even a custom distributor. The default distributor independently
         // scopes its whole operation to Notification.TenantId so direct calls cannot mix tenant/host data either.
@@ -36,6 +62,30 @@ public class NotificationDistributionJob : AsyncBackgroundJob<NotificationDistri
         // and ABP's event bus re-enters the tenant from the event itself before invoking them.
         using (CurrentTenant.Change(args.Notification.TenantId, null))
         {
+            if (args.NotificationAlreadyPersisted)
+            {
+                if (args.UserIds == null)
+                {
+                    throw new ArgumentException(
+                        "Prepared distribution is only valid for explicit recipients.",
+                        nameof(args));
+                }
+
+                if (Distributor is not IPreparedNotificationDistributor preparedDistributor ||
+                    !preparedDistributor.SupportsPreparedDistribution)
+                {
+                    throw new InvalidOperationException(
+                        "The configured notification distributor cannot process prepared recipient batches.");
+                }
+
+                await preparedDistributor.DistributePreparedAsync(
+                    args.Notification,
+                    args.UserIds,
+                    args.RecipientEligibilityMode,
+                    cancellationToken);
+                return;
+            }
+
             if (args.RecipientEligibilityMode == NotificationRecipientEligibilityMode.BypassDefinitionRequirements)
             {
                 if (args.UserIds == null)
@@ -45,14 +95,41 @@ public class NotificationDistributionJob : AsyncBackgroundJob<NotificationDistri
                         nameof(args));
                 }
 
-                await Distributor.DistributeToExplicitRecipientsWithoutEligibilityChecksAsync(
-                    args.Notification,
-                    args.UserIds,
-                    args.ExcludedUserIds);
+                if (Distributor is ICancellableNotificationDistributor cancellableDistributor)
+                {
+                    await cancellableDistributor.DistributeToExplicitRecipientsWithoutEligibilityChecksAsync(
+                        args.Notification,
+                        args.UserIds,
+                        args.ExcludedUserIds,
+                        cancellationToken);
+                }
+                else
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await Distributor.DistributeToExplicitRecipientsWithoutEligibilityChecksAsync(
+                        args.Notification,
+                        args.UserIds,
+                        args.ExcludedUserIds);
+                }
             }
             else if (args.RecipientEligibilityMode == NotificationRecipientEligibilityMode.EnforceDefinitionRequirements)
             {
-                await Distributor.DistributeAsync(args.Notification, args.UserIds, args.ExcludedUserIds);
+                if (Distributor is ICancellableNotificationDistributor cancellableDistributor)
+                {
+                    await cancellableDistributor.DistributeAsync(
+                        args.Notification,
+                        args.UserIds,
+                        args.ExcludedUserIds,
+                        cancellationToken);
+                }
+                else
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await Distributor.DistributeAsync(
+                        args.Notification,
+                        args.UserIds,
+                        args.ExcludedUserIds);
+                }
             }
             else
             {

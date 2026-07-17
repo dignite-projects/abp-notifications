@@ -23,6 +23,12 @@ changes.
 - Added explicit notification payload schema versions, deterministic consecutive JSON upcasters with startup chain
   validation, typed strict-read failures, and a safe `UnsupportedNotificationData` tolerant-read representation.
   MVC and Angular now render unsupported payloads with a localized fallback.
+- Added a configurable bounded recipient pipeline for candidate resolution, eligibility, inbox multi-inserts, and
+  delivery-event publication. `IBatchedNotificationStore`, `ICancellableNotificationDistributor`, and
+  `IPreparedNotificationDistributor` are additive capability contracts, and `NotificationDistributionMetrics`
+  publishes stable candidate/eligible/filtered/batch/duration/failure instruments. Shared EF Core/MongoDB tests
+  cover 2,001 recipients, duplicate scopes, keyset changes, exact limits, cancellation, and independently scheduled
+  explicit batches.
 
 ### Changed
 
@@ -40,9 +46,10 @@ changes.
   `PublishToExplicitRecipientsWithoutEligibilityChecksAsync` API only for mandatory trusted-system delivery.
 - **Breaking for implementers.** `INotificationPublisher` and `INotificationDistributor` gained the named
   explicit-recipient bypass members. Custom implementations must add them and be recompiled. Existing
-  `DefaultNotificationDistributor` subclasses overriding its three-argument `GetTargetUserIdsAsync` remain
-  active for candidate selection, after which the shared eligibility policy is applied; replace
-  `INotificationRecipientEligibilityEvaluator` to customize eligibility for both recipient sources.
+  `DefaultNotificationDistributor` subclasses overriding its legacy protected selection/persistence/publication
+  hooks remain active through a compatibility pipeline, after which the shared eligibility policy is applied.
+  That compatibility path is intentionally materializing; migrate the customization to
+  `IBatchedNotificationStore` and `INotificationRecipientEligibilityEvaluator` for bounded fan-outs.
 - **Breaking for manual construction.** The three-argument `DefaultNotificationDistributor` constructor was
   removed because it could neither establish the notification's tenant/host context nor guarantee bypass audit
   logging. Manual callers must now supply `INotificationRecipientEligibilityEvaluator`, `ICurrentTenant`, and
@@ -59,6 +66,15 @@ changes.
   schema v1 and upgraded lazily without a database migration or eager row rewrite. Notification Center store
   queries and distributed-event/HTTP converters now tolerate unknown, future, malformed, and failed-upcast payloads
   by returning safe placeholder data, while `INotificationDataSerializer.Deserialize` retains strict behavior.
+- Distribution can now publish multiple `NotificationDeliveryEto` work items for one notification. Built-in EF Core,
+  MongoDB, and null stores use keyset pages and bounded writes; large explicit fan-outs prepare the notification once
+  and enqueue bounded recipient jobs. Explicit normalization uses bounded keyset windows rather than a
+  notification-wide duplicate set, and the inline threshold now shares the 10,000 hard maximum. EF Core flushes and
+  detaches each inbox group while retaining an ambient transaction when one exists. Existing custom
+  `INotificationStore` implementations remain compatible through the legacy materializing/per-row path and should
+  add the new capabilities before large fan-outs. The original four-parameter `NotificationDistributionJobArgs`
+  constructor remains available for binary compatibility. No database migration or delivery-ledger/retry policy is
+  included.
 - **Breaking behavior for payload authors.** Per-instance assignments to `NotificationData.SchemaVersion` no longer
   select the wire version. The converter now writes the current version declared by
   `[NotificationDataType("...", version)]`; move shape changes to that declaration and registered upcasters.

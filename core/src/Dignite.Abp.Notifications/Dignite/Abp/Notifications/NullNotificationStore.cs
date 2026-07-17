@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using Volo.Abp.DependencyInjection;
 
@@ -9,7 +10,7 @@ namespace Dignite.Abp.Notifications;
 /// No-op store used in stateless forwarding mode (no NotificationCenter installed). Notifications are still
 /// published as delivery events; nothing is persisted, and there are no subscriptions or inbox.
 /// </summary>
-public class NullNotificationStore : INotificationStore, ISingletonDependency
+public class NullNotificationStore : INotificationStore, IBatchedNotificationStore, ISingletonDependency
 {
     public Task InsertSubscriptionAsync(NotificationSubscriptionInfo subscription) => Task.CompletedTask;
 
@@ -23,12 +24,40 @@ public class NullNotificationStore : INotificationStore, ISingletonDependency
         string notificationName, string? entityTypeName, string? entityId)
         => Task.FromResult(new List<NotificationSubscriptionInfo>());
 
+    public Task<List<Guid>> GetSubscriptionUserIdsAsync(
+        string notificationName,
+        string? entityTypeName,
+        string? entityId,
+        Guid? afterUserId,
+        int maxResultCount,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(new List<Guid>());
+    }
+
     public Task<List<NotificationSubscriptionInfo>> GetSubscriptionsAsync(Guid userId)
         => Task.FromResult(new List<NotificationSubscriptionInfo>());
 
     public Task InsertNotificationAsync(NotificationInfo notification) => Task.CompletedTask;
 
+    public Task InsertNotificationAsync(
+        NotificationInfo notification,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.CompletedTask;
+    }
+
     public Task InsertUserNotificationAsync(UserNotificationInfo userNotification) => Task.CompletedTask;
+
+    public Task InsertUserNotificationsAsync(
+        IReadOnlyCollection<UserNotificationInfo> userNotifications,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.CompletedTask;
+    }
 
     public Task UpdateUserNotificationStateAsync(Guid userId, Guid notificationId, UserNotificationState state)
         => Task.CompletedTask;
