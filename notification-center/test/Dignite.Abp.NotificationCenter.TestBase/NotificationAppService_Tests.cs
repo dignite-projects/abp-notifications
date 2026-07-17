@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Dignite.Abp.Notifications;
 using Shouldly;
@@ -63,6 +64,57 @@ public abstract class NotificationAppService_Tests<TStartupModule> : Notificatio
                 dto.NotificationDisplayName.ShouldBe("Order Shipped");
                 dto.Data.ShouldBeOfType<OrderShippedNotificationData>().OrderNumber.ShouldBe("SO-1");
                 dto.State.ShouldBe(UserNotificationState.Unread);
+            });
+        }
+    }
+
+    [Fact]
+    public async Task GetList_returns_an_unsupported_placeholder_and_serializable_rest_fallback_metadata()
+    {
+        var notificationId = Guid.NewGuid();
+        var creationTime = DateTime.UtcNow;
+        var rawJson = HistoricalPayloadFixtures.Read("unknown-payload-v1.json");
+        await WithUnitOfWorkAsync(async () =>
+        {
+            await GetRequiredService<Volo.Abp.Domain.Repositories.IRepository<Notification, Guid>>()
+                .InsertAsync(new Notification(
+                    notificationId,
+                    "order.shipped",
+                    rawJson,
+                    null,
+                    null,
+                    NotificationSeverity.Info,
+                    creationTime,
+                    null));
+            await GetRequiredService<Volo.Abp.Domain.Repositories.IRepository<UserNotification, Guid>>()
+                .InsertAsync(new UserNotification(
+                    Guid.NewGuid(),
+                    _userId,
+                    notificationId,
+                    UserNotificationState.Unread,
+                    creationTime,
+                    null));
+        });
+
+        using (ChangeCurrentUser(_userId))
+        {
+            await WithUnitOfWorkAsync(async () =>
+            {
+                var result = await GetRequiredService<INotificationAppService>()
+                    .GetListAsync(new GetUserNotificationListInput());
+                var dto = result.Items.Single(item => item.NotificationId == notificationId);
+                var unsupported = dto.Data.ShouldBeOfType<UnsupportedNotificationData>();
+                unsupported.Reason.ShouldBe(UnsupportedNotificationDataReason.UnknownDiscriminator);
+                unsupported.RawJson.ShouldBe(rawJson);
+
+                var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+                options.Converters.Add(new NotificationDataJsonConverter(
+                    GetRequiredService<INotificationDataTypeRegistry>(),
+                    NotificationDataReadMode.Tolerant));
+                var restJson = JsonSerializer.Serialize(dto, options);
+                restJson.ShouldContain("\"type\":\"Dignite.Unsupported\"");
+                restJson.ShouldContain("\"originalDiscriminator\":\"Removed.Module.Payload\"");
+                restJson.ShouldContain("\"reason\":\"UnknownDiscriminator\"");
             });
         }
     }

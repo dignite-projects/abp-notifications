@@ -25,7 +25,7 @@ public class AbpNotificationCenterHttpApiModule : AbpModule
 
     public override void ConfigureServices(ServiceConfigurationContext context)
     {
-        // AbpNotificationsModule registers NotificationDataJsonConverter on AbpSystemTextJsonSerializerOptions
+        // AbpNotificationsAbstractionsModule registers NotificationDataJsonConverter on AbpSystemTextJsonSerializerOptions
         // (what the distributed event bus / INotificationDataSerializer use), but ASP.NET Core's actual HTTP
         // response JSON formatter reads Microsoft.AspNetCore.Mvc.JsonOptions instead — a separate, unsynced
         // JsonSerializerOptions. Without this, UserNotificationDto.Data serializes over HTTP via System.Text.Json's
@@ -36,7 +36,8 @@ public class AbpNotificationCenterHttpApiModule : AbpModule
             .AddOptions<JsonOptions>()
             .Configure<INotificationDataTypeRegistry>((options, registry) =>
             {
-                options.JsonSerializerOptions.Converters.Add(new NotificationDataJsonConverter(registry));
+                options.JsonSerializerOptions.Converters.Add(
+                    new NotificationDataJsonConverter(registry, NotificationDataReadMode.Tolerant));
             });
     }
 }

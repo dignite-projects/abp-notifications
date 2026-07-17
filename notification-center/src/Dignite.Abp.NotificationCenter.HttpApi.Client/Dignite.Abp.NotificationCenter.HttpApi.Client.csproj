@@ -8,7 +8,6 @@
 
   <ItemGroup>
     <PackageReference Include="Volo.Abp.Http.Client" />
-    <PackageReference Include="Volo.Abp.Json.SystemTextJson" />
   </ItemGroup>
 
   <ItemGroup>

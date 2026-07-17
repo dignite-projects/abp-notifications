@@ -9,6 +9,7 @@
   <ItemGroup>
     <PackageReference Include="Volo.Abp.Localization" />
     <PackageReference Include="Volo.Abp.EventBus.Abstractions" />
+    <PackageReference Include="Volo.Abp.Json.SystemTextJson" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0' or '$(TargetFramework)' == 'netstandard2.1'">

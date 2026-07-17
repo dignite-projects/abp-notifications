@@ -11,6 +11,7 @@
     "Description": "描述",
     "Subscribed": "已订阅",
     "SubscriptionScope": "范围",
-    "AllEntities": "所有实体"
+    "AllEntities": "所有实体",
+    "UnsupportedNotification": "当前版本无法显示此通知。"
   }
 }

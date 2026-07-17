@@ -11,6 +11,7 @@
     "Description": "Description",
     "Subscribed": "Subscribed",
     "SubscriptionScope": "Scope",
-    "AllEntities": "All entities"
+    "AllEntities": "All entities",
+    "UnsupportedNotification": "This notification cannot be displayed by this version."
   }
 }

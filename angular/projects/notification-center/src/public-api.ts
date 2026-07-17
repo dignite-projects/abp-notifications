@@ -11,4 +11,5 @@ export * from './lib/notification-subscriptions/notification-subscriptions.compo
 export * from './lib/notification-data/notification-data-components.service';
 export * from './lib/notification-data/message-notification-data.component';
 export * from './lib/notification-data/localizable-message-notification-data.component';
+export * from './lib/notification-data/unsupported-notification-data.component';
 export * from './lib/notification-links/notification-entity-links.service';

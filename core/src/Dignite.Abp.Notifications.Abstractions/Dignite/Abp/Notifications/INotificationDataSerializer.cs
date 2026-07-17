@@ -2,7 +2,8 @@ namespace Dignite.Abp.Notifications;
 
 /// <summary>
 /// Serializes <see cref="NotificationData"/> to/from JSON using stable discriminators.
-/// The single mechanism shared by persistence, the event bus and remote HTTP clients.
+/// <see cref="Deserialize"/> is deliberately strict for trusted/corruption-sensitive boundaries. Durable inbox
+/// reads use the additive <see cref="INotificationDataTolerantReader"/> contract.
 /// </summary>
 public interface INotificationDataSerializer
 {

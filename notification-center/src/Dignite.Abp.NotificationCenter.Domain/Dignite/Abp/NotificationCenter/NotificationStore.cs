@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Dignite.Abp.Notifications;
 using Volo.Abp.DependencyInjection;
@@ -16,7 +17,8 @@ namespace Dignite.Abp.NotificationCenter;
 /// EF-backed implementation of the core <see cref="INotificationStore"/>. Replaces the framework's
 /// <c>NullNotificationStore</c> when this module is installed. Both write and read go through the single core
 /// <see cref="INotificationDataSerializer"/> (System.Text.Json + stable discriminator) — no Newtonsoft, no
-/// AssemblyQualifiedName (fixes roadmap problem A). Queries use proper joins/indexes (fixes problem D).
+/// AssemblyQualifiedName. Durable reads use its additive tolerant-reader capability so one historical payload
+/// cannot fail a whole inbox page. Queries use proper joins/indexes (fixes roadmap problem D).
 /// </summary>
 [Dependency(ReplaceServices = true)]
 [ExposeServices(typeof(INotificationStore))]
@@ -258,7 +260,7 @@ public class NotificationStore : INotificationStore, ITransientDependency
         {
             Id = n.Id,
             NotificationName = n.NotificationName,
-            Data = DataSerializer.Deserialize(n.Data),
+            Data = DeserializeDurableData(n.Data),
             EntityTypeName = n.EntityTypeName,
             EntityId = n.EntityId,
             Severity = n.Severity,
@@ -278,6 +280,41 @@ public class NotificationStore : INotificationStore, ITransientDependency
             CreationTime = un.CreationTime,
             TenantId = un.TenantId
         };
+    }
+
+    protected virtual NotificationData? DeserializeDurableData(string? json)
+    {
+        if (DataSerializer is INotificationDataTolerantReader tolerantReader)
+        {
+            return tolerantReader.DeserializeTolerantly(json);
+        }
+
+        try
+        {
+            return DataSerializer.Deserialize(json);
+        }
+        catch (NotificationDataReadException exception)
+        {
+            return new UnsupportedNotificationData
+            {
+                OriginalDiscriminator = exception.Discriminator,
+                OriginalSchemaVersion = exception.SchemaVersion,
+                Reason = exception.Reason,
+                RawJson = json ?? string.Empty
+            };
+        }
+        catch (Exception exception) when (
+            exception is JsonException ||
+            exception is NotSupportedException ||
+            exception is InvalidOperationException ||
+            exception is ArgumentException)
+        {
+            return new UnsupportedNotificationData
+            {
+                Reason = UnsupportedNotificationDataReason.MalformedPayload,
+                RawJson = json ?? string.Empty
+            };
+        }
     }
 
     protected virtual NotificationSubscriptionInfo MapToSubscriptionInfo(NotificationSubscription s)
