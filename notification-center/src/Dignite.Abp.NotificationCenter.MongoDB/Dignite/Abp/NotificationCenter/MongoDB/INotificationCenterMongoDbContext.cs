@@ -1,11 +1,15 @@
 using MongoDB.Driver;
 using Volo.Abp.Data;
 using Volo.Abp.MongoDB;
+using Volo.Abp.MongoDB.DistributedEvents;
 
 namespace Dignite.Abp.NotificationCenter.MongoDB;
 
 [ConnectionStringName(NotificationCenterDbProperties.ConnectionStringName)]
-public interface INotificationCenterMongoDbContext : IAbpMongoDbContext
+public interface INotificationCenterMongoDbContext :
+    IAbpMongoDbContext,
+    IHasEventInbox,
+    IHasEventOutbox
 {
     IMongoCollection<Notification> Notifications { get; }
 

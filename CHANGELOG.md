@@ -12,6 +12,11 @@ changes.
 
 ### Added
 
+- Added MongoDB integration with ABP's distributed event outbox and inbox through
+  `UseNotificationCenterMongoDbOutbox()`. The opt-in validates replica-set/sharded-cluster transaction capability
+  at startup, exposes a reusable capability checker, uses ABP-compatible event-box collections with query indexes,
+  and shares atomic commit/rollback tests with EF Core. Existing MongoDB hosts require the documented topology and
+  configuration rollout but no data backfill.
 - Added scoped subscription application/REST contracts that round-trip the stable entity type and ID,
   while retaining the name-only methods as definition-wide compatibility wrappers for callers. MVC and
   Angular subscription UIs now submit the complete scope.
