@@ -98,7 +98,7 @@ public class DefaultNotificationRecipientEligibilityEvaluator :
             Logger.LogDebug(
                 "Recipients excluded from notification '{NotificationName}': {ExcludedUserIds}.",
                 notificationName,
-                excluded);
+                string.Join(", ", excluded));
         }
 
         return new NotificationRecipientEligibilityResult(eligible, excluded);
