@@ -9,6 +9,8 @@
     "Subscriptions": "通知訂閱",
     "NotificationType": "通知類型",
     "Description": "描述",
-    "Subscribed": "已訂閱"
+    "Subscribed": "已訂閱",
+    "SubscriptionScope": "範圍",
+    "AllEntities": "所有實體"
   }
 }

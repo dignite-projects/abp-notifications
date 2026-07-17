@@ -58,24 +58,23 @@ public class NotificationCenterMongoDbContext : AbpMongoDbContext, INotification
             {
                 indexes.CreateOne(new CreateIndexModel<BsonDocument>(
                     Builders<BsonDocument>.IndexKeys
-                        .Ascending(nameof(NotificationSubscription.TenantId))
-                        .Ascending(nameof(NotificationSubscription.NotificationName))
-                        .Ascending(nameof(NotificationSubscription.EntityTypeName))
-                        .Ascending(nameof(NotificationSubscription.EntityId))));
+                        .Ascending(nameof(NotificationSubscription.TenantKey))
+                        .Ascending(nameof(NotificationSubscription.NotificationNameKey))
+                        .Ascending(nameof(NotificationSubscription.ScopeKey))));
 
                 indexes.CreateOne(new CreateIndexModel<BsonDocument>(
                     Builders<BsonDocument>.IndexKeys
-                        .Ascending(nameof(NotificationSubscription.TenantId))
+                        .Ascending(nameof(NotificationSubscription.TenantKey))
                         .Ascending(nameof(NotificationSubscription.UserId))
-                        .Ascending(nameof(NotificationSubscription.NotificationName))
-                        .Ascending(nameof(NotificationSubscription.EntityTypeName))
-                        .Ascending(nameof(NotificationSubscription.EntityId)),
+                        .Ascending(nameof(NotificationSubscription.NotificationNameKey))
+                        .Ascending(nameof(NotificationSubscription.ScopeKey)),
                     new CreateIndexOptions { Unique = true }));
 
                 indexes.CreateOne(new CreateIndexModel<BsonDocument>(
                     Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(NotificationSubscription.TenantKey))
                         .Ascending(nameof(NotificationSubscription.UserId))
-                        .Ascending(nameof(NotificationSubscription.NotificationName))));
+                        .Ascending(nameof(NotificationSubscription.NotificationNameKey))));
             });
         });
     }

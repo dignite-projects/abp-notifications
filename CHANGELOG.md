@@ -10,6 +10,23 @@ changes.
 
 ## [Unreleased]
 
+### Added
+
+- Added scoped subscription application/REST contracts that round-trip the stable entity type and ID,
+  while retaining the name-only methods as definition-wide compatibility wrappers for callers. MVC and
+  Angular subscription UIs now submit the complete scope.
+
+### Changed
+
+- **Breaking for implementers.** `INotificationAppService` gained scoped subscribe/unsubscribe members;
+  custom implementations and replacements must implement the new methods and be recompiled. Existing
+  callers of the name-only members remain source-compatible.
+- Subscription-driven distribution now treats a definition-wide subscription as a fallback for every
+  entity and combines it with an exact entity subscription without delivering twice to the same user.
+- Notification subscription uniqueness now uses non-null, ordinal identity keys across EF Core and
+  MongoDB. Existing databases require a host-owned backfill and index migration as documented in the
+  README; this repository does not ship consumer migrations.
+
 ### Fixed
 
 - Notification definition names and `NotificationData` discriminators now use explicit ordinal,

@@ -5,6 +5,7 @@ using Dignite.Abp.Notifications;
 using Shouldly;
 using Volo.Abp.Domain.Repositories;
 using Volo.Abp.Modularity;
+using Volo.Abp.MultiTenancy;
 using Xunit;
 
 namespace Dignite.Abp.NotificationCenter;
@@ -128,5 +129,139 @@ public abstract class NotificationStore_Tests<TStartupModule> : NotificationCent
                 .ShouldContain(s => s.UserId == userId);
             (await store.GetSubscriptionsAsync(userId)).Count.ShouldBe(1);
         });
+    }
+
+    [Fact]
+    public async Task Definition_wide_and_entity_scopes_coexist_match_and_delete_independently()
+    {
+        var bothScopes = Guid.NewGuid();
+        var exactOrder42 = Guid.NewGuid();
+        var exactOrder99 = Guid.NewGuid();
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var store = GetRequiredService<INotificationStore>();
+            await store.InsertSubscriptionAsync(NewSubscription(bothScopes));
+            await store.InsertSubscriptionAsync(NewSubscription(bothScopes, "Demo.Order", "42"));
+            await store.InsertSubscriptionAsync(NewSubscription(exactOrder42, "Demo.Order", "42"));
+            await store.InsertSubscriptionAsync(NewSubscription(exactOrder99, "Demo.Order", "99"));
+        });
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var store = GetRequiredService<INotificationStore>();
+
+            (await store.GetSubscriptionsAsync("order.shipped", null, null))
+                .Select(subscription => subscription.UserId)
+                .ShouldBe(new[] { bothScopes }, ignoreOrder: true);
+            (await store.GetSubscriptionsAsync("order.shipped", "Demo.Order", "42"))
+                .Select(subscription => subscription.UserId)
+                .ShouldBe(new[] { bothScopes, bothScopes, exactOrder42 }, ignoreOrder: true);
+            (await store.GetSubscriptionsAsync("order.shipped", "Demo.Order", "99"))
+                .Select(subscription => subscription.UserId)
+                .ShouldBe(new[] { bothScopes, exactOrder99 }, ignoreOrder: true);
+
+            await store.DeleteSubscriptionAsync(bothScopes, "order.shipped", "Demo.Order", "42");
+        });
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var store = GetRequiredService<INotificationStore>();
+            (await store.IsSubscribedAsync(bothScopes, "order.shipped", null, null)).ShouldBeTrue();
+            (await store.IsSubscribedAsync(bothScopes, "order.shipped", "Demo.Order", "42")).ShouldBeFalse();
+            (await store.GetSubscriptionsAsync(bothScopes)).ShouldHaveSingleItem()
+                .EntityTypeName.ShouldBeNull();
+        });
+    }
+
+    [Fact]
+    public async Task Subscription_identity_is_unique_for_host_and_tenant_scopes_independently()
+    {
+        var userId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            await GetRequiredService<INotificationStore>().InsertSubscriptionAsync(NewSubscription(userId));
+        });
+
+        using (GetRequiredService<ICurrentTenant>().Change(tenantId, "tenant"))
+        {
+            await WithUnitOfWorkAsync(async () =>
+            {
+                await GetRequiredService<INotificationStore>().InsertSubscriptionAsync(NewSubscription(userId));
+            });
+            await WithUnitOfWorkAsync(async () =>
+            {
+                (await GetRequiredService<INotificationStore>().GetSubscriptionsAsync(userId))
+                    .ShouldHaveSingleItem().TenantId.ShouldBe(tenantId);
+            });
+        }
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            (await GetRequiredService<INotificationStore>().GetSubscriptionsAsync(userId))
+                .ShouldHaveSingleItem().TenantId.ShouldBeNull();
+        });
+    }
+
+    [Fact]
+    public async Task Duplicate_subscription_identity_is_rejected()
+    {
+        var userId = Guid.NewGuid();
+
+        await Should.ThrowAsync<Exception>(() => WithUnitOfWorkAsync(async () =>
+        {
+            var store = GetRequiredService<INotificationStore>();
+            await store.InsertSubscriptionAsync(NewSubscription(userId, "Demo.Order", "42"));
+            await store.InsertSubscriptionAsync(NewSubscription(userId, "Demo.Order", "42"));
+        }));
+    }
+
+    [Fact]
+    public async Task Subscription_name_identity_is_ordinal_and_case_sensitive()
+    {
+        var userId = Guid.NewGuid();
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var store = GetRequiredService<INotificationStore>();
+            await store.InsertSubscriptionAsync(NewSubscription(userId));
+            var caseVariant = NewSubscription(userId);
+            caseVariant.NotificationName = "Order.Shipped";
+            await store.InsertSubscriptionAsync(caseVariant);
+        });
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var store = GetRequiredService<INotificationStore>();
+            (await store.GetSubscriptionsAsync("order.shipped", null, null)).ShouldHaveSingleItem()
+                .NotificationName.ShouldBe("order.shipped");
+            (await store.GetSubscriptionsAsync("Order.Shipped", null, null)).ShouldHaveSingleItem()
+                .NotificationName.ShouldBe("Order.Shipped");
+        });
+    }
+
+    [Fact]
+    public async Task Partial_entity_scope_is_rejected()
+    {
+        await Should.ThrowAsync<ArgumentException>(() => WithUnitOfWorkAsync(() =>
+            GetRequiredService<INotificationStore>().InsertSubscriptionAsync(
+                NewSubscription(Guid.NewGuid(), "Demo.Order", null))));
+    }
+
+    private static NotificationSubscriptionInfo NewSubscription(
+        Guid userId,
+        string? entityTypeName = null,
+        string? entityId = null)
+    {
+        return new NotificationSubscriptionInfo
+        {
+            UserId = userId,
+            NotificationName = "order.shipped",
+            EntityTypeName = entityTypeName,
+            EntityId = entityId,
+            CreationTime = DateTime.UtcNow
+        };
     }
 }

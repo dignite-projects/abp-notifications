@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Threading.Tasks;
 using Dignite.Abp.Notifications;
@@ -106,5 +108,99 @@ public abstract class NotificationAppService_Tests<TStartupModule> : Notificatio
                 subscription.DisplayName.ShouldBe("Order Shipped");
             });
         }
+    }
+
+    [Fact]
+    public async Task Scoped_subscriptions_round_trip_and_unsubscribe_by_complete_identity()
+    {
+        using (ChangeCurrentUser(_userId))
+        {
+            await WithUnitOfWorkAsync(async () =>
+            {
+                var appService = GetRequiredService<INotificationAppService>();
+                await appService.SubscribeScopedAsync(new NotificationSubscriptionScopeDto
+                {
+                    NotificationName = "order.shipped"
+                });
+                await appService.SubscribeScopedAsync(new NotificationSubscriptionScopeDto
+                {
+                    NotificationName = "order.shipped",
+                    EntityTypeName = "Demo.Order",
+                    EntityId = "42"
+                });
+                await appService.SubscribeScopedAsync(new NotificationSubscriptionScopeDto
+                {
+                    NotificationName = "order.shipped",
+                    EntityTypeName = "Demo.Order",
+                    EntityId = "99"
+                });
+            });
+
+            await WithUnitOfWorkAsync(async () =>
+            {
+                var appService = GetRequiredService<INotificationAppService>();
+                var rows = (await appService.GetSubscriptionsAsync()).Items
+                    .Where(subscription => subscription.NotificationName == "order.shipped")
+                    .ToList();
+
+                rows.Count.ShouldBe(3);
+                rows.ShouldContain(subscription =>
+                    subscription.EntityTypeName == null && subscription.EntityId == null
+                    && subscription.IsSubscribed);
+                rows.ShouldContain(subscription =>
+                    subscription.EntityTypeName == "Demo.Order" && subscription.EntityId == "42"
+                    && subscription.IsSubscribed);
+                rows.ShouldContain(subscription =>
+                    subscription.EntityTypeName == "Demo.Order" && subscription.EntityId == "99"
+                    && subscription.IsSubscribed);
+
+                await appService.UnsubscribeScopedAsync(new NotificationSubscriptionScopeDto
+                {
+                    NotificationName = "order.shipped",
+                    EntityTypeName = "Demo.Order",
+                    EntityId = "42"
+                });
+            });
+
+            await WithUnitOfWorkAsync(async () =>
+            {
+                var rows = (await GetRequiredService<INotificationAppService>().GetSubscriptionsAsync()).Items
+                    .Where(subscription => subscription.NotificationName == "order.shipped")
+                    .ToList();
+
+                rows.Count.ShouldBe(2);
+                rows.ShouldContain(subscription =>
+                    subscription.EntityTypeName == null && subscription.EntityId == null
+                    && subscription.IsSubscribed);
+                rows.ShouldContain(subscription =>
+                    subscription.EntityTypeName == "Demo.Order" && subscription.EntityId == "99"
+                    && subscription.IsSubscribed);
+                rows.ShouldNotContain(subscription => subscription.EntityId == "42");
+            });
+        }
+    }
+
+    [Theory]
+    [InlineData(null, "42")]
+    [InlineData("Demo.Order", null)]
+    [InlineData("", "")]
+    [InlineData("   ", "42")]
+    [InlineData("Demo.Order", "   ")]
+    public void Scoped_subscription_contract_rejects_partial_or_blank_entity_identity(
+        string? entityTypeName,
+        string? entityId)
+    {
+        var input = new NotificationSubscriptionScopeDto
+        {
+            NotificationName = "order.shipped",
+            EntityTypeName = entityTypeName,
+            EntityId = entityId
+        };
+        var validationResults = new List<ValidationResult>();
+
+        Validator.TryValidateObject(input, new ValidationContext(input), validationResults, true).ShouldBeFalse();
+        validationResults.ShouldContain(result => result.MemberNames.Any(member =>
+            member == nameof(NotificationSubscriptionScopeDto.EntityTypeName)
+            || member == nameof(NotificationSubscriptionScopeDto.EntityId)));
     }
 }

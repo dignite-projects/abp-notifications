@@ -3505,6 +3505,48 @@
                     "typeSimple": "System.Void",
                     "summary": null
                   }
+                },
+                {
+                  "name": "SubscribeScopedAsync",
+                  "parametersOnMethod": [
+                    {
+                      "name": "input",
+                      "typeAsString": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto, Dignite.Abp.NotificationCenter.Application.Contracts",
+                      "type": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
+                      "typeSimple": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
+                      "isOptional": false,
+                      "defaultValue": null,
+                      "summary": null,
+                      "description": null,
+                      "displayName": null
+                    }
+                  ],
+                  "returnValue": {
+                    "type": "System.Void",
+                    "typeSimple": "System.Void",
+                    "summary": null
+                  }
+                },
+                {
+                  "name": "UnsubscribeScopedAsync",
+                  "parametersOnMethod": [
+                    {
+                      "name": "input",
+                      "typeAsString": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto, Dignite.Abp.NotificationCenter.Application.Contracts",
+                      "type": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
+                      "typeSimple": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
+                      "isOptional": false,
+                      "defaultValue": null,
+                      "summary": null,
+                      "description": null,
+                      "displayName": null
+                    }
+                  ],
+                  "returnValue": {
+                    "type": "System.Void",
+                    "typeSimple": "System.Void",
+                    "summary": null
+                  }
                 }
               ]
             }
@@ -3937,6 +3979,134 @@
                   "constraintTypes": [],
                   "bindingSourceId": "Path",
                   "descriptorName": "",
+                  "summary": null,
+                  "description": null,
+                  "displayName": null
+                }
+              ],
+              "returnValue": {
+                "type": "System.Void",
+                "typeSimple": "System.Void",
+                "summary": null
+              },
+              "allowAnonymous": null,
+              "authorizeDatas": [],
+              "implementFrom": "Dignite.Abp.NotificationCenter.INotificationAppService",
+              "summary": null,
+              "remarks": null,
+              "description": null,
+              "displayName": null
+            },
+            "SubscribeScopedAsyncByInput": {
+              "uniqueName": "SubscribeScopedAsyncByInput",
+              "name": "SubscribeScopedAsync",
+              "httpMethod": "POST",
+              "url": "api/notifications/subscription-scopes",
+              "supportedVersions": [],
+              "parametersOnMethod": [
+                {
+                  "name": "input",
+                  "typeAsString": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto, Dignite.Abp.NotificationCenter.Application.Contracts",
+                  "type": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
+                  "typeSimple": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
+                  "isOptional": false,
+                  "defaultValue": null,
+                  "summary": null,
+                  "description": null,
+                  "displayName": null
+                }
+              ],
+              "parameters": [
+                {
+                  "nameOnMethod": "input",
+                  "name": "input",
+                  "jsonName": null,
+                  "type": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
+                  "typeSimple": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
+                  "isOptional": false,
+                  "defaultValue": null,
+                  "constraintTypes": null,
+                  "bindingSourceId": "Body",
+                  "descriptorName": "",
+                  "summary": null,
+                  "description": null,
+                  "displayName": null
+                }
+              ],
+              "returnValue": {
+                "type": "System.Void",
+                "typeSimple": "System.Void",
+                "summary": null
+              },
+              "allowAnonymous": null,
+              "authorizeDatas": [],
+              "implementFrom": "Dignite.Abp.NotificationCenter.INotificationAppService",
+              "summary": null,
+              "remarks": null,
+              "description": null,
+              "displayName": null
+            },
+            "UnsubscribeScopedAsyncByInput": {
+              "uniqueName": "UnsubscribeScopedAsyncByInput",
+              "name": "UnsubscribeScopedAsync",
+              "httpMethod": "DELETE",
+              "url": "api/notifications/subscription-scopes",
+              "supportedVersions": [],
+              "parametersOnMethod": [
+                {
+                  "name": "input",
+                  "typeAsString": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto, Dignite.Abp.NotificationCenter.Application.Contracts",
+                  "type": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
+                  "typeSimple": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
+                  "isOptional": false,
+                  "defaultValue": null,
+                  "summary": null,
+                  "description": null,
+                  "displayName": null
+                }
+              ],
+              "parameters": [
+                {
+                  "nameOnMethod": "input",
+                  "name": "NotificationName",
+                  "jsonName": null,
+                  "type": "System.String",
+                  "typeSimple": "string",
+                  "isOptional": false,
+                  "defaultValue": null,
+                  "constraintTypes": null,
+                  "bindingSourceId": "Query",
+                  "descriptorName": "input",
+                  "summary": null,
+                  "description": null,
+                  "displayName": null
+                },
+                {
+                  "nameOnMethod": "input",
+                  "name": "EntityTypeName",
+                  "jsonName": null,
+                  "type": "System.String",
+                  "typeSimple": "string",
+                  "isOptional": false,
+                  "defaultValue": null,
+                  "constraintTypes": null,
+                  "bindingSourceId": "Query",
+                  "descriptorName": "input",
+                  "summary": null,
+                  "description": null,
+                  "displayName": null
+                },
+                {
+                  "nameOnMethod": "input",
+                  "name": "EntityId",
+                  "jsonName": null,
+                  "type": "System.String",
+                  "typeSimple": "string",
+                  "isOptional": false,
+                  "defaultValue": null,
+                  "constraintTypes": null,
+                  "bindingSourceId": "Query",
+                  "descriptorName": "input",
                   "summary": null,
                   "description": null,
                   "displayName": null
@@ -5753,6 +5923,38 @@
           "displayName": null
         },
         {
+          "name": "EntityTypeName",
+          "jsonName": null,
+          "type": "System.String",
+          "typeSimple": "string",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": true,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        },
+        {
+          "name": "EntityId",
+          "jsonName": null,
+          "type": "System.String",
+          "typeSimple": "string",
+          "isRequired": false,
+          "minLength": null,
+          "maxLength": null,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": true,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        },
+        {
           "name": "DisplayName",
           "jsonName": null,
           "type": "System.String",
@@ -5796,6 +5998,67 @@
           "maximum": null,
           "regex": null,
           "isNullable": false,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        }
+      ],
+      "summary": null,
+      "remarks": null,
+      "description": null,
+      "displayName": null
+    },
+    "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto": {
+      "baseType": null,
+      "isEnum": false,
+      "enumNames": null,
+      "enumValues": null,
+      "genericArguments": null,
+      "properties": [
+        {
+          "name": "NotificationName",
+          "jsonName": null,
+          "type": "System.String",
+          "typeSimple": "string",
+          "isRequired": true,
+          "minLength": 0,
+          "maxLength": 256,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": false,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        },
+        {
+          "name": "EntityTypeName",
+          "jsonName": null,
+          "type": "System.String",
+          "typeSimple": "string",
+          "isRequired": false,
+          "minLength": 0,
+          "maxLength": 512,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": true,
+          "summary": null,
+          "description": null,
+          "displayName": null
+        },
+        {
+          "name": "EntityId",
+          "jsonName": null,
+          "type": "System.String",
+          "typeSimple": "string",
+          "isRequired": false,
+          "minLength": 0,
+          "maxLength": 128,
+          "minimum": null,
+          "maximum": null,
+          "regex": null,
+          "isNullable": true,
           "summary": null,
           "description": null,
           "displayName": null

@@ -1,4 +1,4 @@
-import type { GetUserNotificationListInput, NotificationSubscriptionDto, UserNotificationDto } from './models';
+import type { GetUserNotificationListInput, NotificationSubscriptionDto, NotificationSubscriptionScopeDto, UserNotificationDto } from './models';
 import { RestService, Rest } from '@abp/ng.core';
 import type { ListResultDto, PagedResultDto } from '@abp/ng.core';
 import { Injectable, inject } from '@angular/core';
@@ -10,7 +10,7 @@ import type { UserNotificationState } from '../notifications/user-notification-s
 export class NotificationsService {
   private restService = inject(RestService);
   apiName = 'NotificationCenter';
-  
+
 
   delete = (notificationId: string, config?: Partial<Rest.Config>) =>
     this.restService.request<any, void>({
@@ -80,10 +80,28 @@ export class NotificationsService {
     { apiName: this.apiName,...config });
   
 
+  subscribeScoped = (input: NotificationSubscriptionScopeDto, config?: Partial<Rest.Config>) =>
+    this.restService.request<any, void>({
+      method: 'POST',
+      url: '/api/notifications/subscription-scopes',
+      body: input,
+    },
+    { apiName: this.apiName,...config });
+
+
   unsubscribe = (notificationName: string, config?: Partial<Rest.Config>) =>
     this.restService.request<any, void>({
       method: 'DELETE',
       url: `/api/notifications/subscriptions/${notificationName}`,
+    },
+    { apiName: this.apiName,...config });
+
+
+  unsubscribeScoped = (input: NotificationSubscriptionScopeDto, config?: Partial<Rest.Config>) =>
+    this.restService.request<any, void>({
+      method: 'DELETE',
+      url: '/api/notifications/subscription-scopes',
+      params: { notificationName: input.notificationName, entityTypeName: input.entityTypeName, entityId: input.entityId },
     },
     { apiName: this.apiName,...config });
 }

@@ -126,7 +126,14 @@
         }
 
         var name = toggle.getAttribute('data-notification-name');
-        var request = toggle.checked ? api().subscribe(name) : api().unsubscribe(name);
+        var entityTypeName = toggle.getAttribute('data-entity-type-name') || null;
+        var entityId = toggle.getAttribute('data-entity-id') || null;
+        var scope = {
+            notificationName: name,
+            entityTypeName: entityTypeName,
+            entityId: entityId
+        };
+        var request = toggle.checked ? api().subscribeScoped(scope) : api().unsubscribeScoped(scope);
         // abp.ajax already surfaces the error to the user; just revert the checkbox if the call failed.
         request.then(null, function () {
             toggle.checked = !toggle.checked;

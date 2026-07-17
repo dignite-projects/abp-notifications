@@ -1,6 +1,10 @@
 import { Component, OnInit, inject } from '@angular/core';
 import { LocalizationPipe } from '@abp/ng.core';
-import { NotificationsService, NotificationSubscriptionDto } from '../proxy/dignite/abp/notification-center';
+import {
+  NotificationsService,
+  NotificationSubscriptionDto,
+  NotificationSubscriptionScopeDto,
+} from '../proxy/dignite/abp/notification-center';
 
 /**
  * Lists the notification types available to the current user with subscribe/unsubscribe toggles.
@@ -14,14 +18,22 @@ import { NotificationsService, NotificationSubscriptionDto } from '../proxy/dign
       <thead>
         <tr>
           <th>{{ 'AbpNotificationCenter::NotificationType' | abpLocalization }}</th>
+          <th>{{ 'AbpNotificationCenter::SubscriptionScope' | abpLocalization }}</th>
           <th>{{ 'AbpNotificationCenter::Description' | abpLocalization }}</th>
           <th>{{ 'AbpNotificationCenter::Subscribed' | abpLocalization }}</th>
         </tr>
       </thead>
       <tbody>
-        @for (s of subscriptions; track s.notificationName) {
+        @for (s of subscriptions; track scopeKey(s)) {
           <tr>
             <td>{{ s.displayName || s.notificationName }}</td>
+            <td>
+              @if (s.entityTypeName) {
+                <code>{{ s.entityTypeName }} / {{ s.entityId }}</code>
+              } @else {
+                {{ 'AbpNotificationCenter::AllEntities' | abpLocalization }}
+              }
+            </td>
             <td>{{ s.description }}</td>
             <td>
               <input
@@ -52,9 +64,22 @@ export class NotificationSubscriptionsComponent implements OnInit {
   }
 
   toggle(subscription: NotificationSubscriptionDto, subscribe: boolean): void {
+    const scope = this.toScope(subscription);
     const request = subscribe
-      ? this.notificationService.subscribe(subscription.notificationName)
-      : this.notificationService.unsubscribe(subscription.notificationName);
+      ? this.notificationService.subscribeScoped(scope)
+      : this.notificationService.unsubscribeScoped(scope);
     request.subscribe(() => (subscription.isSubscribed = subscribe));
+  }
+
+  scopeKey(subscription: NotificationSubscriptionDto): string {
+    return `${subscription.notificationName ?? ''}\u0000${subscription.entityTypeName ?? ''}\u0000${subscription.entityId ?? ''}`;
+  }
+
+  private toScope(subscription: NotificationSubscriptionDto): NotificationSubscriptionScopeDto {
+    return {
+      notificationName: subscription.notificationName!,
+      entityTypeName: subscription.entityTypeName,
+      entityId: subscription.entityId,
+    };
   }
 }

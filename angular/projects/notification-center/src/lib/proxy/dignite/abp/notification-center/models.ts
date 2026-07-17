@@ -11,9 +11,17 @@ export interface GetUserNotificationListInput extends PagedResultRequestDto {
 
 export interface NotificationSubscriptionDto {
   notificationName?: string;
+  entityTypeName?: string | null;
+  entityId?: string | null;
   displayName?: string | null;
   description?: string | null;
   isSubscribed?: boolean;
+}
+
+export interface NotificationSubscriptionScopeDto {
+  notificationName: string;
+  entityTypeName?: string | null;
+  entityId?: string | null;
 }
 
 export interface UserNotificationDto extends EntityDto<string> {

@@ -40,15 +40,19 @@ public static class NotificationCenterDbContextModelCreatingExtensions
             b.ConfigureByConvention();
 
             b.Property(x => x.NotificationName).IsRequired().HasMaxLength(NotificationCenterConsts.MaxNotificationNameLength);
+            b.Property(x => x.NotificationNameKey).IsRequired().IsUnicode(false).IsFixedLength()
+                .HasMaxLength(NotificationCenterConsts.SubscriptionIdentityKeyLength);
             b.Property(x => x.EntityTypeName).HasMaxLength(NotificationCenterConsts.MaxEntityTypeNameLength);
             b.Property(x => x.EntityId).HasMaxLength(NotificationCenterConsts.MaxEntityIdLength);
+            b.Property(x => x.ScopeKey).IsRequired().IsUnicode(false).IsFixedLength()
+                .HasMaxLength(NotificationCenterConsts.SubscriptionIdentityKeyLength);
 
-            // Distribution lookup: subscribers of a notification, optionally scoped to an entity (fixes problem D).
-            b.HasIndex(x => new { x.TenantId, x.NotificationName, x.EntityTypeName, x.EntityId });
-            // At most one subscription per user/notification/entity scope.
-            b.HasIndex(x => new { x.TenantId, x.UserId, x.NotificationName, x.EntityTypeName, x.EntityId }).IsUnique();
+            // Exact/fallback distribution lookup. Non-null keys avoid provider-specific nullable-index semantics.
+            b.HasIndex(x => new { x.TenantKey, x.NotificationNameKey, x.ScopeKey });
+            // At most one subscription per tenant/user/notification/entity scope, including host + definition-wide rows.
+            b.HasIndex(x => new { x.TenantKey, x.UserId, x.NotificationNameKey, x.ScopeKey }).IsUnique();
             // A user's own subscriptions.
-            b.HasIndex(x => new { x.UserId, x.NotificationName });
+            b.HasIndex(x => new { x.TenantKey, x.UserId, x.NotificationNameKey });
         });
     }
 }

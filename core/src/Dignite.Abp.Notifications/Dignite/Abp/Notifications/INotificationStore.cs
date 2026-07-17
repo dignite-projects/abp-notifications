@@ -10,15 +10,23 @@ namespace Dignite.Abp.Notifications;
 /// </summary>
 public interface INotificationStore
 {
+    /// <summary>Inserts one definition-wide or entity-specific subscription identity.</summary>
     Task InsertSubscriptionAsync(NotificationSubscriptionInfo subscription);
 
+    /// <summary>Deletes only the exact definition-wide or entity-specific subscription identity.</summary>
     Task DeleteSubscriptionAsync(Guid userId, string notificationName, string? entityTypeName, string? entityId);
 
+    /// <summary>Checks only the exact definition-wide or entity-specific subscription identity.</summary>
     Task<bool> IsSubscribedAsync(Guid userId, string notificationName, string? entityTypeName, string? entityId);
 
+    /// <summary>
+    /// Gets recipients for a notification. A definition-wide notification matches definition-wide subscriptions;
+    /// an entity notification matches the union of definition-wide subscriptions and subscriptions to that exact entity.
+    /// </summary>
     Task<List<NotificationSubscriptionInfo>> GetSubscriptionsAsync(
         string notificationName, string? entityTypeName, string? entityId);
 
+    /// <summary>Gets every distinct subscription identity stored for the user in the current tenant.</summary>
     Task<List<NotificationSubscriptionInfo>> GetSubscriptionsAsync(Guid userId);
 
     Task InsertNotificationAsync(NotificationInfo notification);
