@@ -29,6 +29,13 @@ public class DefaultNotificationDistributor : INotificationDistributor, ITransie
     public virtual async Task DistributeAsync(
         NotificationInfo notification, Guid[]? userIds = null, Guid[]? excludedUserIds = null)
     {
+        // An empty, explicitly supplied recipient list is intentionally different from null. Return before
+        // subscription lookup or channel validation so every direct/background path remains a true no-op.
+        if (userIds is { Length: 0 })
+        {
+            return;
+        }
+
         var channels = ResolveExternalChannelsOrNull(notification.NotificationName);
         var targetUserIds = await GetTargetUserIdsAsync(notification, userIds, excludedUserIds);
         if (targetUserIds.Count == 0)
@@ -77,9 +84,10 @@ public class DefaultNotificationDistributor : INotificationDistributor, ITransie
     {
         List<Guid> result;
 
-        if (userIds != null && userIds.Length > 0)
+        if (userIds != null)
         {
-            // Explicitly targeted: honor the caller's list as-is (no subscription/availability filtering).
+            // Explicitly targeted: honor the caller's list (no subscription/availability filtering) while
+            // preventing duplicate inbox rows and channel deliveries.
             result = userIds.Distinct().ToList();
         }
         else

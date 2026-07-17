@@ -15,7 +15,7 @@ namespace Dignite.Abp.Notifications;
 public class DefaultNotificationDistributorTests
 {
     [Fact]
-    public async Task Publishes_eto_to_explicit_users_minus_excluded()
+    public async Task Publishes_eto_once_per_distinct_explicit_user_minus_excluded()
     {
         var store = Substitute.For<INotificationStore>();
         var definitionManager = Substitute.For<INotificationDefinitionManager>();
@@ -40,7 +40,7 @@ public class DefaultNotificationDistributorTests
             TenantId = tenantId
         };
 
-        await distributor.DistributeAsync(notification, new[] { u1, u2, u3 }, new[] { u2 });
+        await distributor.DistributeAsync(notification, new[] { u1, u1, u2, u3, u3 }, new[] { u2 });
 
         published.ShouldNotBeNull();
         published!.UserIds.Length.ShouldBe(2);
@@ -55,6 +55,33 @@ public class DefaultNotificationDistributorTests
         // The distributor never switches tenants; it just carries the notification's tenant onto every row it writes
         // and onto the ETO. Restoring the tenant is NotificationDistributionJob's job on the background path.
         await store.Received(2).InsertUserNotificationAsync(Arg.Is<UserNotificationInfo>(x => x.TenantId == tenantId));
+    }
+
+    [Fact]
+    public async Task Empty_explicit_recipient_list_does_not_resolve_subscriptions_or_produce_side_effects()
+    {
+        var store = Substitute.For<INotificationStore>();
+        var definitionManager = Substitute.For<INotificationDefinitionManager>();
+        var eventBus = Substitute.For<IDistributedEventBus>();
+        definitionManager.Get("test").Returns(DefinitionWithChannels());
+
+        var subscribedUser = Guid.NewGuid();
+        store.GetSubscriptionsAsync("test", null, null).Returns(new List<NotificationSubscriptionInfo>
+        {
+            new() { UserId = subscribedUser, NotificationName = "test" }
+        });
+        definitionManager.IsAvailableAsync("test", subscribedUser).Returns(true);
+
+        var distributor = new DefaultNotificationDistributor(store, definitionManager, eventBus);
+        var notification = new NotificationInfo { Id = Guid.NewGuid(), NotificationName = "test" };
+
+        await distributor.DistributeAsync(notification, Array.Empty<Guid>());
+
+        definitionManager.DidNotReceiveWithAnyArgs().Get(default!);
+        await store.DidNotReceiveWithAnyArgs().GetSubscriptionsAsync(default!, default, default);
+        await store.DidNotReceiveWithAnyArgs().InsertNotificationAsync(default!);
+        await store.DidNotReceiveWithAnyArgs().InsertUserNotificationAsync(default!);
+        await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<NotificationDeliveryEto>());
     }
 
     [Fact]

@@ -10,6 +10,12 @@ changes.
 
 ## [Unreleased]
 
+### Fixed
+
+- Defined consistent explicit-recipient semantics across inline and background distribution: `null`
+  resolves subscriptions, an empty list is a no-op, and duplicate explicit user IDs are normalized
+  before threshold selection, persistence, and channel delivery.
+
 ## [10.0.0-rc.2] - 2026-07-16
 
 ### Changed

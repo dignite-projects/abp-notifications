@@ -16,12 +16,14 @@ public class NotificationDistribution_Integration_Tests : DigniteAbpNotification
     private readonly INotificationPublisher _publisher;
     private readonly INotificationDefinitionManager _definitionManager;
     private readonly ReceivedNotificationDeliveries _received;
+    private readonly FakeBackgroundJobManager _backgroundJobs;
 
     public NotificationDistribution_Integration_Tests()
     {
         _publisher = GetRequiredService<INotificationPublisher>();
         _definitionManager = GetRequiredService<INotificationDefinitionManager>();
         _received = GetRequiredService<ReceivedNotificationDeliveries>();
+        _backgroundJobs = GetRequiredService<FakeBackgroundJobManager>();
     }
 
     [Fact]
@@ -33,14 +35,56 @@ public class NotificationDistribution_Integration_Tests : DigniteAbpNotification
         await _publisher.PublishAsync(
             TestNotificationDefinitionProvider.Plain,
             new MessageNotificationData("hi"),
-            userIds: new[] { u1, u2 });
+            userIds: new[] { u1, u1, u2 });
 
         _received.Items.Count.ShouldBe(1);
         var eto = _received.Items.Single();
         eto.NotificationName.ShouldBe(TestNotificationDefinitionProvider.Plain);
-        eto.UserIds.ShouldContain(u1);
-        eto.UserIds.ShouldContain(u2);
+        eto.UserIds.ShouldBe(new[] { u1, u2 });
         eto.Data.ShouldBeOfType<MessageNotificationData>().Message.ShouldBe("hi");
+    }
+
+    [Fact]
+    public async Task Publishing_an_empty_explicit_list_is_a_no_op_in_core_only_mode()
+    {
+        await _publisher.PublishAsync(
+            TestNotificationDefinitionProvider.Plain,
+            new MessageNotificationData("hi"),
+            userIds: Array.Empty<Guid>());
+
+        _received.Items.ShouldBeEmpty();
+        _backgroundJobs.EnqueuedArgs.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Publishing_null_recipients_resolves_no_subscribers_on_the_core_only_background_path()
+    {
+        await _publisher.PublishAsync(
+            TestNotificationDefinitionProvider.Plain,
+            new MessageNotificationData("hi"),
+            userIds: null);
+
+        var args = _backgroundJobs.EnqueuedArgs.Single().ShouldBeOfType<NotificationDistributionJobArgs>();
+        args.UserIds.ShouldBeNull();
+        await GetRequiredService<NotificationDistributionJob>().ExecuteAsync(args);
+
+        _received.Items.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Publishing_above_the_threshold_delivers_explicit_users_on_the_core_only_background_path()
+    {
+        var users = Enumerable.Range(0, 6).Select(_ => Guid.NewGuid()).ToArray();
+
+        await _publisher.PublishAsync(
+            TestNotificationDefinitionProvider.Plain,
+            new MessageNotificationData("hi"),
+            userIds: users);
+
+        var args = _backgroundJobs.EnqueuedArgs.Single().ShouldBeOfType<NotificationDistributionJobArgs>();
+        await GetRequiredService<NotificationDistributionJob>().ExecuteAsync(args);
+
+        _received.Items.Single().UserIds.ShouldBe(users);
     }
 
     [Fact]

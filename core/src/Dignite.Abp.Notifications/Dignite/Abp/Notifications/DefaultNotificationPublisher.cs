@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Options;
 using Volo.Abp.BackgroundJobs;
@@ -47,6 +48,12 @@ public class DefaultNotificationPublisher : INotificationPublisher, ITransientDe
         Guid[]? userIds = null,
         Guid[]? excludedUserIds = null)
     {
+        var normalizedUserIds = userIds?.Distinct().ToArray();
+        if (normalizedUserIds is { Length: 0 })
+        {
+            return;
+        }
+
         var notification = new NotificationInfo
         {
             Id = GuidGenerator.Create(),
@@ -59,14 +66,14 @@ public class DefaultNotificationPublisher : INotificationPublisher, ITransientDe
             TenantId = CurrentTenant.Id
         };
 
-        if (userIds != null && userIds.Length <= Options.DirectDistributionUserThreshold)
+        if (normalizedUserIds != null && normalizedUserIds.Length <= Options.DirectDistributionUserThreshold)
         {
-            await Distributor.DistributeAsync(notification, userIds, excludedUserIds);
+            await Distributor.DistributeAsync(notification, normalizedUserIds, excludedUserIds);
         }
         else
         {
             await BackgroundJobManager.EnqueueAsync(
-                new NotificationDistributionJobArgs(notification, userIds, excludedUserIds));
+                new NotificationDistributionJobArgs(notification, normalizedUserIds, excludedUserIds));
         }
     }
 }
