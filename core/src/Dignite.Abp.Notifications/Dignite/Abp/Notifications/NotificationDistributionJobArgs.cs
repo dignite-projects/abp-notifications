@@ -20,6 +20,12 @@ public class NotificationDistributionJobArgs
     /// </summary>
     public NotificationRecipientEligibilityMode RecipientEligibilityMode { get; set; }
 
+    /// <summary>
+    /// Indicates that the publisher prepared the shared notification record before splitting explicit recipients
+    /// into bounded jobs. Defaults to <see langword="false"/> for jobs serialized by earlier versions.
+    /// </summary>
+    public bool NotificationAlreadyPersisted { get; set; }
+
     public NotificationDistributionJobArgs()
     {
     }
@@ -37,11 +43,13 @@ public class NotificationDistributionJobArgs
         NotificationInfo notification,
         Guid[]? userIds,
         Guid[]? excludedUserIds,
-        NotificationRecipientEligibilityMode recipientEligibilityMode)
+        NotificationRecipientEligibilityMode recipientEligibilityMode,
+        bool notificationAlreadyPersisted = false)
     {
         Notification = notification;
         UserIds = userIds;
         ExcludedUserIds = excludedUserIds;
         RecipientEligibilityMode = recipientEligibilityMode;
+        NotificationAlreadyPersisted = notificationAlreadyPersisted;
     }
 }

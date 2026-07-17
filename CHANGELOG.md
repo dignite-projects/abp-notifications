@@ -24,10 +24,11 @@ changes.
   validation, typed strict-read failures, and a safe `UnsupportedNotificationData` tolerant-read representation.
   MVC and Angular now render unsupported payloads with a localized fallback.
 - Added a configurable bounded recipient pipeline for candidate resolution, eligibility, inbox multi-inserts, and
-  delivery-event publication. `IBatchedNotificationStore` and `ICancellableNotificationDistributor` are additive
-  capability contracts, and `NotificationDistributionMetrics` publishes stable candidate/eligible/filtered/batch/
-  duration/failure instruments. Shared EF Core/MongoDB tests cover 2,001 recipients, duplicate scopes, exact limits,
-  and cancellation.
+  delivery-event publication. `IBatchedNotificationStore`, `ICancellableNotificationDistributor`, and
+  `IPreparedNotificationDistributor` are additive capability contracts, and `NotificationDistributionMetrics`
+  publishes stable candidate/eligible/filtered/batch/duration/failure instruments. Shared EF Core/MongoDB tests
+  cover 2,001 recipients, duplicate scopes, keyset changes, exact limits, cancellation, and independently scheduled
+  explicit batches.
 
 ### Changed
 
@@ -66,10 +67,11 @@ changes.
   queries and distributed-event/HTTP converters now tolerate unknown, future, malformed, and failed-upcast payloads
   by returning safe placeholder data, while `INotificationDataSerializer.Deserialize` retains strict behavior.
 - Distribution can now publish multiple `NotificationDeliveryEto` work items for one notification. Built-in EF Core,
-  MongoDB, and null stores use bounded pages/writes; existing custom `INotificationStore` implementations remain
-  compatible through the legacy materializing/per-row path and should add `IBatchedNotificationStore` before large
-  fan-outs. Batches retain the ambient unit-of-work semantics; no database migration or delivery-ledger/retry policy
-  is included.
+  MongoDB, and null stores use keyset pages and bounded writes; large explicit fan-outs prepare the notification once
+  and enqueue bounded recipient jobs. EF Core flushes and detaches each inbox group while retaining an ambient
+  transaction when one exists. Existing custom `INotificationStore` implementations remain compatible through the
+  legacy materializing/per-row path and should add the new capabilities before large fan-outs. No database migration
+  or delivery-ledger/retry policy is included.
 - **Breaking behavior for payload authors.** Per-instance assignments to `NotificationData.SchemaVersion` no longer
   select the wire version. The converter now writes the current version declared by
   `[NotificationDataType("...", version)]`; move shape changes to that declaration and registered upcasters.

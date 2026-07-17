@@ -17,6 +17,7 @@ namespace Dignite.Abp.Notifications;
 public class DefaultNotificationDistributor :
     INotificationDistributor,
     ICancellableNotificationDistributor,
+    IPreparedNotificationDistributor,
     ITransientDependency
 {
     protected INotificationStore Store { get; }
@@ -34,6 +35,8 @@ public class DefaultNotificationDistributor :
     protected INotificationDataTypeRegistry DataTypeRegistry { get; }
 
     protected NotificationOptions Options { get; }
+
+    public virtual bool SupportsPreparedDistribution => !UsesLegacyExtensionPointOverrides();
 
     /// <summary>
     /// Source-compatible constructor for applications/tests that instantiate the default distributor directly.
@@ -99,6 +102,7 @@ public class DefaultNotificationDistributor :
             userIds,
             excludedUserIds,
             NotificationRecipientEligibilityMode.EnforceDefinitionRequirements,
+            notificationAlreadyPersisted: false,
             cancellationToken);
     }
 
@@ -127,6 +131,29 @@ public class DefaultNotificationDistributor :
             userIds,
             excludedUserIds,
             NotificationRecipientEligibilityMode.BypassDefinitionRequirements,
+            notificationAlreadyPersisted: false,
+            cancellationToken);
+    }
+
+    public virtual Task DistributePreparedAsync(
+        NotificationInfo notification,
+        Guid[] userIds,
+        NotificationRecipientEligibilityMode recipientEligibilityMode,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(userIds);
+        if (!SupportsPreparedDistribution)
+        {
+            throw new InvalidOperationException(
+                "A distributor with legacy protected overrides cannot process prepared notification batches.");
+        }
+
+        return DistributeAsyncInternal(
+            notification,
+            userIds,
+            excludedUserIds: null,
+            recipientEligibilityMode,
+            notificationAlreadyPersisted: true,
             cancellationToken);
     }
 
@@ -135,6 +162,7 @@ public class DefaultNotificationDistributor :
         Guid[]? userIds,
         Guid[]? excludedUserIds,
         NotificationRecipientEligibilityMode recipientEligibilityMode,
+        bool notificationAlreadyPersisted,
         CancellationToken cancellationToken)
     {
         // An empty, explicitly supplied recipient list is intentionally different from null. Return before
@@ -148,7 +176,9 @@ public class DefaultNotificationDistributor :
         var stopwatch = Stopwatch.StartNew();
         var outcome = "success";
         var stage = "validation";
-        var state = new DistributionState(Options.DeliveryEventRecipientLimit);
+        var state = new DistributionState(
+            Options.DeliveryEventRecipientLimit,
+            notificationAlreadyPersisted);
 
         try
         {
@@ -174,9 +204,10 @@ public class DefaultNotificationDistributor :
                     // invisible. The bounded pipeline performs the actual distinct-recipient normalization.
                     Logger.LogWarning(
                         "Bypassing notification definition requirements for {ProvidedRecipientCount} explicit " +
-                        "recipient entries of '{NotificationName}' in tenant {TenantId}.",
+                        "recipient entries of '{NotificationName}' ({NotificationId}) in tenant {TenantId}.",
                         userIds.Length,
                         notification.NotificationName,
+                        notification.Id,
                         notification.TenantId);
                 }
                 else if (recipientEligibilityMode !=
@@ -257,13 +288,13 @@ public class DefaultNotificationDistributor :
                 }
                 else
                 {
-                    var skipCount = 0;
+                    Guid? afterUserId = null;
                     while (true)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
                         var batch = await GetSubscriptionUserIdsAsync(
                             notification,
-                            skipCount,
+                            afterUserId,
                             Options.RecipientBatchSize,
                             cancellationToken);
                         if (batch.Count == 0)
@@ -271,7 +302,7 @@ public class DefaultNotificationDistributor :
                             break;
                         }
 
-                        skipCount += batch.Count;
+                        afterUserId = batch[^1];
                         await ProcessCandidateBatchAsync(
                             notification,
                             batch,
@@ -306,10 +337,11 @@ public class DefaultNotificationDistributor :
         {
             outcome = "canceled";
             Logger.LogInformation(
-                "Notification distribution for '{NotificationName}' was canceled during {Stage} after " +
+                "Notification distribution for '{NotificationName}' ({NotificationId}) was canceled during {Stage} after " +
                 "{CandidateCount} candidates, {EligibleCount} eligible recipients, {FilteredCount} filtered " +
                 "recipients, and {BatchCount} completed/attempted batches.",
                 notification.NotificationName,
+                notification.Id,
                 stage,
                 state.CandidateCount,
                 state.EligibleCount,
@@ -325,10 +357,11 @@ public class DefaultNotificationDistributor :
                 CreateTags(notification, source, stage: stage));
             Logger.LogError(
                 exception,
-                "Notification distribution for '{NotificationName}' failed during {Stage} after " +
+                "Notification distribution for '{NotificationName}' ({NotificationId}) failed during {Stage} after " +
                 "{CandidateCount} candidates, {EligibleCount} eligible recipients, {FilteredCount} filtered " +
                 "recipients, and {BatchCount} completed/attempted batches.",
                 notification.NotificationName,
+                notification.Id,
                 stage,
                 state.CandidateCount,
                 state.EligibleCount,
@@ -344,11 +377,12 @@ public class DefaultNotificationDistributor :
                 CreateTags(notification, source, outcome: outcome));
 
             Logger.LogInformation(
-                "Notification distribution for '{NotificationName}' finished with outcome {Outcome}: " +
+                "Notification distribution for '{NotificationName}' ({NotificationId}) finished with outcome {Outcome}: " +
                 "{CandidateCount} candidates, {EligibleCount} eligible recipients, {FilteredCount} filtered " +
                 "recipients, {CandidateBatchCount} candidate batches, {PersistenceBatchCount} persistence " +
                 "batches, {DeliveryBatchCount} delivery batches, {DurationMilliseconds} ms.",
                 notification.NotificationName,
+                notification.Id,
                 outcome,
                 state.CandidateCount,
                 state.EligibleCount,
@@ -518,10 +552,12 @@ public class DefaultNotificationDistributor :
     {
         Logger.LogWarning(
             "Notification distributor type {DistributorType} overrides a legacy materializing extension point. " +
-            "Distribution for '{NotificationName}' retains compatibility semantics and does not have bounded " +
+            "Distribution for '{NotificationName}' ({NotificationId}) retains compatibility semantics and does not " +
+            "have bounded " +
             "candidate, persistence, or delivery guarantees.",
             GetNonProxyImplementationType().FullName,
-            notification.NotificationName);
+            notification.NotificationName,
+            notification.Id);
 
         setStage("candidate_resolution");
         cancellationToken.ThrowIfCancellationRequested();
@@ -670,7 +706,7 @@ public class DefaultNotificationDistributor :
 
     private async Task<List<Guid>> GetSubscriptionUserIdsAsync(
         NotificationInfo notification,
-        int skipCount,
+        Guid? afterUserId,
         int maxResultCount,
         CancellationToken cancellationToken)
     {
@@ -680,7 +716,7 @@ public class DefaultNotificationDistributor :
                 notification.NotificationName,
                 notification.EntityTypeName,
                 notification.EntityId,
-                skipCount,
+                afterUserId,
                 maxResultCount,
                 cancellationToken);
         }
@@ -697,7 +733,7 @@ public class DefaultNotificationDistributor :
             .Select(subscription => subscription.UserId)
             .Distinct()
             .OrderBy(userId => userId)
-            .Skip(skipCount)
+            .Where(userId => !afterUserId.HasValue || userId.CompareTo(afterUserId.Value) > 0)
             .Take(maxResultCount)
             .ToList();
     }
@@ -819,10 +855,11 @@ public class DefaultNotificationDistributor :
     private void LogBatchProgress(NotificationInfo notification, DistributionState state)
     {
         Logger.LogDebug(
-            "Notification '{NotificationName}' distribution progress: {CandidateCount} candidates, " +
+            "Notification '{NotificationName}' ({NotificationId}) distribution progress: {CandidateCount} candidates, " +
             "{EligibleCount} eligible recipients, {FilteredCount} filtered recipients, {CandidateBatchCount} " +
             "candidate batches, {PersistenceBatchCount} persistence batches, {DeliveryBatchCount} delivery batches.",
             notification.NotificationName,
+            notification.Id,
             state.CandidateCount,
             state.EligibleCount,
             state.FilteredCount,
@@ -877,9 +914,12 @@ public class DefaultNotificationDistributor :
         public long TotalBatchCount =>
             CandidateBatchCount + PersistenceBatchCount + DeliveryBatchCount;
 
-        public DistributionState(int deliveryEventRecipientLimit)
+        public DistributionState(
+            int deliveryEventRecipientLimit,
+            bool notificationInserted)
         {
             DeliveryBuffer = new List<Guid>(deliveryEventRecipientLimit);
+            NotificationInserted = notificationInserted;
         }
     }
 }

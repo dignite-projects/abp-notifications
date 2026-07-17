@@ -40,6 +40,8 @@ public class NotificationStore : INotificationStore, IBatchedNotificationStore, 
 
     protected IAsyncQueryableExecuter AsyncExecuter { get; }
 
+    protected INotificationBatchPersistence BatchPersistence { get; }
+
     public NotificationStore(
         IRepository<Notification, Guid> notificationRepository,
         IRepository<UserNotification, Guid> userNotificationRepository,
@@ -49,6 +51,29 @@ public class NotificationStore : INotificationStore, IBatchedNotificationStore, 
         IClock clock,
         ICurrentTenant currentTenant,
         IAsyncQueryableExecuter asyncExecuter)
+        : this(
+            notificationRepository,
+            userNotificationRepository,
+            subscriptionRepository,
+            dataSerializer,
+            guidGenerator,
+            clock,
+            currentTenant,
+            asyncExecuter,
+            new NotificationBatchPersistence(userNotificationRepository))
+    {
+    }
+
+    public NotificationStore(
+        IRepository<Notification, Guid> notificationRepository,
+        IRepository<UserNotification, Guid> userNotificationRepository,
+        IRepository<NotificationSubscription, Guid> subscriptionRepository,
+        INotificationDataSerializer dataSerializer,
+        IGuidGenerator guidGenerator,
+        IClock clock,
+        ICurrentTenant currentTenant,
+        IAsyncQueryableExecuter asyncExecuter,
+        INotificationBatchPersistence batchPersistence)
     {
         NotificationRepository = notificationRepository;
         UserNotificationRepository = userNotificationRepository;
@@ -58,6 +83,7 @@ public class NotificationStore : INotificationStore, IBatchedNotificationStore, 
         Clock = clock;
         CurrentTenant = currentTenant;
         AsyncExecuter = asyncExecuter;
+        BatchPersistence = batchPersistence;
     }
 
     public virtual async Task InsertNotificationAsync(NotificationInfo notification)
@@ -112,9 +138,7 @@ public class NotificationStore : INotificationStore, IBatchedNotificationStore, 
             userNotification.CreationTime == default ? Clock.Now : userNotification.CreationTime,
             userNotification.TenantId ?? CurrentTenant.Id)).ToList();
 
-        await UserNotificationRepository.InsertManyAsync(
-            entities,
-            cancellationToken: cancellationToken);
+        await BatchPersistence.InsertAsync(entities, cancellationToken);
     }
 
     public virtual async Task UpdateUserNotificationStateAsync(Guid userId, Guid notificationId, UserNotificationState state)
@@ -279,11 +303,10 @@ public class NotificationStore : INotificationStore, IBatchedNotificationStore, 
         string notificationName,
         string? entityTypeName,
         string? entityId,
-        int skipCount,
+        Guid? afterUserId,
         int maxResultCount,
         CancellationToken cancellationToken = default)
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(skipCount);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxResultCount);
 
         var tenantKey = NotificationSubscriptionIdentity.GetTenantKey(CurrentTenant.Id);
@@ -302,11 +325,15 @@ public class NotificationStore : INotificationStore, IBatchedNotificationStore, 
                 (subscription.ScopeKey == definitionWideScopeKey ||
                  subscription.ScopeKey == requestedScopeKey));
 
-        var recipientPage = query
-            .Select(subscription => subscription.UserId)
-            .Distinct()
+        var recipientQuery = query.Select(subscription => subscription.UserId).Distinct();
+        if (afterUserId.HasValue)
+        {
+            var cursor = afterUserId.Value;
+            recipientQuery = recipientQuery.Where(userId => userId.CompareTo(cursor) > 0);
+        }
+
+        var recipientPage = recipientQuery
             .OrderBy(userId => userId)
-            .Skip(skipCount)
             .Take(maxResultCount);
 
         return await AsyncExecuter.ToListAsync(recipientPage, cancellationToken);

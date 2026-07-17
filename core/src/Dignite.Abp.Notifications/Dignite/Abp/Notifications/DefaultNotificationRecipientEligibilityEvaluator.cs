@@ -76,10 +76,6 @@ public class DefaultNotificationRecipientEligibilityEvaluator :
                 candidates.Count,
                 notificationName,
                 tenantId);
-            Logger.LogDebug(
-                "Recipients excluded from notification '{NotificationName}': {ExcludedUserIds}.",
-                notificationName,
-                string.Join(", ", excluded));
         }
 
         return new NotificationRecipientEligibilityResult(eligible, excluded);

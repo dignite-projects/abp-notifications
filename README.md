@@ -223,12 +223,15 @@ backfill before deploying the new unique index.
 Distributing a notification writes the per-user inbox rows **and** publishes `NotificationDeliveryEto`
 for the notifiers. Those two commit together only when the host enables ABP's transactional outbox;
 the same call enables the inbox, which deduplicates a redelivered event so a notifier does not send
-twice. Batching does not introduce an inner transaction or commit: it retains the ambient ABP unit of work.
+twice. The EF Core writer flushes and detaches each inbox batch so its change tracker stays bounded. Atomic
+rollback therefore requires an ambient **transactional** ABP unit of work; an outbox cannot make a
+non-transactional unit of work atomic.
 
 | Setup | Inbox batch behavior | Persist + publish atomic | Failure/cancellation after a completed batch |
 |---|---|---|---|
-| EF Core, outbox enabled | all batches remain pending in the ambient unit of work | yes | the unit of work rolls back inbox and outbox records |
-| EF Core, outbox not enabled | all batches remain pending in the ambient unit of work | no | database work rolls back, but an already published external event may have escaped |
+| EF Core, outbox + transactional UoW | each batch is flushed and detached inside the ambient transaction | yes, within one distributor/job invocation | the transaction rolls back inbox and outbox records |
+| EF Core, no outbox + transactional UoW | each batch is flushed and detached inside the ambient transaction | no | inbox writes roll back, but an already published external event may have escaped |
+| EF Core, non-transactional UoW | each flushed batch is durable | no | completed inbox batches and already published events can remain |
 | MongoDB | each completed provider batch can become durable (the shipped provider has no transaction) | no | completed inbox batches and already published events can remain |
 | `NullNotificationStore` | no persistence | not applicable | already published delivery events remain |
 
@@ -269,9 +272,18 @@ Configure<AbpDistributedEventBusOptions>(options =>
 The MongoDB provider wires no outbox or inbox. A crash between the store write and the publish leaves
 the notification in the inbox with no channel delivery, and a redelivered event makes the Email
 notifier send a second copy. Cancellation is a boundary for stopping new work, not compensation for work
-already completed. This release intentionally adds no per-recipient/channel ledger, retry policy, or
-cross-provider transaction emulation. Choose EF Core with the outbox if atomic persistence and publication
-matter.
+already completed. A MongoDB job that is retried after partially writing its batch can encounter the inbox
+unique constraint and cannot resume the missing portion automatically. This release intentionally adds no
+per-recipient/channel ledger, retry/resume policy, or cross-provider transaction emulation; those belong to the
+delivery-ledger roadmap item. Choose EF Core with a transactional UoW and the outbox if atomic persistence and
+publication within a job matters.
+
+Large explicit fan-outs are split into independently scheduled jobs. The publisher prepares the shared
+`Notification` record first, then each job commits or fails independently; no provider promises one transaction
+across the complete logical fan-out. A failed job therefore leaves partial notification-wide progress even when
+each successful EF/outbox job was internally atomic. Likewise, a host/job-store failure after preparation or after
+only some batches were enqueued can leave a notification record with no inbox rows or an incomplete set of queued
+batches; this release does not add the resumable fan-out ledger needed to reconcile that state.
 
 ## Defining and publishing a notification
 
@@ -455,7 +467,7 @@ Inline versus background selection controls where distribution runs; it does not
 one pipeline unit. Both explicit and subscription-derived recipients now flow through the same configurable,
 bounded stages:
 
-1. normalize one candidate page (the built-in stores use a stable, database-side distinct/order/page query);
+1. normalize one candidate page (the built-in stores use a database-side distinct/order/keyset query);
 2. remove caller exclusions and evaluate definition eligibility for that page;
 3. write inbox rows in bounded multi-insert groups;
 4. publish one or more delivery events, each carrying at most the configured recipient limit.
@@ -479,9 +491,22 @@ Likewise, the default distributor implements the additive `ICancellableNotificat
 job passes the host shutdown token, and manual job/distributor runners can pass their own token. Cancellation is
 observed between candidate, persistence, and delivery batches, not during a provider operation already in flight.
 
+For explicit arrays above `DirectDistributionUserThreshold`, the built-in publisher removes exclusions, prepares
+the notification once, and enqueues `RecipientBatchSize` recipients per job through
+`IPreparedNotificationDistributor`; no job payload contains the complete fan-out. The existing public `Guid[]`
+boundary still means the caller supplies the explicit input in memory, and exact cross-batch duplicate removal
+keeps compact ID state while scheduling. Custom publishers/distributors keep their previous single-job behavior
+until they opt into the prepared-distribution capability. Subscription scans use an exclusive user-ID keyset
+cursor rather than offset paging, so inserts/deletes before the cursor cannot repeat or skip later recipients.
+
+The EF Core package replaces the provider-neutral inbox writer with a flush-and-detach implementation. It saves
+only the configured write group and immediately detaches those `UserNotification` entities; a regression test
+asserts that 513 recipients leave zero inbox entities in the change tracker before the transactional UoW commits.
+
 The public `Dignite.Abp.Notifications` meter exposes counters for candidates, eligible recipients, filtered
 recipients, batches, and failures, plus a distribution-duration histogram. Stable instrument names are constants
-on `NotificationDistributionMetrics`. Low-cardinality tags identify recipient source, host/tenant scope, stage,
+on `NotificationDistributionMetrics`. Logs include the notification ID for correlating independently scheduled
+batches but never recipient IDs. Low-cardinality metric tags identify recipient source, host/tenant scope, stage,
 and outcome; `notification.name` is also included and should be allow-listed or aggregated when definitions are
 dynamically named.
 

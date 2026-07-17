@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Options;
 using Volo.Abp.BackgroundJobs;
@@ -28,6 +30,8 @@ public class DefaultNotificationPublisher : INotificationPublisher, ITransientDe
 
     protected INotificationDataTypeRegistry DataTypeRegistry { get; }
 
+    protected INotificationStore? Store { get; }
+
     public DefaultNotificationPublisher(
         IOptions<NotificationOptions> options,
         INotificationDistributor distributor,
@@ -37,6 +41,29 @@ public class DefaultNotificationPublisher : INotificationPublisher, ITransientDe
         ICurrentTenant currentTenant,
         INotificationDefinitionManager definitionManager,
         INotificationDataTypeRegistry dataTypeRegistry)
+        : this(
+            options,
+            distributor,
+            backgroundJobManager,
+            guidGenerator,
+            clock,
+            currentTenant,
+            definitionManager,
+            dataTypeRegistry,
+            store: null)
+    {
+    }
+
+    public DefaultNotificationPublisher(
+        IOptions<NotificationOptions> options,
+        INotificationDistributor distributor,
+        IBackgroundJobManager backgroundJobManager,
+        IGuidGenerator guidGenerator,
+        IClock clock,
+        ICurrentTenant currentTenant,
+        INotificationDefinitionManager definitionManager,
+        INotificationDataTypeRegistry dataTypeRegistry,
+        INotificationStore? store)
     {
         Options = options.Value;
         Distributor = distributor;
@@ -46,6 +73,7 @@ public class DefaultNotificationPublisher : INotificationPublisher, ITransientDe
         CurrentTenant = currentTenant;
         DefinitionManager = definitionManager;
         DataTypeRegistry = dataTypeRegistry;
+        Store = store;
     }
 
     public virtual Task PublishAsync(
@@ -132,6 +160,37 @@ public class DefaultNotificationPublisher : INotificationPublisher, ITransientDe
             else
             {
                 await Distributor.DistributeAsync(notification, normalizedUserIds, excludedUserIds);
+            }
+        }
+        else if (normalizedUserIds != null &&
+                 Store is IBatchedNotificationStore batchedStore &&
+                 Distributor is IPreparedNotificationDistributor
+                 {
+                     SupportsPreparedDistribution: true
+                 })
+        {
+            var excluded = excludedUserIds is { Length: > 0 }
+                ? new HashSet<Guid>(excludedUserIds)
+                : null;
+            var recipientBatches = normalizedUserIds
+                .Where(userId => excluded == null || !excluded.Contains(userId))
+                .Chunk(Options.RecipientBatchSize);
+            var notificationPrepared = false;
+            foreach (var recipientBatch in recipientBatches)
+            {
+                if (!notificationPrepared)
+                {
+                    await batchedStore.InsertNotificationAsync(notification, CancellationToken.None);
+                    notificationPrepared = true;
+                }
+
+                await BackgroundJobManager.EnqueueAsync(
+                    new NotificationDistributionJobArgs(
+                        notification,
+                        recipientBatch,
+                        excludedUserIds: null,
+                        recipientEligibilityMode,
+                        notificationAlreadyPersisted: true));
             }
         }
         else

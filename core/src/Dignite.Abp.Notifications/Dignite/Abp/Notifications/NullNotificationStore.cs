@@ -28,7 +28,7 @@ public class NullNotificationStore : INotificationStore, IBatchedNotificationSto
         string notificationName,
         string? entityTypeName,
         string? entityId,
-        int skipCount,
+        Guid? afterUserId,
         int maxResultCount,
         CancellationToken cancellationToken = default)
     {

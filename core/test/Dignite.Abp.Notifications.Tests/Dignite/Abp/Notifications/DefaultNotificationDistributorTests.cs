@@ -251,6 +251,44 @@ public class DefaultNotificationDistributorTests
     }
 
     [Fact]
+    public async Task Prepared_explicit_batch_skips_the_shared_notification_insert()
+    {
+        var store = Substitute.For<INotificationStore, IBatchedNotificationStore>();
+        var batchedStore = (IBatchedNotificationStore)store;
+        var definitionManager = Substitute.For<INotificationDefinitionManager>();
+        var eventBus = Substitute.For<IDistributedEventBus>();
+        var evaluator = Substitute.For<INotificationRecipientEligibilityEvaluator>();
+        definitionManager.Get("test").Returns(DefinitionWithChannels());
+        evaluator.EvaluateAsync(
+                "test",
+                Arg.Any<IReadOnlyCollection<Guid>>(),
+                null,
+                NotificationRecipientEligibilityMode.EnforceDefinitionRequirements)
+            .Returns(call =>
+            {
+                var candidates = call.ArgAt<IReadOnlyCollection<Guid>>(1).ToArray();
+                return new NotificationRecipientEligibilityResult(candidates, Array.Empty<Guid>());
+            });
+        var distributor = CreateDistributor(store, definitionManager, eventBus, evaluator);
+        var users = new[] { Guid.NewGuid(), Guid.NewGuid() };
+
+        await distributor.DistributePreparedAsync(
+            new NotificationInfo { Id = Guid.NewGuid(), NotificationName = "test" },
+            users,
+            NotificationRecipientEligibilityMode.EnforceDefinitionRequirements,
+            CancellationToken.None);
+
+        await batchedStore.DidNotReceiveWithAnyArgs().InsertNotificationAsync(
+            default!,
+            default);
+        await batchedStore.Received(1).InsertUserNotificationsAsync(
+            Arg.Is<IReadOnlyCollection<UserNotificationInfo>>(rows =>
+                rows.Select(row => row.UserId).SequenceEqual(users)),
+            CancellationToken.None);
+        await eventBus.Received(1).PublishAsync(Arg.Any<NotificationDeliveryEto>());
+    }
+
+    [Fact]
     public async Task Failure_metric_identifies_the_failed_pipeline_stage()
     {
         var store = Substitute.For<INotificationStore, IBatchedNotificationStore>();

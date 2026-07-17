@@ -62,6 +62,30 @@ public class NotificationDistributionJob : AsyncBackgroundJob<NotificationDistri
         // and ABP's event bus re-enters the tenant from the event itself before invoking them.
         using (CurrentTenant.Change(args.Notification.TenantId, null))
         {
+            if (args.NotificationAlreadyPersisted)
+            {
+                if (args.UserIds == null)
+                {
+                    throw new ArgumentException(
+                        "Prepared distribution is only valid for explicit recipients.",
+                        nameof(args));
+                }
+
+                if (Distributor is not IPreparedNotificationDistributor preparedDistributor ||
+                    !preparedDistributor.SupportsPreparedDistribution)
+                {
+                    throw new InvalidOperationException(
+                        "The configured notification distributor cannot process prepared recipient batches.");
+                }
+
+                await preparedDistributor.DistributePreparedAsync(
+                    args.Notification,
+                    args.UserIds,
+                    args.RecipientEligibilityMode,
+                    cancellationToken);
+                return;
+            }
+
             if (args.RecipientEligibilityMode == NotificationRecipientEligibilityMode.BypassDefinitionRequirements)
             {
                 if (args.UserIds == null)

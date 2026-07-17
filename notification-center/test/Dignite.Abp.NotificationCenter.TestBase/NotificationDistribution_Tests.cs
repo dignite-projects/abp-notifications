@@ -9,10 +9,13 @@ using Microsoft.Extensions.Options;
 using NSubstitute;
 using Shouldly;
 using Volo.Abp;
+using Volo.Abp.BackgroundJobs;
 using Volo.Abp.Domain.Repositories;
 using Volo.Abp.EventBus.Distributed;
+using Volo.Abp.Guids;
 using Volo.Abp.Modularity;
 using Volo.Abp.MultiTenancy;
+using Volo.Abp.Timing;
 using Xunit;
 
 namespace Dignite.Abp.NotificationCenter;
@@ -337,7 +340,7 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
         var distributor = CreateDistributor(eventBus, new NotificationOptions
         {
             RecipientBatchSize = 256,
-            UserNotificationWriteBatchSize = 128,
+            UserNotificationWriteBatchSize = 256,
             DeliveryEventRecipientLimit = 100
         });
 
@@ -400,5 +403,71 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
                 .GetListAsync(row => row.NotificationId == notificationId);
             retainedRows.Count.ShouldBeLessThanOrEqualTo(2);
         });
+    }
+
+    [Fact]
+    public async Task Large_explicit_publish_prepares_once_and_completed_bounded_jobs_can_run_out_of_order()
+    {
+        var options = new NotificationOptions
+        {
+            DirectDistributionUserThreshold = 1,
+            RecipientBatchSize = 2,
+            UserNotificationWriteBatchSize = 2,
+            DeliveryEventRecipientLimit = 2
+        };
+        var eventBus = Substitute.For<IDistributedEventBus>();
+        var deliveries = new List<NotificationDeliveryEto>();
+        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryEto>()))
+            .Do(call => deliveries.Add(call.Arg<NotificationDeliveryEto>()));
+        var distributor = CreateDistributor(eventBus, options);
+        var backgroundJobManager = Substitute.For<IBackgroundJobManager>();
+        var publisher = new DefaultNotificationPublisher(
+            Options.Create(options),
+            distributor,
+            backgroundJobManager,
+            GetRequiredService<IGuidGenerator>(),
+            GetRequiredService<IClock>(),
+            GetRequiredService<ICurrentTenant>(),
+            GetRequiredService<INotificationDefinitionManager>(),
+            GetRequiredService<INotificationDataTypeRegistry>(),
+            GetRequiredService<INotificationStore>());
+        var users = Enumerable.Range(0, 5).Select(_ => Guid.NewGuid()).ToArray();
+
+        await WithUnitOfWorkAsync(() => publisher.PublishAsync(
+            "order.shipped",
+            new MessageNotificationData("prepared"),
+            userIds: users));
+        var jobs = backgroundJobManager.ReceivedCalls()
+            .SelectMany(call => call.GetArguments().OfType<NotificationDistributionJobArgs>())
+            .ToList();
+        jobs.Count.ShouldBe(3);
+        foreach (var job in jobs)
+        {
+            job.NotificationAlreadyPersisted.ShouldBeTrue();
+            job.UserIds.ShouldNotBeNull();
+            job.UserIds!.Length.ShouldBeLessThanOrEqualTo(2);
+        }
+
+        foreach (var args in jobs.AsEnumerable().Reverse())
+        {
+            await WithUnitOfWorkAsync(() => new NotificationDistributionJob(
+                    distributor,
+                    GetRequiredService<ICurrentTenant>())
+                .ExecuteAsync(args));
+        }
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var notificationId = jobs[0].Notification.Id;
+            (await GetRequiredService<IRepository<Notification, Guid>>()
+                .FindAsync(notificationId)).ShouldNotBeNull();
+            var rows = await GetRequiredService<IRepository<UserNotification, Guid>>()
+                .GetListAsync(row => row.NotificationId == notificationId);
+            rows.Count.ShouldBe(5);
+            rows.Select(row => row.UserId).ShouldBe(users, ignoreOrder: true);
+        });
+        deliveries.Count.ShouldBe(3);
+        deliveries.ShouldAllBe(delivery => delivery.UserIds.Length <= 2);
+        deliveries.SelectMany(delivery => delivery.UserIds).ShouldBe(users, ignoreOrder: true);
     }
 }

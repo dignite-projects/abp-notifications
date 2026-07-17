@@ -16,13 +16,14 @@ namespace Dignite.Abp.Notifications;
 public interface IBatchedNotificationStore
 {
     /// <summary>
-    /// Gets one stable, ordered page of distinct subscription recipient IDs in the current tenant.
+    /// Gets the next stable, ordered page of distinct subscription recipient IDs in the current tenant.
+    /// <paramref name="afterUserId"/> is an exclusive keyset cursor; <see langword="null"/> starts the scan.
     /// </summary>
     Task<List<Guid>> GetSubscriptionUserIdsAsync(
         string notificationName,
         string? entityTypeName,
         string? entityId,
-        int skipCount,
+        Guid? afterUserId,
         int maxResultCount,
         CancellationToken cancellationToken = default);
 

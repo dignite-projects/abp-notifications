@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Dignite.Abp.Notifications;
@@ -262,16 +263,62 @@ public abstract class NotificationStore_Tests<TStartupModule> : NotificationCent
         {
             var store = (IBatchedNotificationStore)GetRequiredService<INotificationStore>();
             var firstPage = await store.GetSubscriptionUserIdsAsync(
-                "order.shipped", "Demo.Order", "42", 0, 2);
+                "order.shipped", "Demo.Order", "42", null, 2);
             var secondPage = await store.GetSubscriptionUserIdsAsync(
-                "order.shipped", "Demo.Order", "42", 2, 2);
+                "order.shipped", "Demo.Order", "42", firstPage[^1], 2);
             var exactBoundaryPage = await store.GetSubscriptionUserIdsAsync(
-                "order.shipped", "Demo.Order", "42", 4, 2);
+                "order.shipped", "Demo.Order", "42", secondPage[^1], 2);
 
             firstPage.ShouldBe(users.Take(2));
             secondPage.ShouldBe(users.Skip(2).Take(2));
             exactBoundaryPage.ShouldBeEmpty();
             firstPage.Concat(secondPage).Distinct().Count().ShouldBe(4);
+        });
+    }
+
+    [Fact]
+    public async Task Subscription_keyset_does_not_repeat_or_skip_when_rows_before_the_cursor_change()
+    {
+        var a = Guid.Parse("10000000-0000-0000-0000-000000000000");
+        var insertedBeforeCursor = Guid.Parse("20000000-0000-0000-0000-000000000000");
+        var b = Guid.Parse("30000000-0000-0000-0000-000000000000");
+        var c = Guid.Parse("50000000-0000-0000-0000-000000000000");
+        var insertedAfterCursor = Guid.Parse("60000000-0000-0000-0000-000000000000");
+        var d = Guid.Parse("70000000-0000-0000-0000-000000000000");
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var store = GetRequiredService<INotificationStore>();
+            foreach (var userId in new[] { a, b, c, d })
+            {
+                await store.InsertSubscriptionAsync(NewSubscription(userId));
+            }
+        });
+
+        List<Guid>? firstPage = null;
+        await WithUnitOfWorkAsync(async () =>
+        {
+            firstPage = await ((IBatchedNotificationStore)GetRequiredService<INotificationStore>())
+                .GetSubscriptionUserIdsAsync("order.shipped", null, null, null, 2);
+        });
+        firstPage.ShouldBe(new[] { a, b });
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var store = GetRequiredService<INotificationStore>();
+            await store.DeleteSubscriptionAsync(a, "order.shipped", null, null);
+            await store.InsertSubscriptionAsync(NewSubscription(insertedBeforeCursor));
+            await store.InsertSubscriptionAsync(NewSubscription(insertedAfterCursor));
+        });
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var secondPage = await ((IBatchedNotificationStore)GetRequiredService<INotificationStore>())
+                .GetSubscriptionUserIdsAsync("order.shipped", null, null, firstPage![^1], 10);
+
+            secondPage.ShouldBe(new[] { c, insertedAfterCursor, d });
+            secondPage.ShouldNotContain(b);
+            secondPage.ShouldNotContain(insertedBeforeCursor);
         });
     }
 
