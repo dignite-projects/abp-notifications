@@ -224,9 +224,11 @@ backfill before deploying the new unique index.
 Distributing a notification writes the per-user inbox rows and publishes one `NotificationDeliveryWorkEto` per
 tenant/notification/user/channel. Those writes and outgoing event records commit together only when the host
 enables ABP's transactional outbox. The process that actually hosts the selected channel consumes the work event,
-persists its self-contained payload snapshot and delivery state, then atomically claims a lease. Processes that do
-not host that channel ignore the event without creating or failing state. The EF Core writer flushes and detaches
-each inbox batch so its change tracker stays bounded. Atomic rollback therefore requires an ambient
+atomically materializes its self-contained payload snapshot directly in a claimed lease state through an
+independently committed store operation. This avoids relying on visibility of an uncommitted row from the ambient
+event-inbox transaction. Processes that do not host that channel ignore the event without creating or failing
+state. The EF Core writer flushes and detaches each inbox batch so its change tracker stays bounded. Atomic rollback
+therefore requires an ambient
 **transactional** ABP unit of work; an outbox cannot make a non-transactional unit of work atomic.
 
 | Setup | Inbox batch behavior | Persist + publish atomic | Failure/cancellation after a completed batch |
@@ -890,14 +892,16 @@ Notifiers                 NotificationCenter (optional)
    `IBatchedNotificationStore`), checks the definition's feature/permission availability, persists bounded
    inbox groups (a no-op under `NullNotificationStore`), creates one delivery identity per recipient/channel,
    then publishes `NotificationDeliveryWorkEto` when external channels are configured.
-4. Only a process hosting the selected channel handles the work. It persists a self-contained delivery snapshot,
-   atomically claims a lease, invokes the notifier, and records success, suppression, retry timing, or dead-letter
-   state. Its retry worker republishes due or lease-expired work.
+4. Only a process hosting the selected channel handles the work. In one independently committed store operation it
+   inserts a new self-contained delivery snapshot directly as a claimed lease, or atomically claims an existing due
+   row; it then invokes the notifier and records success, suppression, retry timing, or dead-letter state. Its retry
+   worker republishes due or lease-expired work.
 
 `NotificationDeliveryWorkEto` is the load-bearing boundary between scheduling and delivery and the extension
 point for any new channel. Under either Notification Center persistence provider, hosts should opt in to ABP's
 transactional outbox (see [Configuration](#configuration)) so notification, inbox, and outgoing work records
-commit together. The delivery ledger belongs to the consuming channel application and is committed before claim.
+commit together. The delivery ledger belongs to the consuming channel application; initial materialization and
+claim commit together independently of the consumer's ambient event-inbox transaction.
 
 > **Serialization invariant:** every `NotificationData` subclass must carry a stable
 > `[NotificationDataType]` discriminator plus an explicit schema version and round-trip through

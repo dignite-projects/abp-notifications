@@ -12,6 +12,18 @@ namespace Dignite.Abp.Notifications;
 /// </summary>
 public interface INotificationDeliveryStore
 {
+    /// <summary>
+    /// Idempotently materializes the consumer-owned work snapshot and claims it in one independently committed
+    /// store operation. A newly created record must be inserted directly in the claimed state so an ambient event
+    /// inbox transaction never has to expose an uncommitted pending row to a nested claim operation.
+    /// </summary>
+    Task<NotificationDeliveryClaim?> EnsureCreatedAndTryClaimAsync(
+        NotificationDeliveryWorkEto workItem,
+        DateTime now,
+        TimeSpan leaseDuration,
+        int maxAttempts,
+        CancellationToken cancellationToken = default);
+
     Task EnsureCreatedAsync(
         NotificationDeliveryWorkEto workItem,
         CancellationToken cancellationToken = default);

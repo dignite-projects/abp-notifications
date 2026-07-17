@@ -19,6 +19,32 @@ public class NullNotificationDeliveryStore :
     private readonly object _sync = new object();
     private readonly Dictionary<Guid, VolatileDelivery> _deliveries = new Dictionary<Guid, VolatileDelivery>();
 
+    public Task<NotificationDeliveryClaim?> EnsureCreatedAndTryClaimAsync(
+        NotificationDeliveryWorkEto workItem,
+        DateTime now,
+        TimeSpan leaseDuration,
+        int maxAttempts,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ValidateIdentity(workItem);
+
+        lock (_sync)
+        {
+            if (!_deliveries.TryGetValue(workItem.DeliveryId, out var delivery))
+            {
+                delivery = new VolatileDelivery(Clone(workItem));
+                _deliveries.Add(workItem.DeliveryId, delivery);
+            }
+            else if (!SameIdentity(delivery.WorkItem, workItem))
+            {
+                throw new InvalidOperationException("A notification delivery id was reused for another identity.");
+            }
+
+            return Task.FromResult(TryClaim(delivery, now, leaseDuration, maxAttempts));
+        }
+    }
+
     public Task EnsureCreatedAsync(
         NotificationDeliveryWorkEto workItem,
         CancellationToken cancellationToken = default)
@@ -60,36 +86,7 @@ public class NullNotificationDeliveryStore :
                 return Task.FromResult<NotificationDeliveryClaim?>(null);
             }
 
-            var isDue = delivery.State == NotificationDeliveryState.Pending
-                        || delivery.State == NotificationDeliveryState.Failed
-                        && (!delivery.NextAttemptTime.HasValue || delivery.NextAttemptTime <= now)
-                        || delivery.State == NotificationDeliveryState.Claimed
-                        && delivery.LeaseExpirationTime <= now;
-            if (!isDue)
-            {
-                return Task.FromResult<NotificationDeliveryClaim?>(null);
-            }
-
-            if (delivery.AttemptCount >= maxAttempts)
-            {
-                delivery.State = NotificationDeliveryState.DeadLetter;
-                delivery.LeaseId = null;
-                delivery.LeaseExpirationTime = null;
-                delivery.NextAttemptTime = null;
-                delivery.DiagnosticCode = "attempts-exhausted";
-                delivery.Diagnostic = "The delivery attempt limit was exhausted.";
-                return Task.FromResult<NotificationDeliveryClaim?>(null);
-            }
-
-            delivery.State = NotificationDeliveryState.Claimed;
-            delivery.AttemptCount++;
-            delivery.LeaseId = Guid.NewGuid();
-            delivery.LeaseExpirationTime = now.Add(leaseDuration);
-            delivery.NextAttemptTime = null;
-            return Task.FromResult<NotificationDeliveryClaim?>(new NotificationDeliveryClaim(
-                delivery.LeaseId.Value,
-                delivery.AttemptCount,
-                delivery.LeaseExpirationTime.Value));
+            return Task.FromResult(TryClaim(delivery, now, leaseDuration, maxAttempts));
         }
     }
 
@@ -230,6 +227,44 @@ public class NullNotificationDeliveryStore :
             delivery.Diagnostic = diagnostic;
             return Task.FromResult(true);
         }
+    }
+
+    private static NotificationDeliveryClaim? TryClaim(
+        VolatileDelivery delivery,
+        DateTime now,
+        TimeSpan leaseDuration,
+        int maxAttempts)
+    {
+        var isDue = delivery.State == NotificationDeliveryState.Pending
+                    || delivery.State == NotificationDeliveryState.Failed
+                    && (!delivery.NextAttemptTime.HasValue || delivery.NextAttemptTime <= now)
+                    || delivery.State == NotificationDeliveryState.Claimed
+                    && delivery.LeaseExpirationTime <= now;
+        if (!isDue)
+        {
+            return null;
+        }
+
+        if (delivery.AttemptCount >= maxAttempts)
+        {
+            delivery.State = NotificationDeliveryState.DeadLetter;
+            delivery.LeaseId = null;
+            delivery.LeaseExpirationTime = null;
+            delivery.NextAttemptTime = null;
+            delivery.DiagnosticCode = "attempts-exhausted";
+            delivery.Diagnostic = "The delivery attempt limit was exhausted.";
+            return null;
+        }
+
+        delivery.State = NotificationDeliveryState.Claimed;
+        delivery.AttemptCount++;
+        delivery.LeaseId = Guid.NewGuid();
+        delivery.LeaseExpirationTime = now.Add(leaseDuration);
+        delivery.NextAttemptTime = null;
+        return new NotificationDeliveryClaim(
+            delivery.LeaseId.Value,
+            delivery.AttemptCount,
+            delivery.LeaseExpirationTime.Value);
     }
 
     private static void ValidateIdentity(NotificationDeliveryWorkEto workItem)

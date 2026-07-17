@@ -6,12 +6,15 @@ using System.Threading.Tasks;
 using Dignite.Abp.Notifications;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Shouldly;
 using Volo.Abp.Application.Dtos;
 using Volo.Abp.Data;
 using Volo.Abp.Domain.Repositories;
 using Volo.Abp.Modularity;
 using Volo.Abp.MultiTenancy;
+using Volo.Abp.Timing;
 using Volo.Abp.Uow;
 using Xunit;
 
@@ -100,6 +103,60 @@ public abstract class NotificationDeliveryStore_Tests<TStartupModule> : Notifica
         (await ClaimInScopeAsync(work, now.AddMinutes(4))).ShouldBeNull();
         (await GetRecordsAsync(work.TenantId, work.NotificationId)).Single().State
             .ShouldBe(NotificationDeliveryState.Succeeded);
+    }
+
+    [Fact]
+    public async Task Concurrent_first_events_materialize_one_row_and_only_one_claim_wins()
+    {
+        var now = DateTime.UtcNow;
+        var work = CreateWork(Guid.NewGuid(), Guid.NewGuid(), "FirstEmail", tenantId: null, now);
+
+        var claims = await Task.WhenAll(
+            MaterializeAndClaimInScopeAsync(work, now),
+            MaterializeAndClaimInScopeAsync(work, now));
+
+        claims.Count(claim => claim != null).ShouldBe(1);
+        (await GetRecordsAsync(work.TenantId, work.NotificationId)).Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task First_consumer_event_materializes_claims_and_delivers_inside_an_ambient_transaction()
+    {
+        var work = CreateWork(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            "ImmediateEmail",
+            tenantId: null,
+            DateTime.UtcNow);
+        var notifier = new RecordingDeliveryNotifier(work.Channel);
+        var deliveryOptions = Options.Create(new NotificationOptions
+        {
+            IsDeliveryRetryWorkerEnabled = false,
+            DeliveryRetryJitterFactor = 0
+        });
+        var processor = new NotificationDeliveryProcessor(
+            GetRequiredService<INotificationDeliveryStore>(),
+            new[] { notifier },
+            Array.Empty<INotificationNotifier<NotificationDeliveryEto>>(),
+            new NotificationDeliveryRetryPolicy(deliveryOptions),
+            GetRequiredService<IClock>(),
+            GetRequiredService<ICurrentTenant>(),
+            deliveryOptions,
+            NullLogger<NotificationDeliveryProcessor>.Instance);
+
+        using (var outerUnitOfWork = GetRequiredService<IUnitOfWorkManager>().Begin(
+                   requiresNew: true,
+                   isTransactional: true))
+        {
+            await processor.ProcessAsync(work);
+
+            notifier.InvocationCount.ShouldBe(1);
+            await outerUnitOfWork.CompleteAsync();
+        }
+
+        var record = (await GetRecordsAsync(work.TenantId, work.NotificationId)).Single();
+        record.State.ShouldBe(NotificationDeliveryState.Succeeded);
+        record.AttemptCount.ShouldBe(1);
     }
 
     [Fact]
@@ -385,6 +442,19 @@ public abstract class NotificationDeliveryStore_Tests<TStartupModule> : Notifica
             3);
     }
 
+    private async Task<NotificationDeliveryClaim?> MaterializeAndClaimInScopeAsync(
+        NotificationDeliveryWorkEto work,
+        DateTime now)
+    {
+        using var scope = GetRequiredService<IServiceScopeFactory>().CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<INotificationDeliveryStore>()
+            .EnsureCreatedAndTryClaimAsync(
+                work,
+                now,
+                TimeSpan.FromMinutes(2),
+                3);
+    }
+
     private async Task<System.Collections.Generic.List<NotificationDeliveryRecord>> GetRecordsAsync(
         Guid? tenantId,
         Guid notificationId)
@@ -396,6 +466,26 @@ public abstract class NotificationDeliveryStore_Tests<TStartupModule> : Notifica
                 .GetListAsync(record => record.NotificationId == notificationId);
         });
         return records!;
+    }
+
+    private sealed class RecordingDeliveryNotifier : INotificationDeliveryNotifier
+    {
+        private int _invocationCount;
+
+        public string Name { get; }
+
+        public int InvocationCount => _invocationCount;
+
+        public RecordingDeliveryNotifier(string name)
+        {
+            Name = name;
+        }
+
+        public Task<NotificationDeliveryResult> DeliverAsync(NotificationDeliveryWorkEto workItem)
+        {
+            Interlocked.Increment(ref _invocationCount);
+            return Task.FromResult(NotificationDeliveryResult.Succeeded());
+        }
     }
 
     private async Task WithTenantUnitOfWorkAsync(Guid? tenantId, Func<Task> action)

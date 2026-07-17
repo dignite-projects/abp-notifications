@@ -47,6 +47,24 @@ public class NotificationDeliveryStore :
         UnitOfWorkManager = unitOfWorkManager;
     }
 
+    public virtual Task<NotificationDeliveryClaim?> EnsureCreatedAndTryClaimAsync(
+        NotificationDeliveryWorkEto workItem,
+        DateTime now,
+        TimeSpan leaseDuration,
+        int maxAttempts,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateIdentity(workItem);
+        return TryClaimCoreAsync(
+            workItem,
+            workItem.DeliveryId,
+            workItem.TenantId,
+            now,
+            leaseDuration,
+            maxAttempts,
+            cancellationToken);
+    }
+
     public virtual async Task EnsureCreatedAsync(
         NotificationDeliveryWorkEto workItem,
         CancellationToken cancellationToken = default)
@@ -65,13 +83,32 @@ public class NotificationDeliveryStore :
             cancellationToken: cancellationToken);
     }
 
-    public virtual async Task<NotificationDeliveryClaim?> TryClaimAsync(
+    public virtual Task<NotificationDeliveryClaim?> TryClaimAsync(
         Guid deliveryId,
         Guid? tenantId,
         DateTime now,
         TimeSpan leaseDuration,
         int maxAttempts,
         CancellationToken cancellationToken = default)
+    {
+        return TryClaimCoreAsync(
+            workItem: null,
+            deliveryId,
+            tenantId,
+            now,
+            leaseDuration,
+            maxAttempts,
+            cancellationToken);
+    }
+
+    private async Task<NotificationDeliveryClaim?> TryClaimCoreAsync(
+        NotificationDeliveryWorkEto? workItem,
+        Guid deliveryId,
+        Guid? tenantId,
+        DateTime now,
+        TimeSpan leaseDuration,
+        int maxAttempts,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -81,7 +118,32 @@ public class NotificationDeliveryStore :
                 var entity = await DeliveryRepository.FirstOrDefaultAsync(
                     delivery => delivery.Id == deliveryId && delivery.TenantId == tenantId,
                     cancellationToken: cancellationToken);
-                if (entity == null || !entity.CanBeClaimed(now))
+                if (entity == null)
+                {
+                    if (workItem == null)
+                    {
+                        await unitOfWork.CompleteAsync(cancellationToken);
+                        return null;
+                    }
+
+                    // The first consumer-side write is already Claimed. This is one INSERT in an independent UOW,
+                    // so it never depends on visibility of a Pending row in the ambient event-inbox transaction.
+                    entity = CreateRecord(workItem);
+                    var initialClaim = entity.Claim(GuidGenerator.Create(), now, leaseDuration);
+                    await DeliveryRepository.InsertAsync(
+                        entity,
+                        autoSave: true,
+                        cancellationToken: cancellationToken);
+                    await unitOfWork.CompleteAsync(cancellationToken);
+                    return initialClaim;
+                }
+
+                if (workItem != null)
+                {
+                    EnsureSameIdentity(entity, workItem);
+                }
+
+                if (!entity.CanBeClaimed(now))
                 {
                     await unitOfWork.CompleteAsync(cancellationToken);
                     return null;
@@ -104,6 +166,19 @@ public class NotificationDeliveryStore :
         catch (AbpDbConcurrencyException)
         {
             return null;
+        }
+        catch (Exception) when (workItem != null && !cancellationToken.IsCancellationRequested)
+        {
+            // A concurrent first event can win the deterministic primary-key insert between our read and write.
+            // Provider exceptions differ (for example EF DbUpdateException vs Mongo duplicate-key), so only treat
+            // the failure as a lost claim after a fresh UOW proves that the same delivery identity now exists.
+            // If no competitor row is visible, preserve the original provider failure for inbox redelivery.
+            if (await SameDeliveryWasCommittedByCompetitorAsync(workItem, cancellationToken))
+            {
+                return null;
+            }
+
+            throw;
         }
     }
 
@@ -290,6 +365,28 @@ public class NotificationDeliveryStore :
             workItem.Severity,
             workItem.CreationTime,
             workItem.TenantId);
+    }
+
+    private async Task<bool> SameDeliveryWasCommittedByCompetitorAsync(
+        NotificationDeliveryWorkEto workItem,
+        CancellationToken cancellationToken)
+    {
+        using var unitOfWork = UnitOfWorkManager.Begin(requiresNew: true, isTransactional: false);
+        using (DataFilter.Disable<IMultiTenant>())
+        {
+            var existing = await DeliveryRepository.FirstOrDefaultAsync(
+                delivery => delivery.Id == workItem.DeliveryId && delivery.TenantId == workItem.TenantId,
+                cancellationToken: cancellationToken);
+            if (existing == null)
+            {
+                await unitOfWork.CompleteAsync(cancellationToken);
+                return false;
+            }
+
+            EnsureSameIdentity(existing, workItem);
+            await unitOfWork.CompleteAsync(cancellationToken);
+            return true;
+        }
     }
 
     private static void ValidateIdentity(NotificationDeliveryWorkEto workItem)

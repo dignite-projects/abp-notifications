@@ -381,6 +381,26 @@ public class DefaultNotificationDistributorTests
     }
 
     [Fact]
+    public void Non_finite_retry_factors_are_rejected_at_startup_validation()
+    {
+        var invalidBackoff = new NotificationOptions { DeliveryRetryBackoffFactor = double.NaN };
+        var invalidJitter = new NotificationOptions { DeliveryRetryJitterFactor = double.PositiveInfinity };
+
+        Should.Throw<InvalidOperationException>(() => CreateDistributor(
+                Substitute.For<INotificationStore>(),
+                Substitute.For<INotificationDefinitionManager>(),
+                Substitute.For<IDistributedEventBus>(),
+                options: invalidBackoff))
+            .Message.ShouldContain(nameof(NotificationOptions.DeliveryRetryBackoffFactor));
+        Should.Throw<InvalidOperationException>(() => CreateDistributor(
+                Substitute.For<INotificationStore>(),
+                Substitute.For<INotificationDefinitionManager>(),
+                Substitute.For<IDistributedEventBus>(),
+                options: invalidJitter))
+            .Message.ShouldContain(nameof(NotificationOptions.DeliveryRetryJitterFactor));
+    }
+
+    [Fact]
     public async Task Legacy_protected_overrides_remain_active_on_the_compatibility_pipeline()
     {
         var store = Substitute.For<INotificationStore>();

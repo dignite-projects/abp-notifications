@@ -71,13 +71,11 @@ public class NotificationDeliveryProcessor : ITransientDependency
 
         using (CurrentTenant.Change(workItem.TenantId, null))
         {
-            // Consumers may run in another process/database, and source-compatible distributor constructors use a
-            // local fallback store. Idempotently materialize state on the executing side before claiming it.
-            await Store.EnsureCreatedAsync(workItem, cancellationToken);
             var claimedAt = Clock.Now;
-            var claim = await Store.TryClaimAsync(
-                workItem.DeliveryId,
-                workItem.TenantId,
+            // Materialization and the first claim are one independently committed operation. In particular, an
+            // event-inbox transaction must not create an uncommitted pending row that a nested claim cannot see.
+            var claim = await Store.EnsureCreatedAndTryClaimAsync(
+                workItem,
                 claimedAt,
                 Options.DeliveryLeaseDuration,
                 Options.MaxDeliveryAttempts,

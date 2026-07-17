@@ -103,14 +103,16 @@ public class NotificationOptions
                 $"{nameof(MaxDeliveryRetryDelay)} must be greater than or equal to {nameof(InitialDeliveryRetryDelay)}.");
         }
 
-        if (DeliveryRetryBackoffFactor < 1d)
+        if (!double.IsFinite(DeliveryRetryBackoffFactor) || DeliveryRetryBackoffFactor < 1d)
         {
-            throw new InvalidOperationException($"{nameof(DeliveryRetryBackoffFactor)} must be at least 1.");
+            throw new InvalidOperationException($"{nameof(DeliveryRetryBackoffFactor)} must be finite and at least 1.");
         }
 
-        if (DeliveryRetryJitterFactor < 0d || DeliveryRetryJitterFactor > 1d)
+        if (!double.IsFinite(DeliveryRetryJitterFactor)
+            || DeliveryRetryJitterFactor < 0d
+            || DeliveryRetryJitterFactor > 1d)
         {
-            throw new InvalidOperationException($"{nameof(DeliveryRetryJitterFactor)} must be between 0 and 1.");
+            throw new InvalidOperationException($"{nameof(DeliveryRetryJitterFactor)} must be finite and between 0 and 1.");
         }
 
         if (DeliveryRetryWorkerPeriod <= TimeSpan.Zero)

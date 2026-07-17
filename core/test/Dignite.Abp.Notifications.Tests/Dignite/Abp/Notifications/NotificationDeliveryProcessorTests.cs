@@ -172,6 +172,63 @@ public class NotificationDeliveryProcessorTests
         (await store.GetDueWorkItemsAsync(now.AddDays(1), 10)).ShouldBeEmpty();
     }
 
+    [Fact]
+    public async Task First_delivery_uses_the_atomic_materialize_and_claim_contract()
+    {
+        var now = DateTime.UtcNow;
+        var work = CreateWork(Guid.NewGuid(), Guid.NewGuid(), "Email");
+        var store = Substitute.For<INotificationDeliveryStore>();
+        var leaseId = Guid.NewGuid();
+        store.EnsureCreatedAndTryClaimAsync(
+                work,
+                now,
+                Arg.Any<TimeSpan>(),
+                Arg.Any<int>(),
+                Arg.Any<System.Threading.CancellationToken>())
+            .Returns(new NotificationDeliveryClaim(leaseId, 1, now.AddMinutes(2)));
+        store.MarkSucceededAsync(
+                work.DeliveryId,
+                work.TenantId,
+                leaseId,
+                now,
+                Arg.Any<System.Threading.CancellationToken>())
+            .Returns(true);
+        var notifier = new TestReliableNotifier(
+            "Email",
+            _ => Task.FromResult(NotificationDeliveryResult.Succeeded()));
+        var options = Options.Create(DeliveryOptions());
+        var clock = Substitute.For<IClock>();
+        clock.Now.Returns(now);
+        var processor = new NotificationDeliveryProcessor(
+            store,
+            new[] { notifier },
+            Array.Empty<INotificationNotifier<NotificationDeliveryEto>>(),
+            new NotificationDeliveryRetryPolicy(options),
+            clock,
+            new TestCurrentTenant(),
+            options,
+            NullLogger<NotificationDeliveryProcessor>.Instance);
+
+        await processor.ProcessAsync(work);
+
+        await store.Received(1).EnsureCreatedAndTryClaimAsync(
+            work,
+            now,
+            Arg.Any<TimeSpan>(),
+            Arg.Any<int>(),
+            Arg.Any<System.Threading.CancellationToken>());
+        await store.DidNotReceive().EnsureCreatedAsync(
+            Arg.Any<NotificationDeliveryWorkEto>(),
+            Arg.Any<System.Threading.CancellationToken>());
+        await store.DidNotReceive().TryClaimAsync(
+            Arg.Any<Guid>(),
+            Arg.Any<Guid?>(),
+            Arg.Any<DateTime>(),
+            Arg.Any<TimeSpan>(),
+            Arg.Any<int>(),
+            Arg.Any<System.Threading.CancellationToken>());
+    }
+
     private static (NotificationDeliveryProcessor Processor, NullNotificationDeliveryStore Store) CreateProcessor(
         DateTime now,
         INotificationDeliveryNotifier[] reliableNotifiers,
