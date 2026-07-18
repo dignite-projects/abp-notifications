@@ -738,9 +738,9 @@ paging, so inserts/deletes before the cursor cannot repeat or skip later recipie
 
 For tenant-wide audiences that should be resolved by infrastructure rather than by loading a `Guid[]` in the
 publisher, use `INotificationAudienceBroadcaster`. A tenant broadcast is always created with an explicit
-`TenantId` (or `null` for host users) and an audience name; host-wide broadcasts take an explicit tenant-id list
-and enqueue one tenant job at a time, recording success/failure per tenant without combining tenants in one
-notification transaction or delivery event.
+`TenantId` (or `null` for host users) and an audience name; `Guid.Empty` is rejected. Host-wide broadcasts take an
+explicit tenant-id list and enqueue one tenant job at a time inside independent ABP units of work, recording
+success/failure per tenant without combining tenants in one notification transaction or delivery event.
 
 ```csharp
 await _audienceBroadcaster.EnqueueTenantBroadcastAsync(
@@ -760,6 +760,13 @@ preferences/quiet hours, and work-event scheduling still run. Progress is repres
 id, tenant id, page index, and cursor in job args/logs, and low-cardinality page/candidate/failure counters are
 emitted from the `Dignite.Abp.Notifications.AudienceBroadcast` meter. Retried pages are idempotent against the
 Notification Center `(UserId, NotificationId)` inbox identity.
+
+`INotificationAudienceBroadcaster.GetTenantBroadcastProgressAsync(...)` returns the current observable state for a
+tenant/host broadcast, and `CancelTenantBroadcastAsync(...)` records a cancellation request. The default progress
+store is process-local and suitable for Core-only diagnostics; replace `INotificationAudienceBroadcastProgressStore`
+when cancellation/progress must survive process restarts or be queried by another service. A job checks the store
+before loading a page and before enqueueing the next cursor, then marks the broadcast completed, canceled, or
+failed.
 
 The EF Core package replaces the provider-neutral inbox writer with a flush-and-detach implementation. It saves
 only the configured write group and immediately detaches those `UserNotification` entities; a regression test

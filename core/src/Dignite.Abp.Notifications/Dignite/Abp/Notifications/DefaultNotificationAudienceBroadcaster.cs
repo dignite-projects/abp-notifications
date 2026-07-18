@@ -11,6 +11,7 @@ using Volo.Abp.DependencyInjection;
 using Volo.Abp.Guids;
 using Volo.Abp.MultiTenancy;
 using Volo.Abp.Timing;
+using Volo.Abp.Uow;
 
 namespace Dignite.Abp.Notifications;
 
@@ -36,6 +37,10 @@ public class DefaultNotificationAudienceBroadcaster : INotificationAudienceBroad
 
     protected IReadOnlyCollection<INotificationAudienceRecipientSource> RecipientSources { get; }
 
+    protected INotificationAudienceBroadcastProgressStore ProgressStore { get; }
+
+    protected IUnitOfWorkManager UnitOfWorkManager { get; }
+
     protected ILogger<DefaultNotificationAudienceBroadcaster> Logger { get; }
 
     public DefaultNotificationAudienceBroadcaster(
@@ -49,6 +54,8 @@ public class DefaultNotificationAudienceBroadcaster : INotificationAudienceBroad
         INotificationDataTypeRegistry dataTypeRegistry,
         INotificationStore store,
         IEnumerable<INotificationAudienceRecipientSource> recipientSources,
+        INotificationAudienceBroadcastProgressStore progressStore,
+        IUnitOfWorkManager unitOfWorkManager,
         ILogger<DefaultNotificationAudienceBroadcaster> logger)
     {
         Options = options.Value;
@@ -62,6 +69,8 @@ public class DefaultNotificationAudienceBroadcaster : INotificationAudienceBroad
         DataTypeRegistry = dataTypeRegistry;
         Store = store;
         RecipientSources = recipientSources.ToArray();
+        ProgressStore = progressStore;
+        UnitOfWorkManager = unitOfWorkManager;
         Logger = logger;
     }
 
@@ -103,6 +112,12 @@ public class DefaultNotificationAudienceBroadcaster : INotificationAudienceBroad
                 cursor: null,
                 pageIndex: 0,
                 request.ExcludedUserIds));
+        await ProgressStore.RecordStartedAsync(
+            notification,
+            request.AudienceName,
+            request.TenantId,
+            Clock.Now,
+            cancellationToken);
 
         Logger.LogInformation(
             "Enqueued audience broadcast for '{NotificationName}' ({NotificationId}) to audience {AudienceName} " +
@@ -135,7 +150,8 @@ public class DefaultNotificationAudienceBroadcaster : INotificationAudienceBroad
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                results.Add(await EnqueueTenantBroadcastAsync(
+                using var unitOfWork = UnitOfWorkManager.Begin(requiresNew: true, isTransactional: false);
+                var tenantResult = await EnqueueTenantBroadcastAsync(
                     new NotificationAudienceTenantBroadcastRequest(tenantId, request.NotificationName)
                     {
                         AudienceName = request.AudienceName,
@@ -144,7 +160,9 @@ public class DefaultNotificationAudienceBroadcaster : INotificationAudienceBroad
                         Severity = request.Severity,
                         ExcludedUserIds = request.ExcludedUserIds
                     },
-                    cancellationToken));
+                    cancellationToken);
+                await unitOfWork.CompleteAsync(cancellationToken);
+                results.Add(tenantResult);
             }
             catch (OperationCanceledException)
             {
@@ -170,13 +188,56 @@ public class DefaultNotificationAudienceBroadcaster : INotificationAudienceBroad
         return new NotificationAudienceBroadcastResult(results);
     }
 
+    public virtual Task<NotificationAudienceBroadcastProgress?> GetTenantBroadcastProgressAsync(
+        Guid notificationId,
+        Guid? tenantId,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateNotificationId(notificationId);
+        ValidateTenantId(tenantId);
+        EnsureAmbientTenantCanTarget(tenantId);
+        return ProgressStore.GetAsync(notificationId, tenantId, cancellationToken);
+    }
+
+    public virtual Task<bool> CancelTenantBroadcastAsync(
+        Guid notificationId,
+        Guid? tenantId,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateNotificationId(notificationId);
+        ValidateTenantId(tenantId);
+        EnsureAmbientTenantCanTarget(tenantId);
+        return ProgressStore.RequestCancellationAsync(
+            notificationId,
+            tenantId,
+            Clock.Now,
+            cancellationToken);
+    }
+
     protected virtual void EnsureAmbientTenantCanTarget(Guid? tenantId)
     {
+        ValidateTenantId(tenantId);
         if (CurrentTenant.Id.HasValue && CurrentTenant.Id != tenantId)
         {
             throw new AbpException(
                 $"Tenant-scoped notification audience broadcasts cannot target tenant '{tenantId}' from ambient " +
                 $"tenant '{CurrentTenant.Id}'.");
+        }
+    }
+
+    protected virtual void ValidateTenantId(Guid? tenantId)
+    {
+        if (tenantId == Guid.Empty)
+        {
+            throw new ArgumentException("Tenant id cannot be Guid.Empty. Use null for the host scope.", nameof(tenantId));
+        }
+    }
+
+    protected virtual void ValidateNotificationId(Guid notificationId)
+    {
+        if (notificationId == Guid.Empty)
+        {
+            throw new ArgumentException("Notification id cannot be Guid.Empty.", nameof(notificationId));
         }
     }
 

@@ -11,6 +11,7 @@ using Volo.Abp;
 using Volo.Abp.BackgroundJobs;
 using Volo.Abp.DependencyInjection;
 using Volo.Abp.MultiTenancy;
+using Volo.Abp.Timing;
 
 namespace Dignite.Abp.Notifications;
 
@@ -31,6 +32,10 @@ public class NotificationAudienceBroadcastJob :
 
     protected ICurrentTenant CurrentTenant { get; }
 
+    protected INotificationAudienceBroadcastProgressStore ProgressStore { get; }
+
+    protected IClock Clock { get; }
+
     protected ILogger<NotificationAudienceBroadcastJob> JobLogger { get; }
 
     protected IHostApplicationLifetime? HostApplicationLifetime { get; }
@@ -41,8 +46,10 @@ public class NotificationAudienceBroadcastJob :
         INotificationDistributor distributor,
         IBackgroundJobManager backgroundJobManager,
         ICurrentTenant currentTenant,
+        INotificationAudienceBroadcastProgressStore progressStore,
+        IClock clock,
         ILogger<NotificationAudienceBroadcastJob> logger)
-        : this(options, recipientSources, distributor, backgroundJobManager, currentTenant, logger, null)
+        : this(options, recipientSources, distributor, backgroundJobManager, currentTenant, progressStore, clock, logger, null)
     {
     }
 
@@ -52,6 +59,8 @@ public class NotificationAudienceBroadcastJob :
         INotificationDistributor distributor,
         IBackgroundJobManager backgroundJobManager,
         ICurrentTenant currentTenant,
+        INotificationAudienceBroadcastProgressStore progressStore,
+        IClock clock,
         ILogger<NotificationAudienceBroadcastJob> logger,
         IHostApplicationLifetime? hostApplicationLifetime)
     {
@@ -61,6 +70,8 @@ public class NotificationAudienceBroadcastJob :
         Distributor = distributor;
         BackgroundJobManager = backgroundJobManager;
         CurrentTenant = currentTenant;
+        ProgressStore = progressStore;
+        Clock = clock;
         JobLogger = logger;
         HostApplicationLifetime = hostApplicationLifetime;
     }
@@ -111,6 +122,26 @@ public class NotificationAudienceBroadcastJob :
             cancellationToken.ThrowIfCancellationRequested();
             using (CurrentTenant.Change(args.TenantId, null))
             {
+                if (await ProgressStore.IsCancellationRequestedAsync(
+                        args.Notification.Id,
+                        args.TenantId,
+                        cancellationToken))
+                {
+                    await ProgressStore.RecordCanceledAsync(
+                        args.Notification,
+                        args.AudienceName,
+                        args.TenantId,
+                        Clock.Now,
+                        cancellationToken);
+                    JobLogger.LogInformation(
+                        "Audience broadcast page {PageIndex} for '{NotificationName}' ({NotificationId}) was " +
+                        "skipped because cancellation was requested.",
+                        args.PageIndex,
+                        args.Notification.NotificationName,
+                        args.Notification.Id);
+                    return;
+                }
+
                 var page = await source.GetRecipientsAsync(
                     new NotificationAudienceRecipientPageRequest(
                         args.AudienceName,
@@ -149,9 +180,43 @@ public class NotificationAudienceBroadcastJob :
                     cancellationToken.ThrowIfCancellationRequested();
                 }
 
+                await ProgressStore.RecordPageCompletedAsync(
+                    args.Notification,
+                    args.AudienceName,
+                    args.TenantId,
+                    args.PageIndex,
+                    page.UserIds.Count,
+                    page.NextCursor,
+                    page.HasMore,
+                    Clock.Now,
+                    cancellationToken);
+
                 if (page.HasMore)
                 {
+                    if (await ProgressStore.IsCancellationRequestedAsync(
+                            args.Notification.Id,
+                            args.TenantId,
+                            cancellationToken))
+                    {
+                        await ProgressStore.RecordCanceledAsync(
+                            args.Notification,
+                            args.AudienceName,
+                            args.TenantId,
+                            Clock.Now,
+                            cancellationToken);
+                        return;
+                    }
+
                     await BackgroundJobManager.EnqueueAsync(args.NextPage(page.NextCursor!));
+                }
+                else
+                {
+                    await ProgressStore.RecordCompletedAsync(
+                        args.Notification,
+                        args.AudienceName,
+                        args.TenantId,
+                        Clock.Now,
+                        cancellationToken);
                 }
 
                 JobLogger.LogInformation(
@@ -179,6 +244,13 @@ public class NotificationAudienceBroadcastJob :
         }
         catch (Exception)
         {
+            await ProgressStore.RecordFailedAsync(
+                args.Notification,
+                args.AudienceName,
+                args.TenantId,
+                "Audience broadcast page failed.",
+                Clock.Now,
+                CancellationToken.None);
             NotificationAudienceBroadcastMetrics.FailureCount.Add(1, tags);
             throw;
         }

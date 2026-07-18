@@ -35,6 +35,13 @@ public class NotificationAudienceTenantBroadcastRequest
 
     public NotificationAudienceTenantBroadcastRequest(Guid? tenantId, string notificationName)
     {
+        if (tenantId == Guid.Empty)
+        {
+            throw new ArgumentException(
+                "Tenant id cannot be Guid.Empty. Use null for the host scope.",
+                nameof(tenantId));
+        }
+
         if (string.IsNullOrWhiteSpace(notificationName))
         {
             throw new ArgumentException("Notification name is required.", nameof(notificationName));

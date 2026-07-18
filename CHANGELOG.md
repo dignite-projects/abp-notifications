@@ -17,10 +17,12 @@ changes.
   require an explicit tenant/host scope, enqueue one bounded recipient page at a time, hand every page into the
   normal prepared distribution pipeline for feature/permission/preference/inbox/delivery processing, and expose
   progress through stable notification id + tenant id + page index/cursor logs and
-  `NotificationAudienceBroadcastMetrics`. `Dignite.Abp.Notifications.Identity` now contributes the
-  `all-active-users` source, which pages ABP Identity users by keyset and includes only active, not-leaved,
-  not-deleted users in the requested tenant. Host-wide broadcasts take an explicit tenant list and enqueue each
-  tenant independently so a tenant failure does not mix or block other tenant jobs.
+  `NotificationAudienceBroadcastMetrics`. Broadcast progress and cancellation are exposed through
+  `INotificationAudienceBroadcaster` and the replaceable `INotificationAudienceBroadcastProgressStore` (default
+  in-memory). `Dignite.Abp.Notifications.Identity` now contributes the `all-active-users` source, which pages ABP
+  Identity users by keyset and includes only active, not-leaved, not-deleted users in the requested tenant.
+  Host-wide broadcasts take an explicit tenant list and enqueue each tenant inside an independent ABP unit of
+  work so a tenant failure does not mix or block other tenant jobs.
 - Added opt-in Notification Center retention cleanup with `NotificationRetentionOptions`, a default-disabled
   hosted worker, manual dry-run/reporting through `INotificationRetentionCleanupService`, metrics, and
   `INotificationRetentionDeletionContributor` hooks for archive/veto behavior. Cleanup deletes only expired read

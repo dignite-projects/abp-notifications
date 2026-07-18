@@ -14,12 +14,22 @@ using Volo.Abp.Guids;
 using Volo.Abp.Localization;
 using Volo.Abp.MultiTenancy;
 using Volo.Abp.Timing;
+using Volo.Abp.Uow;
 using Xunit;
 
 namespace Dignite.Abp.Notifications;
 
 public class NotificationAudienceBroadcastTests
 {
+    [Fact]
+    public void Tenant_broadcast_rejects_empty_tenant_id()
+    {
+        Should.Throw<ArgumentException>(() =>
+            new NotificationAudienceTenantBroadcastRequest(
+                Guid.Empty,
+                TestNotificationDefinitionProvider.Plain));
+    }
+
     [Fact]
     public async Task Tenant_broadcast_requires_matching_ambient_tenant()
     {
@@ -44,6 +54,8 @@ public class NotificationAudienceBroadcastTests
         var goodTenantId = Guid.NewGuid();
         var failingTenantId = Guid.NewGuid();
         var backgroundJobManager = new FakeBackgroundJobManager();
+        var unitOfWorks = new List<IUnitOfWork>();
+        var unitOfWorkManager = CreateUnitOfWorkManager(unitOfWorks);
         var store = Substitute.For<INotificationStore, IBatchedNotificationStore>();
         var batchedStore = (IBatchedNotificationStore)store;
         batchedStore.InsertNotificationAsync(
@@ -53,7 +65,8 @@ public class NotificationAudienceBroadcastTests
         var broadcaster = CreateBroadcaster(
             currentTenant,
             backgroundJobManager,
-            store: (INotificationStore)store);
+            store: (INotificationStore)store,
+            unitOfWorkManager: unitOfWorkManager);
 
         var result = await broadcaster.EnqueueHostBroadcastAsync(
             new NotificationAudienceHostBroadcastRequest(
@@ -71,6 +84,9 @@ public class NotificationAudienceBroadcastTests
         backgroundJobManager.EnqueuedArgs.ShouldHaveSingleItem()
             .ShouldBeOfType<NotificationAudienceBroadcastJobArgs>()
             .TenantId.ShouldBe(goodTenantId);
+        unitOfWorks.Count.ShouldBe(2);
+        await unitOfWorks[0].Received(1).CompleteAsync(Arg.Any<CancellationToken>());
+        await unitOfWorks[1].DidNotReceive().CompleteAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -81,11 +97,13 @@ public class NotificationAudienceBroadcastTests
         var source = new TestAudienceRecipientSource(tenantId, users);
         var distributor = new RecordingPreparedNotificationDistributor();
         var backgroundJobManager = new FakeBackgroundJobManager();
+        var progressStore = new InMemoryNotificationAudienceBroadcastProgressStore();
         var job = CreateJob(
             source,
             distributor,
             backgroundJobManager,
-            recipientBatchSize: 2);
+            recipientBatchSize: 2,
+            progressStore);
         var args = NewJobArgs(tenantId);
 
         await job.ExecuteAsync(args, CancellationToken.None);
@@ -98,6 +116,12 @@ public class NotificationAudienceBroadcastTests
         nextArgs.Notification.Id.ShouldBe(args.Notification.Id);
         nextArgs.Cursor.ShouldBe("2");
         nextArgs.PageIndex.ShouldBe(1);
+        var progress = await progressStore.GetAsync(args.Notification.Id, tenantId);
+        progress.ShouldNotBeNull();
+        progress.Status.ShouldBe(NotificationAudienceBroadcastStatus.Running);
+        progress.CompletedPageCount.ShouldBe(1);
+        progress.CandidateCount.ShouldBe(2);
+        progress.HasMore.ShouldBeTrue();
     }
 
     [Fact]
@@ -115,6 +139,70 @@ public class NotificationAudienceBroadcastTests
 
         source.Requests.ShouldBeEmpty();
         distributor.Calls.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Empty_tenant_page_completes_without_enqueuing_more_work()
+    {
+        var tenantId = Guid.NewGuid();
+        var source = new TestAudienceRecipientSource(tenantId);
+        var distributor = new RecordingPreparedNotificationDistributor();
+        var backgroundJobManager = new FakeBackgroundJobManager();
+        var progressStore = new InMemoryNotificationAudienceBroadcastProgressStore();
+        var args = NewJobArgs(tenantId);
+
+        await CreateJob(
+                source,
+                distributor,
+                backgroundJobManager,
+                recipientBatchSize: 2,
+                progressStore)
+            .ExecuteAsync(args, CancellationToken.None);
+
+        source.Requests.ShouldHaveSingleItem();
+        distributor.Calls.ShouldBeEmpty();
+        backgroundJobManager.EnqueuedArgs.ShouldBeEmpty();
+        var progress = await progressStore.GetAsync(args.Notification.Id, tenantId);
+        progress.ShouldNotBeNull();
+        progress.Status.ShouldBe(NotificationAudienceBroadcastStatus.Completed);
+        progress.CompletedPageCount.ShouldBe(1);
+        progress.CandidateCount.ShouldBe(0);
+        progress.HasMore.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Cancel_request_is_exposed_and_prevents_job_from_loading_recipients()
+    {
+        var tenantId = Guid.NewGuid();
+        var source = new TestAudienceRecipientSource(tenantId, Guid.NewGuid());
+        var backgroundJobManager = new FakeBackgroundJobManager();
+        var progressStore = new InMemoryNotificationAudienceBroadcastProgressStore();
+        var broadcaster = CreateBroadcaster(
+            backgroundJobManager: backgroundJobManager,
+            sources: new[] { source },
+            progressStore: progressStore);
+
+        var result = await broadcaster.EnqueueTenantBroadcastAsync(
+            new NotificationAudienceTenantBroadcastRequest(
+                tenantId,
+                TestNotificationDefinitionProvider.Plain));
+        (await broadcaster.CancelTenantBroadcastAsync(result.NotificationId, tenantId)).ShouldBeTrue();
+        var enqueuedArgs = backgroundJobManager.EnqueuedArgs.ShouldHaveSingleItem()
+            .ShouldBeOfType<NotificationAudienceBroadcastJobArgs>();
+
+        await CreateJob(
+                source,
+                new RecordingPreparedNotificationDistributor(),
+                new FakeBackgroundJobManager(),
+                recipientBatchSize: 2,
+                progressStore)
+            .ExecuteAsync(enqueuedArgs, CancellationToken.None);
+
+        source.Requests.ShouldBeEmpty();
+        var progress = await broadcaster.GetTenantBroadcastProgressAsync(result.NotificationId, tenantId);
+        progress.ShouldNotBeNull();
+        progress.Status.ShouldBe(NotificationAudienceBroadcastStatus.Canceled);
+        progress.IsCancellationRequested.ShouldBeTrue();
     }
 
     [Fact]
@@ -138,13 +226,17 @@ public class NotificationAudienceBroadcastTests
         IBackgroundJobManager? backgroundJobManager = null,
         INotificationStore? store = null,
         INotificationDistributor? distributor = null,
-        IEnumerable<INotificationAudienceRecipientSource>? sources = null)
+        IEnumerable<INotificationAudienceRecipientSource>? sources = null,
+        INotificationAudienceBroadcastProgressStore? progressStore = null,
+        IUnitOfWorkManager? unitOfWorkManager = null)
     {
         currentTenant ??= new TestCurrentTenant();
         backgroundJobManager ??= new FakeBackgroundJobManager();
         store ??= Substitute.For<INotificationStore, IBatchedNotificationStore>();
         distributor ??= CreatePreparedDistributorSubstitute();
         sources ??= new[] { new TestAudienceRecipientSource(null, Guid.NewGuid()) };
+        progressStore ??= new InMemoryNotificationAudienceBroadcastProgressStore();
+        unitOfWorkManager ??= CreateUnitOfWorkManager();
         var guidGenerator = Substitute.For<IGuidGenerator>();
         guidGenerator.Create().Returns(_ => Guid.NewGuid());
         var clock = Substitute.For<IClock>();
@@ -167,6 +259,8 @@ public class NotificationAudienceBroadcastTests
             CreateDataTypeRegistry(),
             store,
             sources,
+            progressStore,
+            unitOfWorkManager,
             NullLogger<DefaultNotificationAudienceBroadcaster>.Instance);
     }
 
@@ -174,15 +268,37 @@ public class NotificationAudienceBroadcastTests
         INotificationAudienceRecipientSource source,
         RecordingPreparedNotificationDistributor distributor,
         IBackgroundJobManager backgroundJobManager,
-        int recipientBatchSize)
+        int recipientBatchSize,
+        INotificationAudienceBroadcastProgressStore? progressStore = null)
     {
+        var clock = Substitute.For<IClock>();
+        clock.Now.Returns(_ => DateTime.UtcNow);
         return new NotificationAudienceBroadcastJob(
             Options.Create(new NotificationOptions { RecipientBatchSize = recipientBatchSize }),
             new[] { source },
             distributor,
             backgroundJobManager,
             new TestCurrentTenant(),
+            progressStore ?? new InMemoryNotificationAudienceBroadcastProgressStore(),
+            clock,
             NullLogger<NotificationAudienceBroadcastJob>.Instance);
+    }
+
+    private static IUnitOfWorkManager CreateUnitOfWorkManager(List<IUnitOfWork>? unitOfWorks = null)
+    {
+        var unitOfWorkManager = Substitute.For<IUnitOfWorkManager>();
+        unitOfWorkManager
+            .Begin(
+                Arg.Any<AbpUnitOfWorkOptions>(),
+                Arg.Any<bool>())
+            .Returns(_ =>
+            {
+                var unitOfWork = Substitute.For<IUnitOfWork>();
+                unitOfWork.CompleteAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+                unitOfWorks?.Add(unitOfWork);
+                return unitOfWork;
+            });
+        return unitOfWorkManager;
     }
 
     private static INotificationDistributor CreatePreparedDistributorSubstitute()

@@ -1,3 +1,4 @@
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -20,5 +21,21 @@ public interface INotificationAudienceBroadcaster
     /// </summary>
     Task<NotificationAudienceBroadcastResult> EnqueueHostBroadcastAsync(
         NotificationAudienceHostBroadcastRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets observable progress for a previously enqueued tenant/host broadcast.
+    /// </summary>
+    Task<NotificationAudienceBroadcastProgress?> GetTenantBroadcastProgressAsync(
+        Guid notificationId,
+        Guid? tenantId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Requests cancellation for a previously enqueued tenant/host broadcast.
+    /// </summary>
+    Task<bool> CancelTenantBroadcastAsync(
+        Guid notificationId,
+        Guid? tenantId,
         CancellationToken cancellationToken = default);
 }
