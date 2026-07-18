@@ -110,6 +110,14 @@ public class NotificationStore : INotificationStore, IBatchedNotificationStore, 
 
     public virtual async Task InsertUserNotificationAsync(UserNotificationInfo userNotification)
     {
+        if (await UserNotificationExistsAsync(
+                userNotification.UserId,
+                userNotification.NotificationId,
+                CancellationToken.None))
+        {
+            return;
+        }
+
         var entity = new UserNotification(
             userNotification.Id == Guid.Empty ? GuidGenerator.Create() : userNotification.Id,
             userNotification.UserId,
@@ -131,13 +139,41 @@ public class NotificationStore : INotificationStore, IBatchedNotificationStore, 
             return;
         }
 
-        var entities = userNotifications.Select(userNotification => new UserNotification(
-            userNotification.Id == Guid.Empty ? GuidGenerator.Create() : userNotification.Id,
-            userNotification.UserId,
-            userNotification.NotificationId,
-            userNotification.State,
-            userNotification.CreationTime == default ? Clock.Now : userNotification.CreationTime,
-            userNotification.TenantId ?? CurrentTenant.Id)).ToList();
+        var normalizedUserNotifications = userNotifications
+            .GroupBy(userNotification => new { userNotification.UserId, userNotification.NotificationId })
+            .Select(group => group.First())
+            .ToList();
+        var userIds = normalizedUserNotifications.Select(userNotification => userNotification.UserId).Distinct().ToList();
+        var notificationIds = normalizedUserNotifications
+            .Select(userNotification => userNotification.NotificationId)
+            .Distinct()
+            .ToList();
+        var existingQuery = await UserNotificationRepository.GetQueryableAsync();
+        var existingRows = await AsyncExecuter.ToListAsync(
+            existingQuery
+                .Where(row => userIds.Contains(row.UserId) && notificationIds.Contains(row.NotificationId))
+                .Select(row => new { row.UserId, row.NotificationId }),
+            cancellationToken);
+        var existingKeys = existingRows
+            .Select(row => (row.UserId, row.NotificationId))
+            .ToHashSet();
+
+        var entities = normalizedUserNotifications
+            .Where(userNotification => !existingKeys.Contains((
+                userNotification.UserId,
+                userNotification.NotificationId)))
+            .Select(userNotification => new UserNotification(
+                userNotification.Id == Guid.Empty ? GuidGenerator.Create() : userNotification.Id,
+                userNotification.UserId,
+                userNotification.NotificationId,
+                userNotification.State,
+                userNotification.CreationTime == default ? Clock.Now : userNotification.CreationTime,
+                userNotification.TenantId ?? CurrentTenant.Id))
+            .ToList();
+        if (entities.Count == 0)
+        {
+            return;
+        }
 
         foreach (var group in entities
                      .GroupBy(entity => new { entity.TenantId, entity.NotificationId }))
@@ -146,6 +182,17 @@ public class NotificationStore : INotificationStore, IBatchedNotificationStore, 
         }
 
         await BatchPersistence.InsertAsync(entities, cancellationToken);
+    }
+
+    protected virtual async Task<bool> UserNotificationExistsAsync(
+        Guid userId,
+        Guid notificationId,
+        CancellationToken cancellationToken)
+    {
+        var query = await UserNotificationRepository.GetQueryableAsync();
+        return await AsyncExecuter.AnyAsync(
+            query.Where(row => row.UserId == userId && row.NotificationId == notificationId),
+            cancellationToken);
     }
 
     public virtual async Task UpdateUserNotificationStateAsync(Guid userId, Guid notificationId, UserNotificationState state)

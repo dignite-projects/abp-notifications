@@ -44,7 +44,7 @@ the first stable version exists the initial pre-release is necessarily also expo
 | `Dignite.Abp.Notifications.SignalR` | Real-time push notifier (SignalR hub at `/signalr-hubs/notifications`). |
 | `Dignite.Abp.Notifications.Emailing` | Email notifier (ABP `IEmailSender`). |
 | `Dignite.Abp.Notifications.Emailing.Identity` | Optional ABP Identity-backed email address resolver for the Emailing notifier. |
-| `Dignite.Abp.Notifications.Identity` | Permission gating for notification definitions via ABP Identity. |
+| `Dignite.Abp.Notifications.Identity` | Permission gating and active-user audience paging via ABP Identity. |
 
 **Optional Notification Center** (`notification-center/`) — persistence + REST API + UI, depends on
 Core:
@@ -100,8 +100,8 @@ dotnet add path/to/MyApp.csproj package Dignite.Abp.NotificationCenter.Web --ver
 
 `Dignite.Abp.NotificationCenter.Web` is optional. For MongoDB, replace
 `Dignite.Abp.NotificationCenter.EntityFrameworkCore` with
-`Dignite.Abp.NotificationCenter.MongoDB`. Permission gating through
-`Dignite.Abp.Notifications.Identity` is also optional.
+`Dignite.Abp.NotificationCenter.MongoDB`. Permission gating and active-user audience paging through
+`Dignite.Abp.Notifications.Identity` are also optional.
 
 For an Angular host, install the version-matched UI library:
 
@@ -735,6 +735,31 @@ subscription-driven resolution for very large audiences already modeled as subsc
 is also bounded. Custom publishers/distributors keep their previous single-job behavior until they opt into the
 prepared-distribution capability. Subscription scans use an exclusive user-ID keyset cursor rather than offset
 paging, so inserts/deletes before the cursor cannot repeat or skip later recipients.
+
+For tenant-wide audiences that should be resolved by infrastructure rather than by loading a `Guid[]` in the
+publisher, use `INotificationAudienceBroadcaster`. A tenant broadcast is always created with an explicit
+`TenantId` (or `null` for host users) and an audience name; host-wide broadcasts take an explicit tenant-id list
+and enqueue one tenant job at a time, recording success/failure per tenant without combining tenants in one
+notification transaction or delivery event.
+
+```csharp
+await _audienceBroadcaster.EnqueueTenantBroadcastAsync(
+    new NotificationAudienceTenantBroadcastRequest(tenantId, "Demo.TenantAnnouncement")
+    {
+        Data = new MessageNotificationData("Maintenance starts at 22:00 UTC.")
+    });
+```
+
+The built-in audience name is `NotificationAudienceNames.AllActiveUsers`. Core defines only the abstraction and
+continues to work with `NullNotificationStore`; it has no dependency on ABP Identity or Notification Center.
+Installing `Dignite.Abp.Notifications.Identity` registers an Identity-backed source for that audience. It pages
+ABP Identity users by an exclusive user-id keyset cursor and includes only users in the requested tenant that are
+`IsActive`, not `Leaved`, and not soft-deleted. Every page is then passed to `IPreparedNotificationDistributor`,
+so the normal feature/permission eligibility evaluator, Notification Center inbox persistence, delivery
+preferences/quiet hours, and work-event scheduling still run. Progress is represented by the stable notification
+id, tenant id, page index, and cursor in job args/logs, and low-cardinality page/candidate/failure counters are
+emitted from the `Dignite.Abp.Notifications.AudienceBroadcast` meter. Retried pages are idempotent against the
+Notification Center `(UserId, NotificationId)` inbox identity.
 
 The EF Core package replaces the provider-neutral inbox writer with a flush-and-detach implementation. It saves
 only the configured write group and immediately detaches those `UserNotification` entities; a regression test
