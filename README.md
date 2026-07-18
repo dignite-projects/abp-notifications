@@ -976,6 +976,17 @@ and that exact entity scope; a user present in both receives one inbox row and o
 - **Angular** (`angular/projects/notification-center`): an ABP-generated proxy service plus bell and
   subscriptions components, built against `/api/notifications` and the SignalR hub.
 
+Both UI libraries use the same realtime lifecycle contract: one application-scoped SignalR connection,
+deduplicated `ReceiveNotification` handlers, shared refresh events, and a full REST resync after reconnect
+because SignalR does not replay missed notifications. Component mount/unmount only retains or releases the
+shared runtime. Logout stops the connection; login, token renewal, tenant/account changes, and hub/API URL
+changes reconnect with the new context. Angular exposes this as `NotificationRealtimeService` and
+`NotificationCenterRealtimeOptions` through `provideNotificationCenterConfig({ realtime: ... })`; MVC exposes
+the shared manager as `dignite.notificationCenter.realtime` and reads the hub URL from
+`NotificationCenterWebOptions.SignalRHubUrl`. For remote deployments, set the Angular `hubUrl`/`hubPath` or the
+MVC `SignalRHubUrl` to the externally reachable hub endpoint while keeping `/api/notifications` as the
+authoritative inbox source.
+
 ## Configuration
 
 ```csharp

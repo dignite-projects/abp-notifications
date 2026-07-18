@@ -34,6 +34,19 @@ export const appConfig: ApplicationConfig = {
 };
 ```
 
+When the SignalR hub is not under the same remote service URL as the generated Notification Center
+REST proxy, configure it once with the same provider. `hubPath` is appended to the
+`NotificationCenter` remote API URL; `hubUrl` is a fully resolved override:
+
+```ts
+provideNotificationCenterConfig({
+  realtime: {
+    hubPath: '/signalr-hubs/notifications',
+    // hubUrl: 'https://notifications.example.com/signalr-hubs/notifications',
+  },
+});
+```
+
 Use the subscriptions component in a page:
 
 ```ts
@@ -49,10 +62,16 @@ export class MyNotificationsPage {}
 ```
 
 The toolbar bell is registered by `provideNotificationCenterConfig()`. It loads its initial count/list
-once and refreshes from the Notification Center SignalR hub (`/signalr-hubs/notifications`) on
-`ReceiveNotification`; it does not poll. The hub endpoint follows ABP's SignalR convention and is mapped
-server-side by ABP. Angular uses the Microsoft SignalR client, as ABP's SignalR documentation directs
-non-MVC clients to do.
+once, then listens to the application-scoped `NotificationRealtimeService`. Multiple bells or pages share
+one SignalR connection; mounting and destroying components only reference-counts that shared runtime and
+cannot accumulate duplicate `ReceiveNotification` handlers. SignalR is only a prompt: `ReceiveNotification`,
+reconnect, token renewal, login/logout, and tenant/account changes all invalidate the bell and trigger
+authoritative REST refreshes for unread count/list state. The hub endpoint follows ABP's SignalR convention
+and is mapped server-side by ABP. Angular uses the Microsoft SignalR client, as ABP's SignalR documentation
+directs non-MVC clients to do.
+
+Advanced hosts can inject `NotificationRealtimeService` directly to observe `refreshRequested$` and
+`lifecycle$`, or call `requestRefresh()` after local user actions that should resynchronize notification UI.
 
 ### Custom notification bodies and entity links
 

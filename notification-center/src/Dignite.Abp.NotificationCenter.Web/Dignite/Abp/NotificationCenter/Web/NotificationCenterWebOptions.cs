@@ -10,10 +10,12 @@ namespace Dignite.Abp.NotificationCenter.Web;
 public class NotificationCenterWebOptions
 {
     /// <summary>
-    /// Route the client-side bell connects to for real-time notifications over SignalR. The default matches ABP's
-    /// automatic hub route for <c>NotificationsHub</c>; hosts should not map the hub manually. When the
-    /// <c>Dignite.Abp.Notifications.SignalR</c> notifier isn't installed (or <c>@microsoft/signalr</c> isn't
-    /// loaded), the bell degrades gracefully to a non-live view.
+    /// Root-relative path or absolute URL the client-side bell connects to for real-time notifications over
+    /// SignalR. The default matches ABP's automatic hub route for <c>NotificationsHub</c>; hosts should not map
+    /// the hub manually. Remote MVC deployments can point this at the externally reachable hub URL while the
+    /// Notification Center REST API remains the source of truth. When the <c>Dignite.Abp.Notifications.SignalR</c>
+    /// notifier isn't installed (or <c>@microsoft/signalr</c> isn't loaded), the bell degrades gracefully to a
+    /// non-live view.
     /// </summary>
     public string SignalRHubUrl { get; set; } = "/signalr-hubs/notifications";
 

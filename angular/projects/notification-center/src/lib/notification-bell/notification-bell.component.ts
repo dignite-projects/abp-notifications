@@ -1,9 +1,9 @@
-import { ChangeDetectorRef, Component, NgZone, OnDestroy, OnInit, Type, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, OnDestroy, OnInit, Type, inject } from '@angular/core';
 import { DOCUMENT, DatePipe, NgComponentOutlet } from '@angular/common';
-import { AuthService, EnvironmentService, LocalizationPipe } from '@abp/ng.core';
+import { LocalizationPipe } from '@abp/ng.core';
 import { NgbDropdownModule } from '@ng-bootstrap/ng-bootstrap';
-import { HubConnection, HubConnectionBuilder } from '@microsoft/signalr';
 import { Router } from '@angular/router';
+import { Subscription } from 'rxjs';
 import { NotificationsService, UserNotificationDto } from '../proxy/dignite/abp/notification-center';
 import { NotificationSeverity, UserNotificationState } from '../proxy/dignite/abp/notifications';
 import { NotificationDataComponentsService } from '../notification-data/notification-data-components.service';
@@ -12,13 +12,14 @@ import {
   NotificationEntityLinkTarget,
   NotificationEntityLinksService,
 } from '../notification-links/notification-entity-links.service';
+import { NotificationRealtimeService } from '../realtime/notification-realtime.service';
 
 /**
  * Notification bell: unread badge + dropdown of recent unread notifications, with mark-as-read / mark-all-as-read.
- * Refreshes on startup and when the ABP-mapped SignalR hub receives a notification. Each item's body is
- * dispatched by discriminator through NotificationDataComponentsService (mirrors the MVC UI's
- * NotificationCenterWebOptions.DataViewComponents), falling back to a generic image-only rendering when no
- * renderer is registered for it. Server-side tolerant placeholders use the built-in
+ * Refreshes on startup and from the application-scoped NotificationRealtimeService. Each item's body
+ * is dispatched by discriminator through NotificationDataComponentsService (mirrors the MVC UI's
+ * NotificationCenterWebOptions.DataViewComponents), falling back to a generic image-only rendering
+ * when no renderer is registered for it. Server-side tolerant placeholders use the built-in
  * "Dignite.Unsupported" renderer, so unreadable payloads still produce a visible safe fallback.
  */
 @Component({
@@ -114,14 +115,12 @@ export class NotificationBellComponent implements OnInit, OnDestroy {
   private notificationService = inject(NotificationsService);
   private notificationDataComponents = inject(NotificationDataComponentsService);
   private notificationEntityLinks = inject(NotificationEntityLinksService);
-  private authService = inject(AuthService);
-  private environmentService = inject(EnvironmentService);
-  private ngZone = inject(NgZone);
   private document = inject(DOCUMENT);
   private changeDetectorRef = inject(ChangeDetectorRef);
   private router = inject(Router);
-  private hubConnection?: HubConnection;
-  private startPromise?: Promise<void>;
+  private realtimeService = inject(NotificationRealtimeService);
+  private realtimeSubscription?: Subscription;
+  private releaseRealtime?: () => void;
 
   get smallScreen(): boolean {
     return (this.document.defaultView?.innerWidth ?? 0) < 992;
@@ -129,14 +128,17 @@ export class NotificationBellComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.refresh();
-    this.startRealtime();
+    this.realtimeSubscription = this.realtimeService.refreshRequested$.subscribe(() => this.refresh());
+    this.releaseRealtime = this.realtimeService.retain();
   }
 
   ngOnDestroy(): void {
-    void this.hubConnection?.stop();
+    this.realtimeSubscription?.unsubscribe();
+    this.releaseRealtime?.();
+    this.releaseRealtime = undefined;
   }
 
-  /** Public: a host app can force a refresh after local actions. SignalR updates are handled by this component. */
+  /** Public: a host app can force a refresh after local actions. Realtime events come from the shared runtime. */
   refresh(): void {
     this.notificationService.getCount(UserNotificationState.Unread).subscribe(c => {
       this.unreadCount = c;
@@ -287,31 +289,4 @@ export class NotificationBellComponent implements OnInit, OnDestroy {
     }
   }
 
-  private startRealtime(): void {
-    if (!this.authService.isAuthenticated || this.hubConnection || this.startPromise) {
-      return;
-    }
-
-    const apiUrl = this.environmentService.getApiUrl(this.notificationService.apiName).replace(/\/$/, '');
-    this.hubConnection = new HubConnectionBuilder()
-      .withUrl(`${apiUrl}/signalr-hubs/notifications`, {
-        accessTokenFactory: () => this.authService.getAccessToken(),
-      })
-      .withAutomaticReconnect()
-      .build();
-
-    this.hubConnection.on('ReceiveNotification', () => {
-      this.ngZone.run(() => this.refresh());
-    });
-    this.hubConnection.onreconnected(() => {
-      this.ngZone.run(() => this.refresh());
-    });
-
-    this.startPromise = this.hubConnection.start().catch(err => {
-      this.hubConnection = undefined;
-      console.warn('Notification hub connection failed.', err);
-    }).finally(() => {
-      this.startPromise = undefined;
-    });
-  }
 }

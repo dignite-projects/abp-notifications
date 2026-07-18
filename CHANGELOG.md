@@ -12,6 +12,11 @@ changes.
 
 ### Added
 
+- Centralized realtime Notification Center connection management for both UI libraries. Angular now exposes
+  `NotificationRealtimeService` plus configurable `NotificationCenterRealtimeOptions`, and the bell shares one
+  application-scoped SignalR connection with reference-counted component lifetimes, reconnect resync, token-renewal
+  reconnect, tenant/account context reconnect, logout cleanup, and duplicate-handler prevention. The MVC bundle now
+  uses a shared `dignite.notificationCenter.realtime` manager with the same refresh-on-receive/reconnect contract.
 - Added tenant-safe large-audience broadcast orchestration through `INotificationAudienceBroadcaster`,
   `INotificationAudienceRecipientSource`, and resumable `NotificationAudienceBroadcastJob` page args. Broadcasts
   require an explicit tenant/host scope, enqueue one bounded recipient page at a time, hand every page into the
