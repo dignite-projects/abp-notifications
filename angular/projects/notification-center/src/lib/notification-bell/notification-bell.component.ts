@@ -7,6 +7,7 @@ import { Router } from '@angular/router';
 import { NotificationsService, UserNotificationDto } from '../proxy/dignite/abp/notification-center';
 import { NotificationSeverity, UserNotificationState } from '../proxy/dignite/abp/notifications';
 import { NotificationDataComponentsService } from '../notification-data/notification-data-components.service';
+import { NotificationDataPayload } from '../notification-data/notification-data-payload';
 import {
   NotificationEntityLinkTarget,
   NotificationEntityLinksService,
@@ -198,13 +199,15 @@ export class NotificationBellComponent implements OnInit, OnDestroy {
 
   /** Duck-typed image URL (mirrors IHasNotificationImageUrl's "imageUrl" JSON property). */
   imageUrlOf(n: UserNotificationDto): string | null {
-    const url = n.data?.['imageUrl'];
+    const url = (n.data as NotificationDataPayload | null | undefined)?.['imageUrl'];
     return typeof url === 'string' ? url : null;
   }
 
   /** The renderer registered for this item's discriminator, or null to fall back to imageUrlOf(). */
   dataComponentOf(n: UserNotificationDto): Type<unknown> | null {
-    return this.notificationDataComponents.get(n.data?.type);
+    return this.notificationDataComponents.get(
+      (n.data as NotificationDataPayload | null | undefined)?.type,
+    );
   }
 
   notificationTitleClassOf(n: UserNotificationDto): string {
