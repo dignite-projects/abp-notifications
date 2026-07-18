@@ -9,6 +9,7 @@ using Volo.Abp.Features;
 using Volo.Abp.Guids;
 using Volo.Abp.Modularity;
 using Volo.Abp.Timing;
+using Volo.Abp.Uow;
 
 namespace Dignite.Abp.Notifications;
 
@@ -18,7 +19,8 @@ namespace Dignite.Abp.Notifications;
     typeof(AbpTimingModule),
     typeof(AbpBackgroundJobsAbstractionsModule),
     typeof(AbpGuidsModule),
-    typeof(AbpEventBusModule)
+    typeof(AbpEventBusModule),
+    typeof(AbpUnitOfWorkModule)
     )]
 public class AbpNotificationsModule : AbpModule
 {

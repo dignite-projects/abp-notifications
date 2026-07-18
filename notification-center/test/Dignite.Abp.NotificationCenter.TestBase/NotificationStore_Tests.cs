@@ -89,6 +89,88 @@ public abstract class NotificationStore_Tests<TStartupModule> : NotificationCent
     }
 
     [Fact]
+    public async Task User_notification_inserts_are_idempotent_by_user_and_notification()
+    {
+        var notificationId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var otherUserId = Guid.NewGuid();
+        var creationTime = DateTime.UtcNow;
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var store = GetRequiredService<INotificationStore>();
+            await store.InsertNotificationAsync(new NotificationInfo
+            {
+                Id = notificationId,
+                NotificationName = "order.shipped",
+                Data = new OrderShippedNotificationData { OrderNumber = "SO-10", ItemCount = 1 },
+                Severity = NotificationSeverity.Info,
+                CreationTime = creationTime
+            });
+
+            await store.InsertUserNotificationAsync(new UserNotificationInfo
+            {
+                UserId = userId,
+                NotificationId = notificationId,
+                State = UserNotificationState.Unread,
+                CreationTime = creationTime
+            });
+        });
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var store = GetRequiredService<INotificationStore>();
+            await store.InsertUserNotificationAsync(new UserNotificationInfo
+            {
+                UserId = userId,
+                NotificationId = notificationId,
+                State = UserNotificationState.Read,
+                CreationTime = creationTime
+            });
+        });
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var store = GetRequiredService<INotificationStore>();
+            await ((IBatchedNotificationStore)store).InsertUserNotificationsAsync(new[]
+            {
+                new UserNotificationInfo
+                {
+                    UserId = userId,
+                    NotificationId = notificationId,
+                    State = UserNotificationState.Unread,
+                    CreationTime = creationTime
+                },
+                new UserNotificationInfo
+                {
+                    UserId = otherUserId,
+                    NotificationId = notificationId,
+                    State = UserNotificationState.Unread,
+                    CreationTime = creationTime
+                },
+                new UserNotificationInfo
+                {
+                    UserId = otherUserId,
+                    NotificationId = notificationId,
+                    State = UserNotificationState.Read,
+                    CreationTime = creationTime
+                }
+            });
+        });
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var rows = await GetRequiredService<IRepository<UserNotification, Guid>>()
+                .GetListAsync(row => row.NotificationId == notificationId);
+
+            rows.Count.ShouldBe(2);
+            rows.Select(row => row.UserId).ShouldBe(new[] { userId, otherUserId }, ignoreOrder: true);
+            rows.Single(row => row.UserId == userId).State.ShouldBe(UserNotificationState.Unread);
+            rows.Single(row => row.UserId == otherUserId).State.ShouldBe(UserNotificationState.Unread);
+        });
+    }
+
+    [Fact]
     public async Task Historical_payload_fixtures_degrade_individually_without_failing_the_inbox_page()
     {
         var userId = Guid.NewGuid();

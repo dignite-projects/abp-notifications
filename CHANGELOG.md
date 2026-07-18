@@ -12,6 +12,17 @@ changes.
 
 ### Added
 
+- Added tenant-safe large-audience broadcast orchestration through `INotificationAudienceBroadcaster`,
+  `INotificationAudienceRecipientSource`, and resumable `NotificationAudienceBroadcastJob` page args. Broadcasts
+  require an explicit tenant/host scope, enqueue one bounded recipient page at a time, hand every page into the
+  normal prepared distribution pipeline for feature/permission/preference/inbox/delivery processing, and expose
+  progress through stable notification id + tenant id + page index/cursor logs and
+  `NotificationAudienceBroadcastMetrics`. Broadcast progress and cancellation are exposed through
+  `INotificationAudienceBroadcaster` and the replaceable `INotificationAudienceBroadcastProgressStore` (default
+  in-memory). `Dignite.Abp.Notifications.Identity` now contributes the `all-active-users` source, which pages ABP
+  Identity users by keyset and includes only active, not-leaved, not-deleted users in the requested tenant.
+  Host-wide broadcasts take an explicit tenant list and enqueue each tenant inside an independent ABP unit of
+  work so a tenant failure does not mix or block other tenant jobs.
 - Added opt-in Notification Center retention cleanup with `NotificationRetentionOptions`, a default-disabled
   hosted worker, manual dry-run/reporting through `INotificationRetentionCleanupService`, metrics, and
   `INotificationRetentionDeletionContributor` hooks for archive/veto behavior. Cleanup deletes only expired read
@@ -65,6 +76,9 @@ changes.
 
 ### Changed
 
+- Notification Center inbox materialization is idempotent for already-persisted `(UserId, NotificationId)` rows.
+  Retried prepared/audience broadcast pages skip existing inbox rows instead of failing on the unique index; no
+  schema migration is required.
 - Notification Center database models add `RetentionDeletionTime` and a concurrency stamp to base notifications,
   plus retention query indexes for old payload scans, old read inbox scans, tenant-local payload-reference checks,
   terminal delivery cleanup, and `AbpNotificationRetentionCleanupCursors` scan-state storage with a unique

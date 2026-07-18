@@ -3,7 +3,7 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace />
-    <Description>Permission gating for Dignite.Abp.Notifications notification definitions via ABP Identity.</Description>
+    <Description>ABP Identity integrations for Dignite.Abp.Notifications: permission gating and active-user audience paging.</Description>
   </PropertyGroup>
 
   <ItemGroup>

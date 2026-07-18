@@ -29,16 +29,21 @@ public class EfCoreNotificationBatchPersistence : INotificationBatchPersistence,
         IReadOnlyCollection<UserNotification> userNotifications,
         CancellationToken cancellationToken = default)
     {
-        await UserNotificationRepository.InsertManyAsync(
-            userNotifications,
-            autoSave: true,
-            cancellationToken: cancellationToken);
-
-        var dbContext = await ((IEfCoreRepository<UserNotification, Guid>)UserNotificationRepository)
-            .GetDbContextAsync();
-        foreach (var userNotification in userNotifications)
+        try
         {
-            dbContext.Entry(userNotification).State = EntityState.Detached;
+            await UserNotificationRepository.InsertManyAsync(
+                userNotifications,
+                autoSave: true,
+                cancellationToken: cancellationToken);
+        }
+        finally
+        {
+            var dbContext = await ((IEfCoreRepository<UserNotification, Guid>)UserNotificationRepository)
+                .GetDbContextAsync();
+            foreach (var userNotification in userNotifications)
+            {
+                dbContext.Entry(userNotification).State = EntityState.Detached;
+            }
         }
     }
 }
