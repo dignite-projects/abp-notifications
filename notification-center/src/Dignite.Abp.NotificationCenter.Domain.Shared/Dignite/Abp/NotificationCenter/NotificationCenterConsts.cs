@@ -19,4 +19,8 @@ public static class NotificationCenterConsts
     public const int MaxDeliveryFailureCodeLength = 64;
 
     public const int MaxDeliveryFailureMessageLength = 256;
+
+    public const int DeliveryPreferenceIdentityKeyLength = 64;
+
+    public const int MaxTimeZoneIdLength = 256;
 }

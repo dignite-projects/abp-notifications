@@ -1,6 +1,6 @@
 import { Component, Input, inject } from '@angular/core';
 import { LocalizationService } from '@abp/ng.core';
-import { NotificationData } from '../proxy/dignite/abp/notifications';
+import { NotificationDataPayload } from './notification-data-payload';
 
 /**
  * Renders a "Dignite.LocalizableMessage" notification, localized client-side (by resource + key +
@@ -17,7 +17,7 @@ export class LocalizableMessageNotificationDataComponent {
 
   text = '';
 
-  @Input() set data(value: NotificationData | null | undefined) {
+  @Input() set data(value: NotificationDataPayload | null | undefined) {
     const resourceName = value?.['resourceName'] as string | undefined;
     const name = value?.['name'] as string | undefined;
     if (!name) {

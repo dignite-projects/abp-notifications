@@ -157,6 +157,7 @@ public class NullNotificationDeliveryStore :
         {
             var items = _deliveries.Values
                 .Where(delivery => delivery.State == NotificationDeliveryState.Pending
+                                   && (!delivery.NextAttemptTime.HasValue || delivery.NextAttemptTime <= now)
                                    || delivery.State == NotificationDeliveryState.Failed
                                    && (!delivery.NextAttemptTime.HasValue || delivery.NextAttemptTime <= now)
                                    || delivery.State == NotificationDeliveryState.Claimed
@@ -194,6 +195,11 @@ public class NullNotificationDeliveryStore :
             delivery.LeaseExpirationTime = null;
             delivery.DiagnosticCode = null;
             delivery.Diagnostic = null;
+            // Mirror NotificationDeliveryRecord.Requeue: a manual requeue discards the producer's original
+            // suppress/delay intent so the retried attempt is delivered rather than re-suppressed or re-delayed.
+            delivery.WorkItem.Intent = NotificationDeliveryIntent.Deliver;
+            delivery.WorkItem.DeliveryNotBefore = null;
+            delivery.WorkItem.PreferenceReasonCode = null;
             return Task.FromResult(true);
         }
     }
@@ -236,6 +242,7 @@ public class NullNotificationDeliveryStore :
         int maxAttempts)
     {
         var isDue = delivery.State == NotificationDeliveryState.Pending
+                    && (!delivery.NextAttemptTime.HasValue || delivery.NextAttemptTime <= now)
                     || delivery.State == NotificationDeliveryState.Failed
                     && (!delivery.NextAttemptTime.HasValue || delivery.NextAttemptTime <= now)
                     || delivery.State == NotificationDeliveryState.Claimed
@@ -269,6 +276,7 @@ public class NullNotificationDeliveryStore :
 
     private static void ValidateIdentity(NotificationDeliveryWorkEto workItem)
     {
+        workItem.ValidateIntent();
         var expectedId = NotificationDeliveryIdentity.CreateId(
             workItem.TenantId,
             workItem.NotificationId,
@@ -310,6 +318,9 @@ public class NullNotificationDeliveryStore :
             CreationTime = source.CreationTime,
             UserId = source.UserId,
             Channel = source.Channel,
+            Intent = source.Intent,
+            DeliveryNotBefore = source.DeliveryNotBefore,
+            PreferenceReasonCode = source.PreferenceReasonCode,
             EntityTypeName = source.EntityTypeName,
             EntityId = source.EntityId,
             TenantId = source.TenantId
@@ -330,6 +341,9 @@ public class NullNotificationDeliveryStore :
         public VolatileDelivery(NotificationDeliveryWorkEto workItem)
         {
             WorkItem = workItem;
+            NextAttemptTime = workItem.Intent == NotificationDeliveryIntent.Delay
+                ? workItem.DeliveryNotBefore
+                : null;
         }
     }
 }

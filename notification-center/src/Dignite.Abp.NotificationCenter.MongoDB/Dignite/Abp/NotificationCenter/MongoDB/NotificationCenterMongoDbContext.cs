@@ -3,6 +3,7 @@ using MongoDB.Driver;
 using Volo.Abp.Data;
 using Volo.Abp.MongoDB;
 using Volo.Abp.MongoDB.DistributedEvents;
+using NotificationQuietHoursEntity = Dignite.Abp.NotificationCenter.NotificationQuietHours;
 
 namespace Dignite.Abp.NotificationCenter.MongoDB;
 
@@ -16,6 +17,10 @@ public class NotificationCenterMongoDbContext : AbpMongoDbContext, INotification
     public IMongoCollection<NotificationSubscription> NotificationSubscriptions => Collection<NotificationSubscription>();
 
     public IMongoCollection<NotificationDeliveryRecord> NotificationDeliveries => Collection<NotificationDeliveryRecord>();
+
+    public IMongoCollection<NotificationDeliveryPreference> NotificationDeliveryPreferences => Collection<NotificationDeliveryPreference>();
+
+    public IMongoCollection<NotificationQuietHours> NotificationQuietHours => Collection<NotificationQuietHours>();
 
     public IMongoCollection<IncomingEventRecord> IncomingEvents => Collection<IncomingEventRecord>();
 
@@ -139,6 +144,39 @@ public class NotificationCenterMongoDbContext : AbpMongoDbContext, INotification
                     Builders<BsonDocument>.IndexKeys
                         .Ascending(nameof(NotificationDeliveryRecord.State))
                         .Ascending(nameof(NotificationDeliveryRecord.LeaseExpirationTime))));
+            });
+        });
+
+        modelBuilder.Entity<NotificationDeliveryPreference>(b =>
+        {
+            b.CollectionName = NotificationCenterDbProperties.DbTablePrefix + "NotificationDeliveryPreferences";
+            b.ConfigureIndexes(indexes =>
+            {
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(NotificationDeliveryPreference.TenantKey))
+                        .Ascending(nameof(NotificationDeliveryPreference.UserId))
+                        .Ascending(nameof(NotificationDeliveryPreference.NotificationNameKey))
+                        .Ascending(nameof(NotificationDeliveryPreference.ChannelKey)),
+                    new CreateIndexOptions { Unique = true }));
+
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(NotificationDeliveryPreference.TenantKey))
+                        .Ascending(nameof(NotificationDeliveryPreference.UserId))));
+            });
+        });
+
+        modelBuilder.Entity<NotificationQuietHours>(b =>
+        {
+            b.CollectionName = NotificationCenterDbProperties.DbTablePrefix + "NotificationQuietHours";
+            b.ConfigureIndexes(indexes =>
+            {
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(NotificationQuietHoursEntity.TenantKey))
+                        .Ascending(nameof(NotificationQuietHoursEntity.UserId)),
+                    new CreateIndexOptions { Unique = true }));
             });
         });
     }

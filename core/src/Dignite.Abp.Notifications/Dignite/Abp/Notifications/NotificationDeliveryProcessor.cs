@@ -69,6 +69,8 @@ public class NotificationDeliveryProcessor : ITransientDependency
             return;
         }
 
+        workItem.ValidateIntent();
+
         using (CurrentTenant.Change(workItem.TenantId, null))
         {
             var claimedAt = Clock.Now;
@@ -89,6 +91,26 @@ public class NotificationDeliveryProcessor : ITransientDependency
 
             try
             {
+                if (workItem.Intent == NotificationDeliveryIntent.Suppress)
+                {
+                    var suppressedAt = Clock.Now;
+                    var suppressed = await Store.MarkSuppressedAsync(
+                        workItem.DeliveryId,
+                        workItem.TenantId,
+                        claim.LeaseId,
+                        suppressedAt,
+                        workItem.PreferenceReasonCode!,
+                        cancellationToken);
+                    if (suppressed)
+                    {
+                        NotificationDeliveryMetrics.OutcomeCount.Add(
+                            1,
+                            CreateTags(workItem, claim.AttemptCount, "suppressed"));
+                    }
+
+                    return;
+                }
+
                 NotificationDeliveryResult result;
                 if (notifier is INotificationDeliveryNotifier reliableNotifier)
                 {

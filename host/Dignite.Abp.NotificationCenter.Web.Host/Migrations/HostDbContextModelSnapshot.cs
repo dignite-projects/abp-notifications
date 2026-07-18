@@ -59,6 +59,219 @@ namespace Dignite.Abp.NotificationCenter.Web.Host.Migrations
                     b.ToTable("AbpNotifications", (string)null);
                 });
 
+            modelBuilder.Entity("Dignite.Abp.NotificationCenter.NotificationDeliveryPreference", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Channel")
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ChannelKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("TEXT")
+                        .IsFixedLength();
+
+                    b.Property<DateTime>("CreationTime")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("LastModificationTime")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("NotificationName")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("NotificationNameKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("TEXT")
+                        .IsFixedLength();
+
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("TenantId");
+
+                    b.Property<Guid>("TenantKey")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantKey", "UserId");
+
+                    b.HasIndex("TenantKey", "UserId", "NotificationNameKey", "ChannelKey")
+                        .IsUnique();
+
+                    b.ToTable("AbpNotificationDeliveryPreferences", (string)null);
+                });
+
+            modelBuilder.Entity("Dignite.Abp.NotificationCenter.NotificationDeliveryRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ChannelKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("CompletedTime")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ConcurrencyStamp")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("ConcurrencyStamp");
+
+                    b.Property<DateTime>("CreationTime")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Data")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeliveryNotBefore")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EntityId")
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EntityTypeName")
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(89)
+                        .IsUnicode(false)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Intent")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("LastAttemptTime")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastFailureCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastFailureMessage")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LeaseExpirationTime")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("LeaseId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("NextAttemptTime")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("NotificationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("NotificationName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PreferenceReasonCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<byte>("Severity")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("State")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("TenantId");
+
+                    b.Property<Guid>("TenantKey")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("State", "LeaseExpirationTime");
+
+                    b.HasIndex("State", "NextAttemptTime");
+
+                    b.HasIndex("TenantKey", "NotificationId", "UserId", "ChannelKey")
+                        .IsUnique();
+
+                    b.ToTable("AbpNotificationDeliveries", (string)null);
+                });
+
+            modelBuilder.Entity("Dignite.Abp.NotificationCenter.NotificationQuietHours", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreationTime")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("EndMinute")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("LastModificationTime")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("StartMinute")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("TenantId");
+
+                    b.Property<Guid>("TenantKey")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TimeZoneId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantKey", "UserId")
+                        .IsUnique();
+
+                    b.ToTable("AbpNotificationQuietHours", (string)null);
+                });
+
             modelBuilder.Entity("Dignite.Abp.NotificationCenter.NotificationSubscription", b =>
                 {
                     b.Property<Guid>("Id")
@@ -81,20 +294,37 @@ namespace Dignite.Abp.NotificationCenter.Web.Host.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("NotificationNameKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("TEXT")
+                        .IsFixedLength();
+
+                    b.Property<string>("ScopeKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("TEXT")
+                        .IsFixedLength();
+
                     b.Property<Guid?>("TenantId")
                         .HasColumnType("TEXT")
                         .HasColumnName("TenantId");
+
+                    b.Property<Guid>("TenantKey")
+                        .HasColumnType("TEXT");
 
                     b.Property<Guid>("UserId")
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("UserId", "NotificationName");
+                    b.HasIndex("TenantKey", "NotificationNameKey", "ScopeKey");
 
-                    b.HasIndex("TenantId", "NotificationName", "EntityTypeName", "EntityId");
+                    b.HasIndex("TenantKey", "UserId", "NotificationNameKey");
 
-                    b.HasIndex("TenantId", "UserId", "NotificationName", "EntityTypeName", "EntityId")
+                    b.HasIndex("TenantKey", "UserId", "NotificationNameKey", "ScopeKey")
                         .IsUnique();
 
                     b.ToTable("AbpNotificationSubscriptions", (string)null);

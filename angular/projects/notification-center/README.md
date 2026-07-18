@@ -16,7 +16,7 @@ The npm package version stays in lockstep with the repository's NuGet package ve
 
 | Import | Contents |
 |---|---|
-| `@dignite/abp.ng.notification-center` | `NotificationBellComponent` (`<abp-notification-bell>`), `NotificationSubscriptionsComponent`, and the `NotificationsService` proxy + DTOs/enums. |
+| `@dignite/abp.ng.notification-center` | `NotificationBellComponent` (`<abp-notification-bell>`), `NotificationSubscriptionsComponent`, and ABP-generated inbox, preference, and delivery API proxies + DTOs/enums. |
 | `@dignite/abp.ng.notification-center/config` | `provideNotificationCenterConfig()` — registers the navigation-menu entry into the host — plus the `eNotificationCenterRouteNames` route-name enum. Call the provider once in `app.config.ts`. |
 
 ## Usage

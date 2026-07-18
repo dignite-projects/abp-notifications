@@ -1,5 +1,5 @@
 import { Component, Input } from '@angular/core';
-import { NotificationData } from '@dignite/abp.ng.notification-center';
+import { NotificationDataPayload } from '@dignite/abp.ng.notification-center';
 
 @Component({
   selector: 'app-order-shipped-notification-data',
@@ -61,7 +61,7 @@ import { NotificationData } from '@dignite/abp.ng.notification-center';
   ],
 })
 export class OrderShippedNotificationDataComponent {
-  @Input() data?: NotificationData | null;
+  @Input() data?: NotificationDataPayload | null;
 
   get orderNumber(): string {
     return String(this.data?.['orderNumber'] ?? 'Order');

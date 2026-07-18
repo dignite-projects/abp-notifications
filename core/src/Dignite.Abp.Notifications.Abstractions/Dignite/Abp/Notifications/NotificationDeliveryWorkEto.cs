@@ -29,6 +29,15 @@ public class NotificationDeliveryWorkEto : IEventDataMayHaveTenantId
 
     public string Channel { get; set; } = default!;
 
+    /// <summary>The final channel-specific intent resolved by the producer.</summary>
+    public NotificationDeliveryIntent Intent { get; set; }
+
+    /// <summary>Earliest delivery time for <see cref="NotificationDeliveryIntent.Delay"/>.</summary>
+    public DateTime? DeliveryNotBefore { get; set; }
+
+    /// <summary>Stable diagnostic code explaining a producer-side suppression or delay.</summary>
+    public string? PreferenceReasonCode { get; set; }
+
     public string? EntityTypeName { get; set; }
 
     public string? EntityId { get; set; }
@@ -39,6 +48,24 @@ public class NotificationDeliveryWorkEto : IEventDataMayHaveTenantId
     {
         tenantId = TenantId;
         return TenantId.HasValue;
+    }
+
+    /// <summary>Rejects malformed producer intent before a channel consumer persists or executes the work.</summary>
+    public void ValidateIntent()
+    {
+        var isValid = Intent switch
+        {
+            NotificationDeliveryIntent.Deliver => !DeliveryNotBefore.HasValue && PreferenceReasonCode == null,
+            NotificationDeliveryIntent.Suppress => !DeliveryNotBefore.HasValue
+                                                   && !string.IsNullOrWhiteSpace(PreferenceReasonCode),
+            NotificationDeliveryIntent.Delay => DeliveryNotBefore.HasValue
+                                                && !string.IsNullOrWhiteSpace(PreferenceReasonCode),
+            _ => false
+        };
+        if (!isValid || PreferenceReasonCode?.Length > NotificationDeliveryPreferenceReasonCodes.MaxLength)
+        {
+            throw new InvalidOperationException($"The notification delivery intent '{Intent}' is invalid.");
+        }
     }
 
     /// <summary>

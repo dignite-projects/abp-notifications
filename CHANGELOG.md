@@ -12,6 +12,20 @@ changes.
 
 ### Added
 
+- Added per-user permanent delivery preferences with explicit
+  notification+channel > notification > channel > global > default-allow precedence, plus separate time-zone-aware
+  quiet hours. Explicit and subscription recipients share the same post-inbox policy, Core-only mode defaults to
+  immediate delivery, mandatory definitions can explicitly bypass preference/quiet-hours checks, and producer-
+  resolved `Deliver`/`Suppress`/`Delay` intent travels with remote channel work. Notification Center provides
+  tenant-safe EF Core/MongoDB persistence, current-user REST/Angular proxy contracts, and provider-parity tests.
+  A quiet-hours schedule whose stored time zone can no longer be resolved on the evaluating host fails open to
+  immediate delivery (with a warning log) instead of failing the whole recipient batch, and deleting a stored
+  preference rule does not require its notification definition to still exist.
+- Operator delivery queries (`NotificationDeliveryDto`, REST, Angular proxy) now expose the producer-resolved
+  `Intent`, `DeliveryNotBefore`, and `PreferenceReasonCode`. A manual operator retry deliberately clears
+  producer-resolved suppress/delay intent: requeued work is force-delivered as an explicit human override of the
+  stored preference — the exposed intent fields are what let an operator see that before retrying.
+
 - Added a per-tenant/notification/user/channel delivery state machine with deterministic identities, atomic leases,
   exponential retry with jitter, lease recovery, suppression, dead-lettering, metrics, and operator query/retry
   permissions and REST endpoints. Notification Center persists the ledger with equivalent EF Core and MongoDB
@@ -43,6 +57,20 @@ changes.
   explicit batches.
 
 ### Changed
+
+- Notification Center database models add `AbpNotificationDeliveryPreferences`, `AbpNotificationQuietHours`, and
+  delivery-ledger intent/not-before/reason fields. Consumer-owned EF Core migrations and MongoDB collection/index
+  upgrades are required; no preference backfill is needed because missing rows mean allow/no quiet hours. Upgrade
+  channel consumers before producers: old consumers ignore the additive intent fields and can violate an opt-out.
+- **Breaking for Angular consumers with custom renderers.** The generated `NotificationData` proxy interface no
+  longer carries the hand-maintained `type` field and structural index signature (they were lost on every proxy
+  regeneration by design of that workaround). Custom notification-data renderer components should type their
+  input as `NotificationDataPayload` (exported from the package root), which restores both members on top of the
+  generated interface.
+- **Breaking for implementers.** Custom `INotificationCenterDbContext` and `INotificationCenterMongoDbContext`
+  implementations must expose the two preference collections. Custom `DefaultNotificationDistributor`
+  construction can keep using the compatibility constructors (default allow); DI and preference-aware callers use
+  the new `INotificationDeliveryPreferenceEvaluator` overload.
 
 - **Breaking wire behavior for independently deployed event consumers.** The default distributor now publishes
   `NotificationDeliveryWorkEto` instead of batched `NotificationDeliveryEto`. Mixed versions cannot provide the new

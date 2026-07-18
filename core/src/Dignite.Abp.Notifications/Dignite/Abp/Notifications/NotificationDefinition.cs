@@ -30,6 +30,9 @@ public class NotificationDefinition
     /// </summary>
     public string? FeatureName { get; private set; }
 
+    /// <summary>Whether per-user opt-outs and quiet hours apply to this definition.</summary>
+    public NotificationDeliveryPreferenceBehavior DeliveryPreferenceBehavior { get; private set; }
+
     /// <summary>
     /// The stable discriminator required for a published payload, or <see langword="null"/> when this legacy
     /// definition has not opted into payload validation.
@@ -69,6 +72,16 @@ public class NotificationDefinition
     public NotificationDefinition RequireFeature(string featureName)
     {
         FeatureName = featureName;
+        return this;
+    }
+
+    /// <summary>
+    /// Declares a system/mandatory notification. Mandatory notifications still use the normal recipient eligibility
+    /// rules, but bypass permanent channel opt-outs and quiet hours after a recipient is eligible.
+    /// </summary>
+    public NotificationDefinition AsMandatory()
+    {
+        DeliveryPreferenceBehavior = NotificationDeliveryPreferenceBehavior.Mandatory;
         return this;
     }
 

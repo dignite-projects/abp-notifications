@@ -1,6 +1,6 @@
 import { Component, Input } from '@angular/core';
 import { LocalizationPipe } from '@abp/ng.core';
-import { NotificationData } from '../proxy/dignite/abp/notifications';
+import { NotificationDataPayload } from './notification-data-payload';
 
 /** Safe fallback for unknown, future, malformed, or failed-upcast notification payloads. */
 @Component({
@@ -14,5 +14,5 @@ import { NotificationData } from '../proxy/dignite/abp/notifications';
   `,
 })
 export class UnsupportedNotificationDataComponent {
-  @Input() data?: NotificationData | null;
+  @Input() data?: NotificationDataPayload | null;
 }
