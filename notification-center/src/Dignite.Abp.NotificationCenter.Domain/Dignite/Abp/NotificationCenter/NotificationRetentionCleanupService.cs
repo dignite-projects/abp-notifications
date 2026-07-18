@@ -96,12 +96,13 @@ public class NotificationRetentionCleanupService :
         DateTime? afterCreationTime = null;
         Guid? afterId = null;
 
-        while (true)
+        while (result.ScannedUserNotifications < batchSize)
         {
+            var remainingBatchSize = (int)(batchSize - result.ScannedUserNotifications);
             var candidates = await GetUserNotificationCandidatesAsync(
                 request,
                 cutoff,
-                batchSize,
+                remainingBatchSize,
                 afterCreationTime,
                 afterId,
                 cancellationToken);
@@ -154,12 +155,13 @@ public class NotificationRetentionCleanupService :
         DateTime? afterCreationTime = null;
         Guid? afterId = null;
 
-        while (true)
+        while (result.ScannedDeliveries < batchSize)
         {
+            var remainingBatchSize = (int)(batchSize - result.ScannedDeliveries);
             var candidates = await GetDeliveryCandidatesAsync(
                 request,
                 cutoff,
-                batchSize,
+                remainingBatchSize,
                 afterCreationTime,
                 afterId,
                 cancellationToken);
@@ -212,12 +214,13 @@ public class NotificationRetentionCleanupService :
         DateTime? afterCreationTime = null;
         Guid? afterId = null;
 
-        while (true)
+        while (result.ScannedNotifications < batchSize)
         {
+            var remainingBatchSize = (int)(batchSize - result.ScannedNotifications);
             var candidates = await GetNotificationCandidatesAsync(
                 request,
                 cutoff,
-                batchSize,
+                remainingBatchSize,
                 afterCreationTime,
                 afterId,
                 cancellationToken);

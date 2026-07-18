@@ -133,6 +133,55 @@ public abstract class NotificationRetentionCleanup_Tests<TStartupModule> : Notif
     }
 
     [Fact]
+    public async Task Cleanup_respects_batch_budget_per_record_kind_and_restarts()
+    {
+        var now = new DateTime(2026, 7, 18, 12, 0, 0, DateTimeKind.Utc);
+        var old = now.AddDays(-120);
+        var firstNotificationId = Guid.NewGuid();
+        var secondNotificationId = Guid.NewGuid();
+        var thirdNotificationId = Guid.NewGuid();
+        var firstUserNotificationId = Guid.NewGuid();
+        var secondUserNotificationId = Guid.NewGuid();
+        var thirdUserNotificationId = Guid.NewGuid();
+
+        await InsertNotificationAsync(firstNotificationId, old);
+        await InsertNotificationAsync(secondNotificationId, old.AddMinutes(1));
+        await InsertNotificationAsync(thirdNotificationId, old.AddMinutes(2));
+        await InsertUserNotificationAsync(
+            firstUserNotificationId,
+            firstNotificationId,
+            Guid.NewGuid(),
+            UserNotificationState.Read,
+            old);
+        await InsertUserNotificationAsync(
+            secondUserNotificationId,
+            secondNotificationId,
+            Guid.NewGuid(),
+            UserNotificationState.Read,
+            old.AddMinutes(1));
+        await InsertUserNotificationAsync(
+            thirdUserNotificationId,
+            thirdNotificationId,
+            Guid.NewGuid(),
+            UserNotificationState.Read,
+            old.AddMinutes(2));
+
+        var firstPass = await CleanupAsync(now, batchSize: 2);
+
+        firstPass.ScannedUserNotifications.ShouldBe(2);
+        firstPass.DeletedUserNotifications.ShouldBe(2);
+        (await ExistsAsync<UserNotification>(firstUserNotificationId)).ShouldBeFalse();
+        (await ExistsAsync<UserNotification>(secondUserNotificationId)).ShouldBeFalse();
+        (await ExistsAsync<UserNotification>(thirdUserNotificationId)).ShouldBeTrue();
+
+        var secondPass = await CleanupAsync(now, batchSize: 2);
+
+        secondPass.ScannedUserNotifications.ShouldBe(1);
+        secondPass.DeletedUserNotifications.ShouldBe(1);
+        (await ExistsAsync<UserNotification>(thirdUserNotificationId)).ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task Concurrent_reference_created_between_archive_and_delete_protects_the_base_notification()
     {
         var now = new DateTime(2026, 7, 18, 12, 0, 0, DateTimeKind.Utc);
@@ -225,7 +274,7 @@ public abstract class NotificationRetentionCleanup_Tests<TStartupModule> : Notif
     }
 
     [Fact]
-    public async Task Batch_pages_continue_past_skipped_candidates_without_starving_later_orphans()
+    public async Task Batch_pages_continue_past_skipped_candidates_within_scan_budget()
     {
         var now = new DateTime(2026, 7, 18, 12, 0, 0, DateTimeKind.Utc);
         var protectedId = Guid.NewGuid();
@@ -240,14 +289,14 @@ public abstract class NotificationRetentionCleanup_Tests<TStartupModule> : Notif
             now.AddDays(-122));
         await InsertNotificationAsync(orphanId, now.AddDays(-120));
 
-        var firstPass = await CleanupAsync(now, batchSize: 1);
+        var firstPass = await CleanupAsync(now, batchSize: 2);
 
         firstPass.ScannedNotifications.ShouldBe(2);
         firstPass.DeletedNotifications.ShouldBe(0);
         firstPass.SkippedNotifications.ShouldBe(2);
         (await ExistsAsync<Notification>(orphanId)).ShouldBeTrue();
 
-        var secondPass = await CleanupAsync(now.AddMinutes(6), batchSize: 1);
+        var secondPass = await CleanupAsync(now.AddMinutes(6), batchSize: 2);
 
         secondPass.DeletedNotifications.ShouldBe(1);
         (await ExistsAsync<Notification>(protectedId)).ShouldBeTrue();
