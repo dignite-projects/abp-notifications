@@ -283,6 +283,76 @@ public class NotificationAudienceBroadcastTests
         progress.ErrorMessage.ShouldBeNull();
     }
 
+    [Fact]
+    public async Task Progress_store_allows_failed_attempt_to_resume_and_complete()
+    {
+        var tenantId = Guid.NewGuid();
+        var args = NewJobArgs(tenantId);
+        var store = new InMemoryNotificationAudienceBroadcastProgressStore();
+
+        await store.RecordStartedAsync(
+            args.Notification,
+            args.AudienceName,
+            tenantId,
+            DateTime.UtcNow);
+        await store.RecordFailedAsync(
+            args.Notification,
+            args.AudienceName,
+            tenantId,
+            "transient failure",
+            DateTime.UtcNow);
+
+        await store.RecordPageCompletedAsync(
+            args.Notification,
+            args.AudienceName,
+            tenantId,
+            pageIndex: 0,
+            candidateCount: 2,
+            nextCursor: null,
+            hasMore: false,
+            updateTime: DateTime.UtcNow);
+        await store.RecordCompletedAsync(
+            args.Notification,
+            args.AudienceName,
+            tenantId,
+            DateTime.UtcNow);
+
+        var progress = await store.GetAsync(args.Notification.Id, tenantId);
+        progress.ShouldNotBeNull();
+        progress.Status.ShouldBe(NotificationAudienceBroadcastStatus.Completed);
+        progress.CompletedPageCount.ShouldBe(1);
+        progress.CandidateCount.ShouldBe(2);
+        progress.ErrorMessage.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Progress_store_allows_cancellation_after_failed_attempt()
+    {
+        var tenantId = Guid.NewGuid();
+        var args = NewJobArgs(tenantId);
+        var store = new InMemoryNotificationAudienceBroadcastProgressStore();
+
+        await store.RecordStartedAsync(
+            args.Notification,
+            args.AudienceName,
+            tenantId,
+            DateTime.UtcNow);
+        await store.RecordFailedAsync(
+            args.Notification,
+            args.AudienceName,
+            tenantId,
+            "transient failure",
+            DateTime.UtcNow);
+
+        (await store.RequestCancellationAsync(args.Notification.Id, tenantId, DateTime.UtcNow))
+            .ShouldBeTrue();
+
+        var progress = await store.GetAsync(args.Notification.Id, tenantId);
+        progress.ShouldNotBeNull();
+        progress.Status.ShouldBe(NotificationAudienceBroadcastStatus.CancellationRequested);
+        progress.IsCancellationRequested.ShouldBeTrue();
+    }
+
     private static DefaultNotificationAudienceBroadcaster CreateBroadcaster(
         ICurrentTenant? currentTenant = null,
         IBackgroundJobManager? backgroundJobManager = null,

@@ -251,8 +251,7 @@ public class InMemoryNotificationAudienceBroadcastProgressStore :
     private static bool IsTerminal(NotificationAudienceBroadcastStatus status)
     {
         return status is NotificationAudienceBroadcastStatus.Completed
-            or NotificationAudienceBroadcastStatus.Canceled
-            or NotificationAudienceBroadcastStatus.Failed;
+            or NotificationAudienceBroadcastStatus.Canceled;
     }
 
     private static string CreateKey(Guid notificationId, Guid? tenantId)
