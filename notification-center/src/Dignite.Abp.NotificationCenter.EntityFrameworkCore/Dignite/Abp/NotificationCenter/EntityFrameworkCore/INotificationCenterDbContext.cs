@@ -18,4 +18,6 @@ public interface INotificationCenterDbContext : IEfCoreDbContext
     DbSet<NotificationDeliveryPreference> NotificationDeliveryPreferences { get; }
 
     DbSet<NotificationQuietHours> NotificationQuietHours { get; }
+
+    DbSet<NotificationRetentionCleanupCursor> NotificationRetentionCleanupCursors { get; }
 }

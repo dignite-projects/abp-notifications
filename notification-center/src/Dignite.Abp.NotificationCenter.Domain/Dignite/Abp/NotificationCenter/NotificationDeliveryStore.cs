@@ -25,6 +25,7 @@ public class NotificationDeliveryStore :
     ITransientDependency
 {
     protected IRepository<NotificationDeliveryRecord, Guid> DeliveryRepository { get; }
+    protected IRepository<Notification, Guid>? NotificationRepository { get; }
     protected INotificationDataSerializer DataSerializer { get; }
     protected IGuidGenerator GuidGenerator { get; }
     protected IAsyncQueryableExecuter AsyncExecuter { get; }
@@ -40,6 +41,25 @@ public class NotificationDeliveryStore :
         IUnitOfWorkManager unitOfWorkManager)
     {
         DeliveryRepository = deliveryRepository;
+        NotificationRepository = null;
+        DataSerializer = dataSerializer;
+        GuidGenerator = guidGenerator;
+        AsyncExecuter = asyncExecuter;
+        DataFilter = dataFilter;
+        UnitOfWorkManager = unitOfWorkManager;
+    }
+
+    public NotificationDeliveryStore(
+        IRepository<NotificationDeliveryRecord, Guid> deliveryRepository,
+        IRepository<Notification, Guid> notificationRepository,
+        INotificationDataSerializer dataSerializer,
+        IGuidGenerator guidGenerator,
+        IAsyncQueryableExecuter asyncExecuter,
+        IDataFilter dataFilter,
+        IUnitOfWorkManager unitOfWorkManager)
+    {
+        DeliveryRepository = deliveryRepository;
+        NotificationRepository = notificationRepository;
         DataSerializer = dataSerializer;
         GuidGenerator = guidGenerator;
         AsyncExecuter = asyncExecuter;
@@ -74,8 +94,17 @@ public class NotificationDeliveryStore :
         if (existing != null)
         {
             EnsureSameIdentity(existing, workItem);
+            await CancelRetentionDeletionAsync(
+                workItem.NotificationId,
+                workItem.TenantId,
+                cancellationToken);
             return;
         }
+
+        await CancelRetentionDeletionAsync(
+            workItem.NotificationId,
+            workItem.TenantId,
+            cancellationToken);
 
         await DeliveryRepository.InsertAsync(
             CreateRecord(workItem),
@@ -127,6 +156,11 @@ public class NotificationDeliveryStore :
                         return null;
                     }
 
+                    await CancelRetentionDeletionAsync(
+                        workItem.NotificationId,
+                        workItem.TenantId,
+                        cancellationToken);
+
                     entity = CreateRecord(workItem);
                     // Future quiet-hours work is independently committed as Pending and picked up by the retry
                     // worker at DeliveryNotBefore. Immediate work retains the one-INSERT Claimed path.
@@ -146,6 +180,10 @@ public class NotificationDeliveryStore :
                 if (workItem != null)
                 {
                     EnsureSameIdentity(entity, workItem);
+                    await CancelRetentionDeletionAsync(
+                        workItem.NotificationId,
+                        workItem.TenantId,
+                        cancellationToken);
                 }
 
                 if (!entity.CanBeClaimed(now))
@@ -390,6 +428,28 @@ public class NotificationDeliveryStore :
             delivery,
             autoSave: true,
             cancellationToken: cancellationToken);
+    }
+
+    protected virtual async Task CancelRetentionDeletionAsync(
+        Guid notificationId,
+        Guid? tenantId,
+        CancellationToken cancellationToken)
+    {
+        if (NotificationRepository == null)
+        {
+            return;
+        }
+
+        var notification = await NotificationRepository.FirstOrDefaultAsync(
+            entity => entity.Id == notificationId && entity.TenantId == tenantId,
+            cancellationToken: cancellationToken);
+        if (notification?.RetentionDeletionTime == null)
+        {
+            return;
+        }
+
+        notification.CancelRetentionDeletion();
+        await NotificationRepository.UpdateAsync(notification, autoSave: true, cancellationToken: cancellationToken);
     }
 
     private async Task<bool> SameDeliveryWasCommittedByCompetitorAsync(

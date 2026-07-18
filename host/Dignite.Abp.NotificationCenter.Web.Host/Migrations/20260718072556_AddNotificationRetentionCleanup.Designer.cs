@@ -3,6 +3,7 @@ using System;
 using Dignite.Abp.NotificationCenter.Web.Host.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Volo.Abp.EntityFrameworkCore;
 
@@ -11,9 +12,11 @@ using Volo.Abp.EntityFrameworkCore;
 namespace Dignite.Abp.NotificationCenter.Web.Host.Migrations
 {
     [DbContext(typeof(HostDbContext))]
-    partial class HostDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260718072556_AddNotificationRetentionCleanup")]
+    partial class AddNotificationRetentionCleanup
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -292,52 +295,6 @@ namespace Dignite.Abp.NotificationCenter.Web.Host.Migrations
                         .IsUnique();
 
                     b.ToTable("AbpNotificationQuietHours", (string)null);
-                });
-
-            modelBuilder.Entity("Dignite.Abp.NotificationCenter.NotificationRetentionCleanupCursor", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ConcurrencyStamp")
-                        .IsConcurrencyToken()
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("TEXT")
-                        .HasColumnName("ConcurrencyStamp");
-
-                    b.Property<DateTime>("CreationTime")
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("IsTenantScoped")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTime?>("LastCreationTime")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("LastModificationTime")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid?>("LastRecordId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("RecordKind")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<Guid?>("TenantId")
-                        .HasColumnType("TEXT")
-                        .HasColumnName("TenantId");
-
-                    b.Property<Guid>("TenantKey")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("IsTenantScoped", "TenantKey", "RecordKind")
-                        .IsUnique();
-
-                    b.ToTable("AbpNotificationRetentionCleanupCursors", (string)null);
                 });
 
             modelBuilder.Entity("Dignite.Abp.NotificationCenter.NotificationSubscription", b =>

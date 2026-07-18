@@ -24,6 +24,8 @@ public class NotificationCenterDbContext :
 
     public DbSet<NotificationQuietHours> NotificationQuietHours { get; set; } = default!;
 
+    public DbSet<NotificationRetentionCleanupCursor> NotificationRetentionCleanupCursors { get; set; } = default!;
+
     // Transactional inbox/outbox support makes notification/inbox persistence and publishing
     // NotificationDeliveryWorkEto atomic. The channel consumer persists its own delivery state before claiming it;
     // external side effects remain at least once unless the provider honors the idempotency key.

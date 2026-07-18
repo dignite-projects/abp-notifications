@@ -22,6 +22,11 @@ public static class NotificationCenterDbContextModelCreatingExtensions
             // Data is unbounded JSON (nvarchar(max) / TEXT) by default.
 
             b.HasIndex(x => new { x.TenantId, x.NotificationName, x.CreationTime });
+            // Retention cleanup scans old base payload rows and deletes only tenant-local orphans.
+            b.HasIndex(x => new { x.TenantId, x.CreationTime });
+            b.HasIndex(x => x.CreationTime);
+            // Two-phase payload cleanup physically deletes only after a marker quarantine period.
+            b.HasIndex(x => new { x.TenantId, x.RetentionDeletionTime, x.CreationTime });
         });
 
         builder.Entity<UserNotification>(b =>
@@ -31,6 +36,11 @@ public static class NotificationCenterDbContextModelCreatingExtensions
 
             // The real inbox query: a user's notifications filtered by state and ordered by time (fixes problem D).
             b.HasIndex(x => new { x.TenantId, x.UserId, x.State, x.CreationTime });
+            // Retention cleanup deletes old read inbox rows without loading unrelated users.
+            b.HasIndex(x => new { x.TenantId, x.State, x.CreationTime });
+            b.HasIndex(x => new { x.State, x.CreationTime });
+            // Base payload cleanup checks tenant-local inbox references before deleting a notification row.
+            b.HasIndex(x => new { x.TenantId, x.NotificationId });
             // At most one inbox row per (user, notification).
             b.HasIndex(x => new { x.UserId, x.NotificationId }).IsUnique();
         });
@@ -76,6 +86,11 @@ public static class NotificationCenterDbContextModelCreatingExtensions
             b.Property(x => x.LastFailureMessage).HasMaxLength(NotificationCenterConsts.MaxDeliveryFailureMessageLength);
 
             b.HasIndex(x => new { x.TenantKey, x.NotificationId, x.UserId, x.ChannelKey }).IsUnique();
+            // Base payload cleanup checks tenant-local delivery references before deleting a notification row.
+            b.HasIndex(x => new { x.TenantKey, x.NotificationId });
+            // Retention cleanup deletes only terminal records whose completion timestamp has aged out.
+            b.HasIndex(x => new { x.TenantKey, x.State, x.CompletedTime });
+            b.HasIndex(x => new { x.State, x.CompletedTime });
             b.HasIndex(x => new { x.State, x.NextAttemptTime });
             b.HasIndex(x => new { x.State, x.LeaseExpirationTime });
         });
@@ -103,6 +118,15 @@ public static class NotificationCenterDbContextModelCreatingExtensions
 
             b.Property(x => x.TimeZoneId).IsRequired().HasMaxLength(NotificationCenterConsts.MaxTimeZoneIdLength);
             b.HasIndex(x => new { x.TenantKey, x.UserId }).IsUnique();
+        });
+
+        builder.Entity<NotificationRetentionCleanupCursor>(b =>
+        {
+            b.ToTable(NotificationCenterDbProperties.DbTablePrefix + "NotificationRetentionCleanupCursors", NotificationCenterDbProperties.DbSchema);
+            b.ConfigureByConvention();
+
+            // One cursor per cleanup scope and record kind lets bounded passes continue past retained prefixes.
+            b.HasIndex(x => new { x.IsTenantScoped, x.TenantKey, x.RecordKind }).IsUnique();
         });
     }
 }

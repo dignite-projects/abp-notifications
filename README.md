@@ -375,6 +375,76 @@ same state machine and concurrent-claim behavior in process, but restart loses p
 and operator visibility. Install either Notification Center persistence provider when retries must survive a crash
 or deployment.
 
+#### Retention and lifecycle cleanup
+
+Notification Center retention is opt-in. The hosted cleanup worker is disabled by default, so upgrading preserves
+the historical behavior of retaining inbox rows, base payload rows, and delivery state until an application or user
+explicitly deletes them. Enable it only after setting retention windows that match your operational and legal
+requirements:
+
+```csharp
+Configure<NotificationRetentionOptions>(options =>
+{
+    options.IsCleanupEnabled = true;
+    options.CleanupBatchSize = 500;              // max scanned candidates per record kind and pass
+    options.CleanupWorkerPeriod = TimeSpan.FromHours(6);
+    options.ReadUserNotificationRetention = TimeSpan.FromDays(180);
+    options.TerminalDeliveryRetention = TimeSpan.FromDays(30);
+    options.OrphanNotificationRetention = TimeSpan.FromDays(30);
+    options.NotificationDeletionQuarantineDuration = TimeSpan.FromMinutes(5);
+});
+```
+
+The same service can be called manually for dry-run/reporting:
+
+```csharp
+var report = await retentionCleanup.CleanupAsync(new NotificationRetentionCleanupRequest
+{
+    IsDryRun = true,
+    Now = clock.Now
+});
+```
+
+`NotificationRetentionCleanupResult` reports scanned, deleted, skipped, and error counts per record kind plus the
+oldest retained `Notification`, `UserNotification`, and `NotificationDeliveryRecord` creation timestamps. The same
+counts are emitted through the `Dignite.Abp.NotificationCenter.Retention` meter with `record_kind` and `dry_run`
+tags, and the oldest retained timestamps are exposed as Unix-time-millisecond gauges. In a dry run, the deleted
+counts mean "would delete"; no row is physically removed.
+
+Retention ownership and deletion rules:
+
+| Record | Owner | Deletion rule |
+|---|---|---|
+| `UserNotification` inbox row | Notification Center / current user | User actions can delete any of their own rows. Retention cleanup only deletes `Read` rows older than `ReadUserNotificationRetention`; `Unread` rows are always retained. |
+| `Notification` base payload | Notification Center retention cleanup | First marked with `RetentionDeletionTime` after `OrphanNotificationRetention` and only when no same-tenant inbox row and no same-tenant delivery record still references it. Physical deletion happens after `NotificationDeletionQuarantineDuration` and a second reference check. New same-tenant inbox/delivery materialization cancels the marker; a cross-tenant row never retains or deletes another tenant's payload. |
+| `NotificationDeliveryRecord` | Channel consumer / Notification Center | Cleanup deletes only terminal `Succeeded`, `Suppressed`, or `DeadLetter` rows older than `TerminalDeliveryRetention`. `Pending`, retryable `Failed`, and leased `Claimed` rows are active work and are never time-deleted. |
+| `NotificationSubscription` | User subscription settings | Not time-based. Delete only by the exact subscription identity through the subscription APIs. |
+| `NotificationDeliveryPreference` / `NotificationQuietHours` | User delivery settings | Not time-based. Delete only by user/settings APIs; absence means default allow/no quiet hours. |
+| `NotificationRetentionCleanupCursor` | Notification Center retention cleanup | Internal scan state. One cursor per cleanup scope and record kind records the last keyset position so bounded runs can resume after retained, vetoed, or failing prefixes. |
+| ABP event inbox/outbox records | ABP distributed event bus | Use ABP's status-aware event-box cleanup windows. Do not add TTL deletes that bypass processed/in-progress state. |
+
+Applications can implement `INotificationRetentionDeletionContributor` to archive a candidate or veto deletion
+before a physical delete. If a contributor throws, cleanup records an error for that row, leaves the row intact,
+and continues with the next candidate. Cleanup reads candidates in keyset order, caps each pass at
+`CleanupBatchSize` scanned candidates per record kind, and persists the last scan position in
+`NotificationRetentionCleanupCursor`, so protected, vetoed, or temporarily failing old rows do not starve later
+eligible rows. Base notification deletion checks references again after contributors run, and its concurrency stamp
+prevents physical deletion from winning over a same-tenant retained reference that cancels the marker concurrently.
+
+**Retention database upgrade:** EF Core hosts should add a host-owned migration for the new retention query indexes
+from `ConfigureNotificationCenter()`: `AbpNotifications.RetentionDeletionTime` and its concurrency stamp, old
+payload scans (`CreationTime`, `TenantId + CreationTime`, `TenantId + RetentionDeletionTime + CreationTime`), old
+read inbox scans and payload-reference checks (`State + CreationTime`, `TenantId + State + CreationTime`,
+`TenantId + NotificationId`), terminal delivery scans/reference checks (`State + CompletedTime`,
+`TenantKey + State + CompletedTime`, `TenantKey + NotificationId`), and the
+`AbpNotificationRetentionCleanupCursors` table with its unique `IsTenantScoped + TenantKey + RecordKind` cursor
+index. MongoDB contexts create the equivalent indexes and cursor collection from
+`NotificationCenterMongoDbContext.CreateModel`; custom MongoDB contexts must mirror them. Existing notifications
+require no backfill: a null `RetentionDeletionTime` means "not marked", and missing cleanup cursors are created on
+the first non-dry-run cleanup pass. Take a normal database backup before first enabling destructive cleanup and
+verify restore procedures against both the notification tables/collections, cleanup cursor state, and ABP event-box
+collections.
+
 #### Per-user delivery preferences and quiet hours
 
 Delivery consent is independent from subscriptions and address resolution. Subscriptions decide who is a candidate

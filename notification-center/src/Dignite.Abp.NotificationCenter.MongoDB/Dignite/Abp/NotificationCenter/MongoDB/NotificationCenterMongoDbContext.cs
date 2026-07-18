@@ -22,6 +22,8 @@ public class NotificationCenterMongoDbContext : AbpMongoDbContext, INotification
 
     public IMongoCollection<NotificationQuietHours> NotificationQuietHours => Collection<NotificationQuietHours>();
 
+    public IMongoCollection<NotificationRetentionCleanupCursor> NotificationRetentionCleanupCursors => Collection<NotificationRetentionCleanupCursor>();
+
     public IMongoCollection<IncomingEventRecord> IncomingEvents => Collection<IncomingEventRecord>();
 
     public IMongoCollection<OutgoingEventRecord> OutgoingEvents => Collection<OutgoingEventRecord>();
@@ -72,6 +74,21 @@ public class NotificationCenterMongoDbContext : AbpMongoDbContext, INotification
                         .Ascending(nameof(Notification.TenantId))
                         .Ascending(nameof(Notification.NotificationName))
                         .Descending(nameof(Notification.CreationTime))));
+
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(Notification.TenantId))
+                        .Ascending(nameof(Notification.CreationTime))));
+
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(Notification.CreationTime))));
+
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(Notification.TenantId))
+                        .Ascending(nameof(Notification.RetentionDeletionTime))
+                        .Ascending(nameof(Notification.CreationTime))));
             });
         });
 
@@ -86,6 +103,22 @@ public class NotificationCenterMongoDbContext : AbpMongoDbContext, INotification
                         .Ascending(nameof(UserNotification.UserId))
                         .Ascending(nameof(UserNotification.State))
                         .Descending(nameof(UserNotification.CreationTime))));
+
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(UserNotification.TenantId))
+                        .Ascending(nameof(UserNotification.State))
+                        .Ascending(nameof(UserNotification.CreationTime))));
+
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(UserNotification.State))
+                        .Ascending(nameof(UserNotification.CreationTime))));
+
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(UserNotification.TenantId))
+                        .Ascending(nameof(UserNotification.NotificationId))));
 
                 indexes.CreateOne(new CreateIndexModel<BsonDocument>(
                     Builders<BsonDocument>.IndexKeys
@@ -137,6 +170,22 @@ public class NotificationCenterMongoDbContext : AbpMongoDbContext, INotification
 
                 indexes.CreateOne(new CreateIndexModel<BsonDocument>(
                     Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(NotificationDeliveryRecord.TenantKey))
+                        .Ascending(nameof(NotificationDeliveryRecord.NotificationId))));
+
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(NotificationDeliveryRecord.TenantKey))
+                        .Ascending(nameof(NotificationDeliveryRecord.State))
+                        .Ascending(nameof(NotificationDeliveryRecord.CompletedTime))));
+
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(NotificationDeliveryRecord.State))
+                        .Ascending(nameof(NotificationDeliveryRecord.CompletedTime))));
+
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
                         .Ascending(nameof(NotificationDeliveryRecord.State))
                         .Ascending(nameof(NotificationDeliveryRecord.NextAttemptTime))));
 
@@ -176,6 +225,20 @@ public class NotificationCenterMongoDbContext : AbpMongoDbContext, INotification
                     Builders<BsonDocument>.IndexKeys
                         .Ascending(nameof(NotificationQuietHoursEntity.TenantKey))
                         .Ascending(nameof(NotificationQuietHoursEntity.UserId)),
+                    new CreateIndexOptions { Unique = true }));
+            });
+        });
+
+        modelBuilder.Entity<NotificationRetentionCleanupCursor>(b =>
+        {
+            b.CollectionName = NotificationCenterDbProperties.DbTablePrefix + "NotificationRetentionCleanupCursors";
+            b.ConfigureIndexes(indexes =>
+            {
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(NotificationRetentionCleanupCursor.IsTenantScoped))
+                        .Ascending(nameof(NotificationRetentionCleanupCursor.TenantKey))
+                        .Ascending(nameof(NotificationRetentionCleanupCursor.RecordKind)),
                     new CreateIndexOptions { Unique = true }));
             });
         });
