@@ -80,9 +80,9 @@ changes.
   input as `NotificationDataPayload` (exported from the package root), which restores both members on top of the
   generated interface.
 - **Breaking for implementers.** Custom `INotificationCenterDbContext` and `INotificationCenterMongoDbContext`
-  implementations must expose the two preference collections. Custom `DefaultNotificationDistributor`
-  construction can keep using the compatibility constructors (default allow); DI and preference-aware callers use
-  the new `INotificationDeliveryPreferenceEvaluator` overload.
+  implementations must expose the two preference collections plus the retention cleanup cursor collection/DbSet.
+  Custom `DefaultNotificationDistributor` construction can keep using the compatibility constructors (default
+  allow); DI and preference-aware callers use the new `INotificationDeliveryPreferenceEvaluator` overload.
 
 - **Breaking wire behavior for independently deployed event consumers.** The default distributor now publishes
   `NotificationDeliveryWorkEto` instead of batched `NotificationDeliveryEto`. Mixed versions cannot provide the new
