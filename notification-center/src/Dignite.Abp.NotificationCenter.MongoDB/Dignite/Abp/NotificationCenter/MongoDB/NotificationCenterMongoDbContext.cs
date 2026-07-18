@@ -72,6 +72,15 @@ public class NotificationCenterMongoDbContext : AbpMongoDbContext, INotification
                         .Ascending(nameof(Notification.TenantId))
                         .Ascending(nameof(Notification.NotificationName))
                         .Descending(nameof(Notification.CreationTime))));
+
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(Notification.TenantId))
+                        .Ascending(nameof(Notification.CreationTime))));
+
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(Notification.CreationTime))));
             });
         });
 
@@ -86,6 +95,22 @@ public class NotificationCenterMongoDbContext : AbpMongoDbContext, INotification
                         .Ascending(nameof(UserNotification.UserId))
                         .Ascending(nameof(UserNotification.State))
                         .Descending(nameof(UserNotification.CreationTime))));
+
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(UserNotification.TenantId))
+                        .Ascending(nameof(UserNotification.State))
+                        .Ascending(nameof(UserNotification.CreationTime))));
+
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(UserNotification.State))
+                        .Ascending(nameof(UserNotification.CreationTime))));
+
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(UserNotification.TenantId))
+                        .Ascending(nameof(UserNotification.NotificationId))));
 
                 indexes.CreateOne(new CreateIndexModel<BsonDocument>(
                     Builders<BsonDocument>.IndexKeys
@@ -134,6 +159,22 @@ public class NotificationCenterMongoDbContext : AbpMongoDbContext, INotification
                         .Ascending(nameof(NotificationDeliveryRecord.UserId))
                         .Ascending(nameof(NotificationDeliveryRecord.ChannelKey)),
                     new CreateIndexOptions { Unique = true }));
+
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(NotificationDeliveryRecord.TenantKey))
+                        .Ascending(nameof(NotificationDeliveryRecord.NotificationId))));
+
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(NotificationDeliveryRecord.TenantKey))
+                        .Ascending(nameof(NotificationDeliveryRecord.State))
+                        .Ascending(nameof(NotificationDeliveryRecord.CompletedTime))));
+
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(NotificationDeliveryRecord.State))
+                        .Ascending(nameof(NotificationDeliveryRecord.CompletedTime))));
 
                 indexes.CreateOne(new CreateIndexModel<BsonDocument>(
                     Builders<BsonDocument>.IndexKeys
