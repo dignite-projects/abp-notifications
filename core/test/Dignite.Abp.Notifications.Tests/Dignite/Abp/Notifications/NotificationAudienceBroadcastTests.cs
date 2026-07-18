@@ -221,6 +221,68 @@ public class NotificationAudienceBroadcastTests
         await Should.ThrowAsync<AbpException>(() => job.ExecuteAsync(args, CancellationToken.None));
     }
 
+    [Fact]
+    public async Task Progress_store_ignores_stale_page_and_late_failure_after_completion()
+    {
+        var tenantId = Guid.NewGuid();
+        var args = NewJobArgs(tenantId);
+        var store = new InMemoryNotificationAudienceBroadcastProgressStore();
+
+        await store.RecordStartedAsync(
+            args.Notification,
+            args.AudienceName,
+            tenantId,
+            DateTime.UtcNow);
+        await store.RecordPageCompletedAsync(
+            args.Notification,
+            args.AudienceName,
+            tenantId,
+            pageIndex: 0,
+            candidateCount: 2,
+            nextCursor: "2",
+            hasMore: true,
+            updateTime: DateTime.UtcNow);
+        await store.RecordPageCompletedAsync(
+            args.Notification,
+            args.AudienceName,
+            tenantId,
+            pageIndex: 1,
+            candidateCount: 2,
+            nextCursor: null,
+            hasMore: false,
+            updateTime: DateTime.UtcNow);
+        await store.RecordCompletedAsync(
+            args.Notification,
+            args.AudienceName,
+            tenantId,
+            DateTime.UtcNow);
+
+        await store.RecordPageCompletedAsync(
+            args.Notification,
+            args.AudienceName,
+            tenantId,
+            pageIndex: 0,
+            candidateCount: 2,
+            nextCursor: "2",
+            hasMore: true,
+            updateTime: DateTime.UtcNow);
+        await store.RecordFailedAsync(
+            args.Notification,
+            args.AudienceName,
+            tenantId,
+            "late failure",
+            DateTime.UtcNow);
+
+        var progress = await store.GetAsync(args.Notification.Id, tenantId);
+        progress.ShouldNotBeNull();
+        progress.Status.ShouldBe(NotificationAudienceBroadcastStatus.Completed);
+        progress.CompletedPageCount.ShouldBe(2);
+        progress.CandidateCount.ShouldBe(4);
+        progress.HasMore.ShouldBeFalse();
+        progress.NextCursor.ShouldBeNull();
+        progress.ErrorMessage.ShouldBeNull();
+    }
+
     private static DefaultNotificationAudienceBroadcaster CreateBroadcaster(
         ICurrentTenant? currentTenant = null,
         IBackgroundJobManager? backgroundJobManager = null,

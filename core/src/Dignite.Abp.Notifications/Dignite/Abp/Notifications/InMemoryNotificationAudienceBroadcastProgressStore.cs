@@ -38,6 +38,11 @@ public class InMemoryNotificationAudienceBroadcastProgressStore :
             _ => NewProgress(notification, audienceName, tenantId, NotificationAudienceBroadcastStatus.Enqueued, updateTime),
             (_, existing) =>
             {
+                if (IsTerminal(existing.Status))
+                {
+                    return existing;
+                }
+
                 existing.NotificationName = notification.NotificationName;
                 existing.AudienceName = audienceName;
                 existing.Status = NotificationAudienceBroadcastStatus.Enqueued;
@@ -78,6 +83,11 @@ public class InMemoryNotificationAudienceBroadcastProgressStore :
             },
             (_, existing) =>
             {
+                if (IsTerminal(existing.Status) || pageIndex < existing.CompletedPageCount)
+                {
+                    return existing;
+                }
+
                 if (pageIndex >= existing.CompletedPageCount)
                 {
                     existing.CandidateCount += candidateCount;
@@ -109,6 +119,11 @@ public class InMemoryNotificationAudienceBroadcastProgressStore :
             _ => NewProgress(notification, audienceName, tenantId, NotificationAudienceBroadcastStatus.Completed, updateTime),
             (_, existing) =>
             {
+                if (IsTerminal(existing.Status))
+                {
+                    return existing;
+                }
+
                 existing.Status = NotificationAudienceBroadcastStatus.Completed;
                 existing.HasMore = false;
                 existing.NextCursor = null;
@@ -163,6 +178,11 @@ public class InMemoryNotificationAudienceBroadcastProgressStore :
             _ => NewProgress(notification, audienceName, tenantId, NotificationAudienceBroadcastStatus.Canceled, updateTime),
             (_, existing) =>
             {
+                if (IsTerminal(existing.Status))
+                {
+                    return existing;
+                }
+
                 existing.Status = NotificationAudienceBroadcastStatus.Canceled;
                 existing.IsCancellationRequested = true;
                 existing.HasMore = false;
@@ -196,6 +216,11 @@ public class InMemoryNotificationAudienceBroadcastProgressStore :
             },
             (_, existing) =>
             {
+                if (IsTerminal(existing.Status))
+                {
+                    return existing;
+                }
+
                 existing.Status = NotificationAudienceBroadcastStatus.Failed;
                 existing.ErrorMessage = errorMessage;
                 existing.LastUpdatedTime = updateTime;

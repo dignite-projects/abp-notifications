@@ -45,4 +45,61 @@ public class NotificationBatchPersistence_Tests :
                 .GetListAsync(row => row.NotificationId == notificationId)).Count.ShouldBe(recipientCount);
         });
     }
+
+    [Fact]
+    public async Task Ef_failed_batch_detaches_attempted_entities_before_same_unit_of_work_retry()
+    {
+        var notificationId = Guid.NewGuid();
+        var duplicateUserId = Guid.NewGuid();
+        var retryUserId = Guid.NewGuid();
+        var failedFirstId = Guid.NewGuid();
+        var failedSecondId = Guid.NewGuid();
+        var retryId = Guid.NewGuid();
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var persistence = GetRequiredService<INotificationBatchPersistence>();
+            var repository = GetRequiredService<IRepository<UserNotification, Guid>>();
+
+            await Should.ThrowAsync<Exception>(() => persistence.InsertAsync(new[]
+            {
+                NewUserNotification(failedFirstId, duplicateUserId, notificationId),
+                NewUserNotification(failedSecondId, duplicateUserId, notificationId)
+            }));
+
+            var dbContext = await ((IEfCoreRepository<UserNotification, Guid>)repository)
+                .GetDbContextAsync();
+            dbContext.ChangeTracker.Entries<UserNotification>()
+                .Any(entry => entry.Entity.Id == failedFirstId || entry.Entity.Id == failedSecondId)
+                .ShouldBeFalse();
+
+            await persistence.InsertAsync(new[]
+            {
+                NewUserNotification(retryId, retryUserId, notificationId)
+            });
+        });
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            var rows = await GetRequiredService<IRepository<UserNotification, Guid>>()
+                .GetListAsync(row => row.NotificationId == notificationId);
+
+            rows.Select(row => row.UserId).ShouldContain(retryUserId);
+            rows.Count(row => row.UserId == duplicateUserId).ShouldBeLessThanOrEqualTo(1);
+        });
+    }
+
+    private static UserNotification NewUserNotification(
+        Guid id,
+        Guid userId,
+        Guid notificationId)
+    {
+        return new UserNotification(
+            id,
+            userId,
+            notificationId,
+            UserNotificationState.Unread,
+            DateTime.UtcNow,
+            tenantId: null);
+    }
 }
