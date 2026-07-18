@@ -14,4 +14,8 @@ public interface INotificationCenterDbContext : IEfCoreDbContext
     DbSet<NotificationSubscription> NotificationSubscriptions { get; }
 
     DbSet<NotificationDeliveryRecord> NotificationDeliveries { get; }
+
+    DbSet<NotificationDeliveryPreference> NotificationDeliveryPreferences { get; }
+
+    DbSet<NotificationQuietHours> NotificationQuietHours { get; }
 }

@@ -24,6 +24,12 @@ public class NotificationDeliveryRecord : BasicAggregateRoot<Guid>, IMultiTenant
 
     public virtual string ChannelKey { get; protected set; } = default!;
 
+    public virtual NotificationDeliveryIntent Intent { get; protected set; }
+
+    public virtual DateTime? DeliveryNotBefore { get; protected set; }
+
+    public virtual string? PreferenceReasonCode { get; protected set; }
+
     public virtual string IdempotencyKey { get; protected set; } = default!;
 
     public virtual string NotificationName { get; protected set; } = default!;
@@ -76,7 +82,10 @@ public class NotificationDeliveryRecord : BasicAggregateRoot<Guid>, IMultiTenant
         string? entityId,
         NotificationSeverity severity,
         DateTime creationTime,
-        Guid? tenantId)
+        Guid? tenantId,
+        NotificationDeliveryIntent intent = NotificationDeliveryIntent.Deliver,
+        DateTime? deliveryNotBefore = null,
+        string? preferenceReasonCode = null)
         : base(id)
     {
         TenantId = tenantId;
@@ -85,6 +94,9 @@ public class NotificationDeliveryRecord : BasicAggregateRoot<Guid>, IMultiTenant
         UserId = userId;
         Channel = channel.Trim();
         ChannelKey = NotificationDeliveryIdentity.NormalizeChannel(channel);
+        Intent = intent;
+        DeliveryNotBefore = deliveryNotBefore;
+        PreferenceReasonCode = preferenceReasonCode;
         IdempotencyKey = idempotencyKey;
         NotificationName = notificationName;
         Data = data;
@@ -93,11 +105,13 @@ public class NotificationDeliveryRecord : BasicAggregateRoot<Guid>, IMultiTenant
         Severity = severity;
         CreationTime = creationTime;
         State = NotificationDeliveryState.Pending;
+        NextAttemptTime = intent == NotificationDeliveryIntent.Delay ? deliveryNotBefore : null;
     }
 
     public virtual bool CanBeClaimed(DateTime now)
     {
         return State == NotificationDeliveryState.Pending
+               && (!NextAttemptTime.HasValue || NextAttemptTime <= now)
                || State == NotificationDeliveryState.Failed
                && (!NextAttemptTime.HasValue || NextAttemptTime <= now)
                || State == NotificationDeliveryState.Claimed
@@ -205,6 +219,12 @@ public class NotificationDeliveryRecord : BasicAggregateRoot<Guid>, IMultiTenant
         CompletedTime = null;
         LastFailureCode = null;
         LastFailureMessage = null;
+        // A manual requeue is an explicit operator override: discard the producer's original suppress/delay
+        // intent so the retried attempt is actually delivered instead of being immediately re-suppressed or
+        // re-delayed by the processor reading a stale Intent.
+        Intent = NotificationDeliveryIntent.Deliver;
+        DeliveryNotBefore = null;
+        PreferenceReasonCode = null;
         return true;
     }
 

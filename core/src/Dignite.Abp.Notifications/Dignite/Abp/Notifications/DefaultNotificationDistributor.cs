@@ -28,6 +28,8 @@ public class DefaultNotificationDistributor :
 
     protected INotificationRecipientEligibilityEvaluator RecipientEligibilityEvaluator { get; }
 
+    protected INotificationDeliveryPreferenceEvaluator DeliveryPreferenceEvaluator { get; }
+
     protected ICurrentTenant CurrentTenant { get; }
 
     protected ILogger<DefaultNotificationDistributor> Logger { get; }
@@ -42,6 +44,11 @@ public class DefaultNotificationDistributor :
     /// Source-compatible constructor for applications/tests that instantiate the default distributor directly.
     /// Dependency injection uses the options-aware overload below.
     /// </summary>
+    /// <remarks>
+    /// This overload pins the always-deliver <see cref="NullNotificationDeliveryPreferenceEvaluator"/>: user
+    /// delivery preferences and quiet hours are NOT evaluated. Resolve the distributor from DI, or pass an
+    /// <see cref="INotificationDeliveryPreferenceEvaluator"/> explicitly, to honor them.
+    /// </remarks>
     public DefaultNotificationDistributor(
         INotificationStore store,
         INotificationDefinitionManager definitionManager,
@@ -58,7 +65,35 @@ public class DefaultNotificationDistributor :
             currentTenant,
             logger,
             dataTypeRegistry,
+            new NullNotificationDeliveryPreferenceEvaluator(),
             Microsoft.Extensions.Options.Options.Create(new NotificationOptions()))
+    {
+    }
+
+    /// <remarks>
+    /// This overload pins the always-deliver <see cref="NullNotificationDeliveryPreferenceEvaluator"/>: user
+    /// delivery preferences and quiet hours are NOT evaluated. Resolve the distributor from DI, or pass an
+    /// <see cref="INotificationDeliveryPreferenceEvaluator"/> explicitly, to honor them.
+    /// </remarks>
+    public DefaultNotificationDistributor(
+        INotificationStore store,
+        INotificationDefinitionManager definitionManager,
+        IDistributedEventBus distributedEventBus,
+        INotificationRecipientEligibilityEvaluator recipientEligibilityEvaluator,
+        ICurrentTenant currentTenant,
+        ILogger<DefaultNotificationDistributor> logger,
+        INotificationDataTypeRegistry dataTypeRegistry,
+        IOptions<NotificationOptions> options)
+        : this(
+            store,
+            definitionManager,
+            distributedEventBus,
+            recipientEligibilityEvaluator,
+            currentTenant,
+            logger,
+            dataTypeRegistry,
+            new NullNotificationDeliveryPreferenceEvaluator(),
+            options)
     {
     }
 
@@ -70,12 +105,14 @@ public class DefaultNotificationDistributor :
         ICurrentTenant currentTenant,
         ILogger<DefaultNotificationDistributor> logger,
         INotificationDataTypeRegistry dataTypeRegistry,
+        INotificationDeliveryPreferenceEvaluator deliveryPreferenceEvaluator,
         IOptions<NotificationOptions> options)
     {
         Store = store;
         DefinitionManager = definitionManager;
         DistributedEventBus = distributedEventBus;
         RecipientEligibilityEvaluator = recipientEligibilityEvaluator;
+        DeliveryPreferenceEvaluator = deliveryPreferenceEvaluator;
         CurrentTenant = currentTenant;
         Logger = logger;
         DataTypeRegistry = dataTypeRegistry;
@@ -798,13 +835,54 @@ public class DefaultNotificationDistributor :
         IReadOnlyCollection<Guid> userIds,
         string[] channels)
     {
-        var workItems = new List<NotificationDeliveryWorkEto>();
-        foreach (var userId in userIds.Distinct())
+        var candidates = userIds
+            .Distinct()
+            .SelectMany(userId => channels
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Select(channel => new NotificationDeliveryPreferenceCandidate(userId, channel)))
+            .ToList();
+        var definition = DefinitionManager.Get(notification.NotificationName);
+        var decisions = await DeliveryPreferenceEvaluator.EvaluateAsync(
+            notification.NotificationName,
+            notification.TenantId,
+            candidates,
+            definition.DeliveryPreferenceBehavior);
+        var decisionMap = new Dictionary<(Guid UserId, string Channel), NotificationDeliveryPreferenceDecision>();
+        foreach (var decision in decisions)
         {
-            foreach (var channel in channels.Distinct(StringComparer.OrdinalIgnoreCase))
+            var key = (decision.UserId, NotificationDeliveryIdentity.NormalizeChannel(decision.Channel));
+            if (!decisionMap.TryAdd(key, decision))
             {
-                workItems.Add(CreateDeliveryWorkItem(notification, userId, channel));
+                throw new InvalidOperationException(
+                    $"The delivery preference evaluator returned duplicate decisions for user '{decision.UserId}' " +
+                    $"and channel '{decision.Channel}'.");
             }
+        }
+
+        if (decisionMap.Count != candidates.Count)
+        {
+            throw new InvalidOperationException(
+                "The delivery preference evaluator must return exactly one decision for every recipient/channel candidate.");
+        }
+
+        var workItems = new List<NotificationDeliveryWorkEto>(candidates.Count);
+        foreach (var candidate in candidates)
+        {
+            if (!decisionMap.TryGetValue((
+                    candidate.UserId,
+                    NotificationDeliveryIdentity.NormalizeChannel(candidate.Channel)), out var decision))
+            {
+                throw new InvalidOperationException(
+                    $"The delivery preference evaluator returned no decision for user '{candidate.UserId}' " +
+                    $"and channel '{candidate.Channel}'.");
+            }
+
+            var workItem = CreateDeliveryWorkItem(notification, candidate.UserId, candidate.Channel);
+            workItem.Intent = decision.Intent;
+            workItem.DeliveryNotBefore = decision.NotBefore;
+            workItem.PreferenceReasonCode = decision.ReasonCode;
+            workItem.ValidateIntent();
+            workItems.Add(workItem);
         }
 
         foreach (var workItem in workItems)

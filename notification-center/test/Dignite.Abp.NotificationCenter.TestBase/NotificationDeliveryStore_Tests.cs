@@ -263,6 +263,39 @@ public abstract class NotificationDeliveryStore_Tests<TStartupModule> : Notifica
     }
 
     [Fact]
+    public async Task Producer_delayed_intent_is_durable_and_not_claimable_before_not_before()
+    {
+        var now = DateTime.UtcNow;
+        var work = await CreateWorkAsync(now: now);
+        work.Intent = NotificationDeliveryIntent.Delay;
+        work.DeliveryNotBefore = now.AddHours(2);
+        work.PreferenceReasonCode = NotificationDeliveryPreferenceReasonCodes.QuietHours;
+        var store = GetRequiredService<INotificationDeliveryStore>();
+
+        (await store.EnsureCreatedAndTryClaimAsync(
+            work,
+            now,
+            TimeSpan.FromMinutes(2),
+            3)).ShouldBeNull();
+        (await store.GetDueWorkItemsAsync(now.AddHours(1), 10))
+            .ShouldNotContain(item => item.DeliveryId == work.DeliveryId);
+
+        var due = (await store.GetDueWorkItemsAsync(now.AddHours(2), 10))
+            .Single(item => item.DeliveryId == work.DeliveryId);
+        due.Intent.ShouldBe(NotificationDeliveryIntent.Delay);
+        due.DeliveryNotBefore.ShouldNotBeNull().ShouldBe(
+            work.DeliveryNotBefore.ShouldNotBeNull(),
+            TimeSpan.FromMilliseconds(1));
+        due.PreferenceReasonCode.ShouldBe(NotificationDeliveryPreferenceReasonCodes.QuietHours);
+        (await store.TryClaimAsync(
+            work.DeliveryId,
+            work.TenantId,
+            now.AddHours(2),
+            TimeSpan.FromMinutes(2),
+            3)).ShouldNotBeNull();
+    }
+
+    [Fact]
     public async Task Retry_timing_exhaustion_and_sanitized_failure_are_observable()
     {
         var now = DateTime.UtcNow;
@@ -347,6 +380,47 @@ public abstract class NotificationDeliveryStore_Tests<TStartupModule> : Notifica
             3);
         retried.ShouldNotBeNull();
         retried!.AttemptCount.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Manual_retry_of_a_producer_suppressed_delivery_clears_the_intent_so_the_next_attempt_delivers()
+    {
+        var now = DateTime.UtcNow;
+        // A user opt-out is frozen onto the record as Intent=Suppress at distribution time (not a store-side
+        // MarkSuppressed with Intent=Deliver), so a requeue that leaves the Intent stale would re-suppress forever.
+        var work = await CreateWorkAsync(now: now);
+        work.Intent = NotificationDeliveryIntent.Suppress;
+        work.PreferenceReasonCode = "preference-disabled";
+        await WithTenantUnitOfWorkAsync(work.TenantId, () =>
+            GetRequiredService<INotificationDeliveryStore>().EnsureCreatedAsync(work));
+
+        var store = GetRequiredService<INotificationDeliveryStore>();
+        var claim = (await store.TryClaimAsync(
+            work.DeliveryId,
+            work.TenantId,
+            now,
+            TimeSpan.FromMinutes(2),
+            3))!;
+        (await store.MarkSuppressedAsync(
+            work.DeliveryId,
+            work.TenantId,
+            claim.LeaseId,
+            now,
+            "preference-disabled")).ShouldBeTrue();
+
+        (await store.RequeueAsync(work.DeliveryId, work.TenantId, now.AddHours(1))).ShouldBeTrue();
+
+        // The reconstructed work item is what the processor will receive; it must no longer carry Suppress intent,
+        // otherwise NotificationDeliveryProcessor short-circuits and the manual retry is a permanent no-op.
+        var due = await store.GetDueWorkItemsAsync(now.AddHours(1), 10);
+        var requeued = due.Single(item => item.DeliveryId == work.DeliveryId);
+        requeued.Intent.ShouldBe(NotificationDeliveryIntent.Deliver);
+        requeued.DeliveryNotBefore.ShouldBeNull();
+        requeued.PreferenceReasonCode.ShouldBeNull();
+
+        var record = (await GetRecordsAsync(work.TenantId, work.NotificationId)).Single();
+        record.Intent.ShouldBe(NotificationDeliveryIntent.Deliver);
+        record.PreferenceReasonCode.ShouldBeNull();
     }
 
     [Fact]

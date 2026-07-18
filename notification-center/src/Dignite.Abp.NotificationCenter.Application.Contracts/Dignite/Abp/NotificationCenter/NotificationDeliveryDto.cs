@@ -17,6 +17,15 @@ public class NotificationDeliveryDto
 
     public string IdempotencyKey { get; set; } = default!;
 
+    /// <summary>The producer-resolved delivery intent. Suppressed/delayed work reflects a user preference, so a
+    /// manual retry of it deliberately overrides that preference and forces a fresh delivery attempt.</summary>
+    public NotificationDeliveryIntent Intent { get; set; }
+
+    public DateTime? DeliveryNotBefore { get; set; }
+
+    /// <summary>Stable reason code when the producer suppressed or delayed this delivery (e.g. user opt-out).</summary>
+    public string? PreferenceReasonCode { get; set; }
+
     public NotificationDeliveryState State { get; set; }
 
     public int AttemptCount { get; set; }

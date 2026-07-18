@@ -56,6 +56,7 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
             GetRequiredService<ICurrentTenant>(),
             GetRequiredService<ILogger<DefaultNotificationDistributor>>(),
             GetRequiredService<INotificationDataTypeRegistry>(),
+            GetRequiredService<INotificationDeliveryPreferenceEvaluator>(),
             Options.Create(options ?? new NotificationOptions()));
     }
 

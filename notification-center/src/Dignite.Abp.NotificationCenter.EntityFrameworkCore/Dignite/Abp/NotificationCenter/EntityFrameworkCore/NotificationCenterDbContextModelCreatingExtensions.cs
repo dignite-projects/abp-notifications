@@ -1,3 +1,4 @@
+using Dignite.Abp.Notifications;
 using Microsoft.EntityFrameworkCore;
 using Volo.Abp;
 using Volo.Abp.EntityFrameworkCore.Modeling;
@@ -69,12 +70,39 @@ public static class NotificationCenterDbContextModelCreatingExtensions
             b.Property(x => x.EntityTypeName).HasMaxLength(NotificationCenterConsts.MaxEntityTypeNameLength);
             b.Property(x => x.EntityId).HasMaxLength(NotificationCenterConsts.MaxEntityIdLength);
             // Data is a stable System.Text.Json snapshot and remains unbounded.
+            b.Property(x => x.PreferenceReasonCode)
+                .HasMaxLength(NotificationDeliveryPreferenceReasonCodes.MaxLength);
             b.Property(x => x.LastFailureCode).HasMaxLength(NotificationCenterConsts.MaxDeliveryFailureCodeLength);
             b.Property(x => x.LastFailureMessage).HasMaxLength(NotificationCenterConsts.MaxDeliveryFailureMessageLength);
 
             b.HasIndex(x => new { x.TenantKey, x.NotificationId, x.UserId, x.ChannelKey }).IsUnique();
             b.HasIndex(x => new { x.State, x.NextAttemptTime });
             b.HasIndex(x => new { x.State, x.LeaseExpirationTime });
+        });
+
+        builder.Entity<NotificationDeliveryPreference>(b =>
+        {
+            b.ToTable(NotificationCenterDbProperties.DbTablePrefix + "NotificationDeliveryPreferences", NotificationCenterDbProperties.DbSchema);
+            b.ConfigureByConvention();
+
+            b.Property(x => x.NotificationName).HasMaxLength(NotificationCenterConsts.MaxNotificationNameLength);
+            b.Property(x => x.NotificationNameKey).IsRequired().IsUnicode(false).IsFixedLength()
+                .HasMaxLength(NotificationCenterConsts.DeliveryPreferenceIdentityKeyLength);
+            b.Property(x => x.Channel).HasMaxLength(NotificationCenterConsts.MaxDeliveryChannelLength);
+            b.Property(x => x.ChannelKey).IsRequired().IsUnicode(false).IsFixedLength()
+                .HasMaxLength(NotificationCenterConsts.DeliveryPreferenceIdentityKeyLength);
+
+            b.HasIndex(x => new { x.TenantKey, x.UserId, x.NotificationNameKey, x.ChannelKey }).IsUnique();
+            b.HasIndex(x => new { x.TenantKey, x.UserId });
+        });
+
+        builder.Entity<NotificationQuietHours>(b =>
+        {
+            b.ToTable(NotificationCenterDbProperties.DbTablePrefix + "NotificationQuietHours", NotificationCenterDbProperties.DbSchema);
+            b.ConfigureByConvention();
+
+            b.Property(x => x.TimeZoneId).IsRequired().HasMaxLength(NotificationCenterConsts.MaxTimeZoneIdLength);
+            b.HasIndex(x => new { x.TenantKey, x.UserId }).IsUnique();
         });
     }
 }

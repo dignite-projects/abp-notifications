@@ -375,6 +375,51 @@ same state machine and concurrent-claim behavior in process, but restart loses p
 and operator visibility. Install either Notification Center persistence provider when retries must survive a crash
 or deployment.
 
+#### Per-user delivery preferences and quiet hours
+
+Delivery consent is independent from subscriptions and address resolution. Subscriptions decide who is a candidate
+only when `userIds` is omitted; explicit and subscription-derived candidates then pass through the same
+`INotificationDeliveryPreferenceEvaluator`. An email opt-out therefore does not remove the Notification Center inbox
+row, suppress SignalR, or claim that an email address is missing. Core-only applications use
+`NullNotificationDeliveryPreferenceEvaluator`, whose deterministic default is immediate delivery.
+
+Notification Center persists allow/deny rules at four nullable scopes. The first matching rule wins:
+
+| Precedence | Notification | Channel |
+|---:|---|---|
+| 1 | exact | exact |
+| 2 | exact | any |
+| 3 | any | exact |
+| 4 | any | any |
+| 5 | no row | default allow |
+
+Entity-specific preferences are intentionally not supported: entity interest remains a subscription concern. A
+more-specific `IsEnabled = true` rule can override a broader opt-out. Quiet hours are a separate per-user daily
+window (`StartMinute` inclusive, `EndMinute` exclusive) and a system time-zone identifier; equal start/end values
+are rejected instead of meaning “all day.” Normal work created during the window is delayed, not dropped. The
+producer writes `Delay + DeliveryNotBefore` into the single-user/channel `NotificationDeliveryWorkEto`; its owning
+remote consumer persists the work as pending, and the delivery retry worker republishes it when due. Keep
+`IsDeliveryRetryWorkerEnabled` enabled when using quiet hours. DST-invalid local end times advance to the first
+valid minute according to the configured system time-zone rules.
+
+Use `.AsMandatory()` on a notification definition only for system messages that must bypass permanent opt-outs and
+quiet hours. Mandatory does not bypass permission/feature recipient eligibility and does not change subscription
+candidate selection. The producer always resolves the final `Deliver`, `Suppress`, or `Delay` intent before the
+distributed event leaves its process; remote notifiers must not query a local preference database.
+
+**Preference database upgrade:** EF Core hosts must add `AbpNotificationDeliveryPreferences` and
+`AbpNotificationQuietHours`, their tenant/user scope indexes, and the `Intent`, `DeliveryNotBefore`, and
+`PreferenceReasonCode` columns on `AbpNotificationDeliveries`. Existing delivery rows initialize `Intent` to
+`Deliver`; preference/quiet-hours tables require no backfill because absence means allow/no quiet hours. Custom
+`INotificationCenterDbContext` implementations must expose both new `DbSet` properties. MongoDB contexts must expose
+the equivalent collections and create the same unique scope indexes; existing delivery documents deserialize the
+additive intent as `Deliver`.
+
+This additive wire shape still requires a consumer-first rollout for preference enforcement. An old consumer ignores
+the new intent fields and could send work that a new producer marked suppressed or delayed. Quiesce publication,
+drain old work, apply the consumer schema and code, upgrade producers, and only then let users create enforced
+preferences. Do not enable preference-producing code during a mixed-version window.
+
 **Database upgrade:** this repository does not ship migrations because the consuming host owns its schema history.
 Before enabling durable channel consumers, EF Core hosts must add the mapped `AbpNotificationDeliveries` table and its unique
 `TenantKey + NotificationId + UserId + ChannelKey` index plus the configured due-work indexes. Custom
@@ -800,11 +845,17 @@ that mode.
 | `DELETE /api/notifications/subscription-scopes` | Unsubscribe only the definition-wide or exact entity scope in the query |
 | `GET /api/notifications/deliveries` | Query delivery state by notification, user, channel, state, and time (`NotificationCenter.Deliveries`) |
 | `POST /api/notifications/deliveries/{id}/retry` | Requeue failed, suppressed, or dead-letter work in the current tenant (`NotificationCenter.Deliveries.Retry`) |
+| `GET /api/notifications/preferences` | List the caller's global, notification, channel, and exact rules |
+| `PUT /api/notifications/preferences` | Upsert one caller-owned rule (`notificationName` and `channel` are independently optional) |
+| `DELETE /api/notifications/preferences` | Delete exactly the caller-owned rule identified by the nullable query scope |
+| `GET /api/notifications/preferences/quiet-hours` | Get the caller's quiet-hours schedule, or `null` |
+| `PUT /api/notifications/preferences/quiet-hours` | Set the caller's minute-of-day window and system time-zone ID |
+| `DELETE /api/notifications/preferences/quiet-hours` | Disable quiet hours by deleting the caller's schedule |
 
 Inbox and subscription endpoints are scoped to the authenticated caller. Delivery operations are administrative,
 permission-gated, and tenant/host scoped; they expose only sanitized diagnostics. Use `...HttpApi.Client` for a
-typed C# proxy, or the Angular `NotificationsService` proxy for the existing end-user endpoints. The operator
-delivery endpoints are intentionally not added to the Angular end-user library.
+typed C# proxy, or the ABP-generated Angular services for end-user endpoints. Preference routes are exposed through
+`NotificationDeliveryPreferencesService`; the Angular library does not add an operator UI for delivery state.
 
 The scoped request contains `notificationName` plus optional `entityTypeName` and `entityId`; the two
 entity fields must be supplied together. `GET subscriptions` returns the definition-wide row for each

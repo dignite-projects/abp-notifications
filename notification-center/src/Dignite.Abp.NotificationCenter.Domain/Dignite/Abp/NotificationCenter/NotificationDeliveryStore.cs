@@ -127,10 +127,12 @@ public class NotificationDeliveryStore :
                         return null;
                     }
 
-                    // The first consumer-side write is already Claimed. This is one INSERT in an independent UOW,
-                    // so it never depends on visibility of a Pending row in the ambient event-inbox transaction.
                     entity = CreateRecord(workItem);
-                    var initialClaim = entity.Claim(GuidGenerator.Create(), now, leaseDuration);
+                    // Future quiet-hours work is independently committed as Pending and picked up by the retry
+                    // worker at DeliveryNotBefore. Immediate work retains the one-INSERT Claimed path.
+                    var initialClaim = entity.CanBeClaimed(now)
+                        ? entity.Claim(GuidGenerator.Create(), now, leaseDuration)
+                        : null;
                     initialInsertInProgress = true;
                     await DeliveryRepository.InsertAsync(
                         entity,
@@ -248,6 +250,7 @@ public class NotificationDeliveryStore :
             var deliveryQuery = await DeliveryRepository.GetQueryableAsync();
             var deliveries = await AsyncExecuter.ToListAsync(deliveryQuery
                 .Where(delivery => delivery.State == NotificationDeliveryState.Pending
+                                   && (!delivery.NextAttemptTime.HasValue || delivery.NextAttemptTime <= now)
                                    || delivery.State == NotificationDeliveryState.Failed
                                    && (!delivery.NextAttemptTime.HasValue || delivery.NextAttemptTime <= now)
                                    || delivery.State == NotificationDeliveryState.Claimed
@@ -350,6 +353,9 @@ public class NotificationDeliveryStore :
             CreationTime = delivery.CreationTime,
             UserId = delivery.UserId,
             Channel = delivery.Channel,
+            Intent = delivery.Intent,
+            DeliveryNotBefore = delivery.DeliveryNotBefore,
+            PreferenceReasonCode = delivery.PreferenceReasonCode,
             EntityTypeName = delivery.EntityTypeName,
             EntityId = delivery.EntityId,
             TenantId = delivery.TenantId
@@ -370,7 +376,10 @@ public class NotificationDeliveryStore :
             workItem.EntityId,
             workItem.Severity,
             workItem.CreationTime,
-            workItem.TenantId);
+            workItem.TenantId,
+            workItem.Intent,
+            workItem.DeliveryNotBefore,
+            workItem.PreferenceReasonCode);
     }
 
     protected virtual Task<NotificationDeliveryRecord> UpdateClaimedDeliveryAsync(
@@ -407,6 +416,7 @@ public class NotificationDeliveryStore :
 
     private static void ValidateIdentity(NotificationDeliveryWorkEto workItem)
     {
+        workItem.ValidateIntent();
         if (workItem.DeliveryId != NotificationDeliveryIdentity.CreateId(
                 workItem.TenantId,
                 workItem.NotificationId,
