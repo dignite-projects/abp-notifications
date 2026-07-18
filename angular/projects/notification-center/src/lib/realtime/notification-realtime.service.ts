@@ -249,6 +249,9 @@ export class NotificationRealtimeService implements OnDestroy {
         this.manualRetryCount = 0;
         this.lifecycleSubject.next({ status: 'connected', reason });
         this.scheduleTokenRenewalReconnect();
+        if (this.shouldRefreshAfterStart(reason)) {
+          this.emitRefresh('reconnected');
+        }
       })
       .catch(error => {
         if (this.connection !== connection) {
@@ -300,7 +303,7 @@ export class NotificationRealtimeService implements OnDestroy {
     const delay = calculateNotificationRealtimeRetryDelay(retryCount);
     this.retryTimer = setTimeout(() => {
       this.retryTimer = undefined;
-      this.reconnectIfNeeded(reason);
+      this.reconnectIfNeeded(`${reason}-retry`);
     }, delay);
   }
 
@@ -369,6 +372,10 @@ export class NotificationRealtimeService implements OnDestroy {
         tenant?.name ?? '',
       ].join('|'),
     };
+  }
+
+  private shouldRefreshAfterStart(reason: string): boolean {
+    return reason !== 'consumer-start';
   }
 
   private resolveHubUrl(): string {

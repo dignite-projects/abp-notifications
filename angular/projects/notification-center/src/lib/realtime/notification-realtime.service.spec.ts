@@ -23,6 +23,11 @@ describe('NotificationRealtimeService', () => {
   let tenantUpdates: Subject<FakeTenant>;
   let tenant: FakeTenant;
   let apiUrl: string;
+  let realtimeOptions: {
+    hubPath?: string;
+    hubUrl?: string;
+    accessTokenRenewalSkewMs?: number;
+  };
   let connections: FakeHubConnection[];
   let service: NotificationRealtimeService;
 
@@ -43,6 +48,10 @@ describe('NotificationRealtimeService', () => {
     tenant = { id: 'tenant-a', name: 'Tenant A' };
     tenantUpdates = new Subject<FakeTenant>();
     apiUrl = 'https://api.example.test/';
+    realtimeOptions = {
+      hubPath: '/signalr-hubs/notifications',
+      accessTokenRenewalSkewMs: 60_000,
+    };
     connections = [];
 
     TestBed.configureTestingModule({
@@ -88,10 +97,7 @@ describe('NotificationRealtimeService', () => {
         },
         {
           provide: NOTIFICATION_CENTER_REALTIME_OPTIONS,
-          useValue: {
-            hubPath: '/signalr-hubs/notifications',
-            accessTokenRenewalSkewMs: 60_000,
-          },
+          useValue: realtimeOptions,
         },
       ],
     });
@@ -140,6 +146,22 @@ describe('NotificationRealtimeService', () => {
 
     connections[0].emitReconnected();
 
+    expect(reasons).toEqual(['reconnected']);
+
+    subscription.unsubscribe();
+    release();
+  });
+
+  it('resynchronizes after a closed connection is manually restarted', async () => {
+    const release = service.retain();
+    await flushAsync();
+    const reasons: NotificationRealtimeRefreshReason[] = [];
+    const subscription = service.refreshRequested$.subscribe(event => reasons.push(event.reason));
+
+    connections[0].emitClosed();
+    await flushAsync();
+
+    expect(connections.length).toBe(2);
     expect(reasons).toEqual(['reconnected']);
 
     subscription.unsubscribe();
@@ -205,6 +227,8 @@ describe('NotificationRealtimeService', () => {
     const release = service.retain();
     await flushAsync();
     const firstConnection = connections[0];
+    const reasons: NotificationRealtimeRefreshReason[] = [];
+    const subscription = service.refreshRequested$.subscribe(event => reasons.push(event.reason));
 
     auth.token = 'token-b';
     auth.expiration = Date.now() + 600_000;
@@ -214,7 +238,38 @@ describe('NotificationRealtimeService', () => {
     expect(firstConnection.stop).toHaveBeenCalledTimes(1);
     expect(connections.length).toBe(2);
     expect(connections[1].accessTokenFactory()).toBe('token-b');
+    expect(reasons).toEqual(['reconnected']);
 
+    subscription.unsubscribe();
+    release();
+  });
+
+  it('uses an absolute hubUrl override for remote hub deployments', async () => {
+    realtimeOptions.hubUrl = 'https://notifications.example.test/signalr-hubs/notifications';
+    const release = service.retain();
+    await flushAsync();
+
+    expect(connections.length).toBe(1);
+    expect(connections[0].hubUrl).toBe('https://notifications.example.test/signalr-hubs/notifications');
+
+    release();
+  });
+
+  it('ignores late events after every component releases the shared runtime', async () => {
+    const release = service.retain();
+    await flushAsync();
+    const reasons: NotificationRealtimeRefreshReason[] = [];
+    const subscription = service.refreshRequested$.subscribe(event => reasons.push(event.reason));
+    const firstConnection = connections[0];
+
+    release();
+    await flushAsync();
+    firstConnection.emit('ReceiveNotification');
+
+    expect(firstConnection.stop).toHaveBeenCalledTimes(1);
+    expect(reasons).toEqual([]);
+
+    subscription.unsubscribe();
     release();
   });
 
@@ -242,6 +297,7 @@ class FakeAuthService {
 class FakeHubConnection {
   readonly handlers = new Map<string, Array<() => void>>();
   private reconnectedHandler?: () => void;
+  private closeHandler?: () => void;
 
   start = vi.fn(() => Promise.resolve());
 
@@ -266,7 +322,8 @@ class FakeHubConnection {
     this.reconnectedHandler = handler;
   }
 
-  onclose(): void {
+  onclose(handler: () => void): void {
+    this.closeHandler = handler;
   }
 
   emit(methodName: string): void {
@@ -277,6 +334,10 @@ class FakeHubConnection {
 
   emitReconnected(): void {
     this.reconnectedHandler?.();
+  }
+
+  emitClosed(): void {
+    this.closeHandler?.();
   }
 
   handlerCount(methodName: string): number {

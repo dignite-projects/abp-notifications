@@ -272,6 +272,9 @@
             nextConnection.start().then(function () {
                 if (connection === nextConnection) {
                     manualRetryCount = 0;
+                    if (reason !== 'consumer-start') {
+                        emitRefresh('reconnected');
+                    }
                 }
             }).catch(function (err) {
                 if (connection !== nextConnection) {
@@ -313,7 +316,7 @@
             var delay = calculateRetryDelay(retryCount);
             retryTimer = setTimeout(function () {
                 retryTimer = null;
-                start(reason);
+                start(reason + '-retry');
             }, delay);
         }
 
@@ -400,6 +403,7 @@
             }
 
             bellRegistrations[i].release();
+            bellRegistrations[i].bell.removeAttribute('data-notification-realtime-bound');
             bellRegistrations.splice(i, 1);
         }
     }
