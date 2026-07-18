@@ -9,8 +9,10 @@ namespace Dignite.Abp.NotificationCenter;
 /// A published notification. <see cref="Data"/> holds the serialized <c>NotificationData</c> JSON; the stable
 /// type discriminator lives inside that JSON, so no CLR type name / AssemblyQualifiedName is persisted.
 /// </summary>
-public class Notification : BasicAggregateRoot<Guid>, IMultiTenant
+public class Notification : BasicAggregateRoot<Guid>, IMultiTenant, IHasConcurrencyStamp
 {
+    public virtual string ConcurrencyStamp { get; set; } = Guid.NewGuid().ToString("N");
+
     public virtual Guid? TenantId { get; protected set; }
 
     public virtual string NotificationName { get; protected set; } = default!;
@@ -24,6 +26,12 @@ public class Notification : BasicAggregateRoot<Guid>, IMultiTenant
     public virtual NotificationSeverity Severity { get; protected set; }
 
     public virtual DateTime CreationTime { get; protected set; }
+
+    /// <summary>
+    /// First pass marker for conservative two-phase payload deletion. New same-tenant retained references clear this
+    /// marker before inserting their row; physical cleanup only deletes after the marker has aged past quarantine.
+    /// </summary>
+    public virtual DateTime? RetentionDeletionTime { get; protected set; }
 
     protected Notification()
     {
@@ -47,5 +55,15 @@ public class Notification : BasicAggregateRoot<Guid>, IMultiTenant
         Severity = severity;
         CreationTime = creationTime;
         TenantId = tenantId;
+    }
+
+    public virtual void MarkRetentionDeletion(DateTime deletionTime)
+    {
+        RetentionDeletionTime ??= deletionTime;
+    }
+
+    public virtual void CancelRetentionDeletion()
+    {
+        RetentionDeletionTime = null;
     }
 }

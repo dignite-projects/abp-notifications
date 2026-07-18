@@ -15,8 +15,9 @@ changes.
 - Added opt-in Notification Center retention cleanup with `NotificationRetentionOptions`, a default-disabled
   hosted worker, manual dry-run/reporting through `INotificationRetentionCleanupService`, metrics, and
   `INotificationRetentionDeletionContributor` hooks for archive/veto behavior. Cleanup deletes only expired read
-  inbox rows, expired terminal delivery rows, and tenant-local orphan payload rows; unread inbox rows and active
-  delivery work protect the base notification.
+  inbox rows, expired terminal delivery rows, and tenant-local orphan payload rows; base payload deletion is
+  two-phase through `RetentionDeletionTime` so unread inbox rows, active delivery work, and concurrently
+  materialized retained references protect the base notification.
 - Added per-user permanent delivery preferences with explicit
   notification+channel > notification > channel > global > default-allow precedence, plus separate time-zone-aware
   quiet hours. Explicit and subscription recipients share the same post-inbox policy, Core-only mode defaults to
@@ -63,10 +64,10 @@ changes.
 
 ### Changed
 
-- Notification Center database models add retention query indexes for old payload scans, old read inbox scans,
-  tenant-local payload-reference checks, and terminal delivery cleanup. EF Core consumers should generate a
-  host-owned migration before enabling destructive cleanup; MongoDB contexts create the equivalent indexes from
-  model initialization.
+- Notification Center database models add `RetentionDeletionTime` and a concurrency stamp to base notifications,
+  plus retention query indexes for old payload scans, old read inbox scans, tenant-local payload-reference checks,
+  and terminal delivery cleanup. EF Core consumers should generate a host-owned migration before enabling
+  destructive cleanup; MongoDB contexts create the equivalent indexes from model initialization.
 - Notification Center database models add `AbpNotificationDeliveryPreferences`, `AbpNotificationQuietHours`, and
   delivery-ledger intent/not-before/reason fields. Consumer-owned EF Core migrations and MongoDB collection/index
   upgrades are required; no preference backfill is needed because missing rows mean allow/no quiet hours. Upgrade

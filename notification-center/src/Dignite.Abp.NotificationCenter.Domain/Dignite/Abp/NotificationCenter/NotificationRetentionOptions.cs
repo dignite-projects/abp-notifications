@@ -37,6 +37,13 @@ public class NotificationRetentionOptions
     /// </summary>
     public TimeSpan? OrphanNotificationRetention { get; set; } = TimeSpan.FromDays(90);
 
+    /// <summary>
+    /// Delay between marking an orphan payload for retention deletion and physically deleting it. This gives
+    /// in-flight inbox/delivery work that started before the marker a later cleanup pass to materialize and cancel
+    /// the marker before the payload is removed.
+    /// </summary>
+    public TimeSpan NotificationDeletionQuarantineDuration { get; set; } = TimeSpan.FromMinutes(5);
+
     internal void Validate()
     {
         if (CleanupWorkerPeriod <= TimeSpan.Zero)
@@ -53,6 +60,12 @@ public class NotificationRetentionOptions
         ValidateRetention(ReadUserNotificationRetention, nameof(ReadUserNotificationRetention));
         ValidateRetention(TerminalDeliveryRetention, nameof(TerminalDeliveryRetention));
         ValidateRetention(OrphanNotificationRetention, nameof(OrphanNotificationRetention));
+
+        if (NotificationDeletionQuarantineDuration < TimeSpan.Zero)
+        {
+            throw new InvalidOperationException(
+                $"{nameof(NotificationDeletionQuarantineDuration)} must be greater than or equal to zero.");
+        }
     }
 
     private static void ValidateRetention(TimeSpan? value, string propertyName)

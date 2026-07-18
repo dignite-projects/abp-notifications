@@ -93,29 +93,47 @@ public class NotificationRetentionCleanupService :
         }
 
         var cutoff = now - Options.Value.ReadUserNotificationRetention.Value;
-        var candidates = await GetUserNotificationCandidatesAsync(request, cutoff, batchSize, cancellationToken);
+        DateTime? afterCreationTime = null;
+        Guid? afterId = null;
 
-        foreach (var candidate in candidates)
+        while (true)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            result.ScannedUserNotifications++;
-
-            try
+            var candidates = await GetUserNotificationCandidatesAsync(
+                request,
+                cutoff,
+                batchSize,
+                afterCreationTime,
+                afterId,
+                cancellationToken);
+            if (candidates.Count == 0)
             {
-                await ProcessUserNotificationCandidateAsync(
-                    candidate,
-                    cutoff,
-                    request.IsDryRun,
-                    result,
-                    cancellationToken);
+                break;
             }
-            catch (Exception exception) when (IsRecoverableCleanupException(exception, cancellationToken))
+
+            foreach (var candidate in candidates)
             {
-                result.UserNotificationErrors++;
-                Logger.LogWarning(
-                    exception,
-                    "Retention cleanup failed for user notification {UserNotificationId}.",
-                    candidate.Id);
+                cancellationToken.ThrowIfCancellationRequested();
+                result.ScannedUserNotifications++;
+                afterCreationTime = candidate.CreationTime;
+                afterId = candidate.Id;
+
+                try
+                {
+                    await ProcessUserNotificationCandidateAsync(
+                        candidate,
+                        cutoff,
+                        request.IsDryRun,
+                        result,
+                        cancellationToken);
+                }
+                catch (Exception exception) when (IsRecoverableCleanupException(exception, cancellationToken))
+                {
+                    result.UserNotificationErrors++;
+                    Logger.LogWarning(
+                        exception,
+                        "Retention cleanup failed for user notification {UserNotificationId}.",
+                        candidate.Id);
+                }
             }
         }
     }
@@ -133,29 +151,47 @@ public class NotificationRetentionCleanupService :
         }
 
         var cutoff = now - Options.Value.TerminalDeliveryRetention.Value;
-        var candidates = await GetDeliveryCandidatesAsync(request, cutoff, batchSize, cancellationToken);
+        DateTime? afterCreationTime = null;
+        Guid? afterId = null;
 
-        foreach (var candidate in candidates)
+        while (true)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            result.ScannedDeliveries++;
-
-            try
+            var candidates = await GetDeliveryCandidatesAsync(
+                request,
+                cutoff,
+                batchSize,
+                afterCreationTime,
+                afterId,
+                cancellationToken);
+            if (candidates.Count == 0)
             {
-                await ProcessDeliveryCandidateAsync(
-                    candidate,
-                    cutoff,
-                    request.IsDryRun,
-                    result,
-                    cancellationToken);
+                break;
             }
-            catch (Exception exception) when (IsRecoverableCleanupException(exception, cancellationToken))
+
+            foreach (var candidate in candidates)
             {
-                result.DeliveryErrors++;
-                Logger.LogWarning(
-                    exception,
-                    "Retention cleanup failed for notification delivery {DeliveryId}.",
-                    candidate.Id);
+                cancellationToken.ThrowIfCancellationRequested();
+                result.ScannedDeliveries++;
+                afterCreationTime = candidate.CreationTime;
+                afterId = candidate.Id;
+
+                try
+                {
+                    await ProcessDeliveryCandidateAsync(
+                        candidate,
+                        cutoff,
+                        request.IsDryRun,
+                        result,
+                        cancellationToken);
+                }
+                catch (Exception exception) when (IsRecoverableCleanupException(exception, cancellationToken))
+                {
+                    result.DeliveryErrors++;
+                    Logger.LogWarning(
+                        exception,
+                        "Retention cleanup failed for notification delivery {DeliveryId}.",
+                        candidate.Id);
+                }
             }
         }
     }
@@ -173,29 +209,48 @@ public class NotificationRetentionCleanupService :
         }
 
         var cutoff = now - Options.Value.OrphanNotificationRetention.Value;
-        var candidates = await GetNotificationCandidatesAsync(request, cutoff, batchSize, cancellationToken);
+        DateTime? afterCreationTime = null;
+        Guid? afterId = null;
 
-        foreach (var candidate in candidates)
+        while (true)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            result.ScannedNotifications++;
-
-            try
+            var candidates = await GetNotificationCandidatesAsync(
+                request,
+                cutoff,
+                batchSize,
+                afterCreationTime,
+                afterId,
+                cancellationToken);
+            if (candidates.Count == 0)
             {
-                await ProcessNotificationCandidateAsync(
-                    candidate,
-                    cutoff,
-                    request.IsDryRun,
-                    result,
-                    cancellationToken);
+                break;
             }
-            catch (Exception exception) when (IsRecoverableCleanupException(exception, cancellationToken))
+
+            foreach (var candidate in candidates)
             {
-                result.NotificationErrors++;
-                Logger.LogWarning(
-                    exception,
-                    "Retention cleanup failed for notification {NotificationId}.",
-                    candidate.Id);
+                cancellationToken.ThrowIfCancellationRequested();
+                result.ScannedNotifications++;
+                afterCreationTime = candidate.CreationTime;
+                afterId = candidate.Id;
+
+                try
+                {
+                    await ProcessNotificationCandidateAsync(
+                        candidate,
+                        cutoff,
+                        now,
+                        request.IsDryRun,
+                        result,
+                        cancellationToken);
+                }
+                catch (Exception exception) when (IsRecoverableCleanupException(exception, cancellationToken))
+                {
+                    result.NotificationErrors++;
+                    Logger.LogWarning(
+                        exception,
+                        "Retention cleanup failed for notification {NotificationId}.",
+                        candidate.Id);
+                }
             }
         }
     }
@@ -204,6 +259,8 @@ public class NotificationRetentionCleanupService :
         NotificationRetentionCleanupRequest request,
         DateTime cutoff,
         int batchSize,
+        DateTime? afterCreationTime,
+        Guid? afterId,
         CancellationToken cancellationToken)
     {
         using var unitOfWork = UnitOfWorkManager.Begin(requiresNew: true, isTransactional: false);
@@ -214,6 +271,7 @@ public class NotificationRetentionCleanupService :
                 .Where(userNotification =>
                     userNotification.State == UserNotificationState.Read &&
                     userNotification.CreationTime <= cutoff);
+            query = ApplyCursor(query, afterCreationTime, afterId);
 
             var result = await AsyncExecuter.ToListAsync(query
                 .OrderBy(userNotification => userNotification.CreationTime)
@@ -229,6 +287,8 @@ public class NotificationRetentionCleanupService :
         NotificationRetentionCleanupRequest request,
         DateTime cutoff,
         int batchSize,
+        DateTime? afterCreationTime,
+        Guid? afterId,
         CancellationToken cancellationToken)
     {
         using var unitOfWork = UnitOfWorkManager.Begin(requiresNew: true, isTransactional: false);
@@ -242,6 +302,7 @@ public class NotificationRetentionCleanupService :
                      delivery.State == NotificationDeliveryState.DeadLetter) &&
                     ((delivery.CompletedTime.HasValue && delivery.CompletedTime <= cutoff) ||
                      (!delivery.CompletedTime.HasValue && delivery.CreationTime <= cutoff)));
+            query = ApplyCursor(query, afterCreationTime, afterId);
 
             var result = await AsyncExecuter.ToListAsync(query
                 .OrderBy(delivery => delivery.CreationTime)
@@ -257,6 +318,8 @@ public class NotificationRetentionCleanupService :
         NotificationRetentionCleanupRequest request,
         DateTime cutoff,
         int batchSize,
+        DateTime? afterCreationTime,
+        Guid? afterId,
         CancellationToken cancellationToken)
     {
         using var unitOfWork = UnitOfWorkManager.Begin(requiresNew: true, isTransactional: false);
@@ -265,6 +328,7 @@ public class NotificationRetentionCleanupService :
             var query = await NotificationRepository.GetQueryableAsync();
             query = ApplyTenantScope(query, request)
                 .Where(notification => notification.CreationTime <= cutoff);
+            query = ApplyCursor(query, afterCreationTime, afterId);
 
             var result = await AsyncExecuter.ToListAsync(query
                 .OrderBy(notification => notification.CreationTime)
@@ -314,13 +378,14 @@ public class NotificationRetentionCleanupService :
                 return;
             }
 
-            result.DeletedUserNotifications++;
-            if (!isDryRun)
+            if (isDryRun)
             {
-                await UserNotificationRepository.DeleteAsync(
-                    entity,
-                    autoSave: true,
-                    cancellationToken: cancellationToken);
+                result.DeletedUserNotifications++;
+            }
+            else
+            {
+                await UserNotificationRepository.DeleteAsync(entity, autoSave: true, cancellationToken: cancellationToken);
+                result.DeletedUserNotifications++;
             }
 
             await unitOfWork.CompleteAsync(cancellationToken);
@@ -363,10 +428,14 @@ public class NotificationRetentionCleanupService :
                 return;
             }
 
-            result.DeletedDeliveries++;
-            if (!isDryRun)
+            if (isDryRun)
+            {
+                result.DeletedDeliveries++;
+            }
+            else
             {
                 await DeliveryRepository.DeleteAsync(entity, autoSave: true, cancellationToken: cancellationToken);
+                result.DeletedDeliveries++;
             }
 
             await unitOfWork.CompleteAsync(cancellationToken);
@@ -376,6 +445,7 @@ public class NotificationRetentionCleanupService :
     protected virtual async Task ProcessNotificationCandidateAsync(
         Notification candidate,
         DateTime cutoff,
+        DateTime now,
         bool isDryRun,
         NotificationRetentionCleanupResult result,
         CancellationToken cancellationToken)
@@ -392,6 +462,31 @@ public class NotificationRetentionCleanupService :
             }
 
             if (await HasNotificationReferencesAsync(entity.Id, entity.TenantId, cancellationToken))
+            {
+                await CancelRetentionDeletionIfPossibleAsync(entity, cancellationToken);
+                result.SkippedNotifications++;
+                await unitOfWork.CompleteAsync(cancellationToken);
+                return;
+            }
+
+            if (!entity.RetentionDeletionTime.HasValue)
+            {
+                if (isDryRun)
+                {
+                    result.DeletedNotifications++;
+                }
+                else
+                {
+                    entity.MarkRetentionDeletion(now);
+                    await NotificationRepository.UpdateAsync(entity, autoSave: true, cancellationToken: cancellationToken);
+                    result.SkippedNotifications++;
+                }
+
+                await unitOfWork.CompleteAsync(cancellationToken);
+                return;
+            }
+
+            if (entity.RetentionDeletionTime.Value > now - Options.Value.NotificationDeletionQuarantineDuration)
             {
                 result.SkippedNotifications++;
                 await unitOfWork.CompleteAsync(cancellationToken);
@@ -417,18 +512,56 @@ public class NotificationRetentionCleanupService :
             // retained inbox/delivery row cannot race a payload delete in the same cleanup pass.
             if (await HasNotificationReferencesAsync(entity.Id, entity.TenantId, cancellationToken))
             {
+                await CancelRetentionDeletionIfPossibleAsync(entity, cancellationToken);
                 result.SkippedNotifications++;
                 await unitOfWork.CompleteAsync(cancellationToken);
                 return;
             }
 
-            result.DeletedNotifications++;
-            if (!isDryRun)
+            await BeforeDeleteNotificationAsync(entity, cancellationToken);
+
+            if (isDryRun)
+            {
+                result.DeletedNotifications++;
+            }
+            else
             {
                 await NotificationRepository.DeleteAsync(entity, autoSave: true, cancellationToken: cancellationToken);
+                result.DeletedNotifications++;
             }
 
             await unitOfWork.CompleteAsync(cancellationToken);
+        }
+    }
+
+    protected virtual Task BeforeDeleteNotificationAsync(
+        Notification notification,
+        CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
+
+    protected virtual async Task CancelRetentionDeletionIfPossibleAsync(
+        Notification notification,
+        CancellationToken cancellationToken)
+    {
+        if (!notification.RetentionDeletionTime.HasValue)
+        {
+            return;
+        }
+
+        try
+        {
+            notification.CancelRetentionDeletion();
+            await NotificationRepository.UpdateAsync(
+                notification,
+                autoSave: true,
+                cancellationToken: cancellationToken);
+        }
+        catch (AbpDbConcurrencyException)
+        {
+            // Another retained-reference writer already cleared or changed the marker. The important invariant is
+            // that a same-tenant retained row exists, so payload deletion must be skipped either way.
         }
     }
 
@@ -546,6 +679,57 @@ public class NotificationRetentionCleanupService :
         return query.Where(entity => entity.TenantId == request.TenantId);
     }
 
+    private static IQueryable<Notification> ApplyCursor(
+        IQueryable<Notification> query,
+        DateTime? afterCreationTime,
+        Guid? afterId)
+    {
+        if (!afterCreationTime.HasValue || !afterId.HasValue)
+        {
+            return query;
+        }
+
+        var creationTime = afterCreationTime.Value;
+        var id = afterId.Value;
+        return query.Where(notification =>
+            notification.CreationTime > creationTime ||
+            notification.CreationTime == creationTime && notification.Id.CompareTo(id) > 0);
+    }
+
+    private static IQueryable<UserNotification> ApplyCursor(
+        IQueryable<UserNotification> query,
+        DateTime? afterCreationTime,
+        Guid? afterId)
+    {
+        if (!afterCreationTime.HasValue || !afterId.HasValue)
+        {
+            return query;
+        }
+
+        var creationTime = afterCreationTime.Value;
+        var id = afterId.Value;
+        return query.Where(userNotification =>
+            userNotification.CreationTime > creationTime ||
+            userNotification.CreationTime == creationTime && userNotification.Id.CompareTo(id) > 0);
+    }
+
+    private static IQueryable<NotificationDeliveryRecord> ApplyCursor(
+        IQueryable<NotificationDeliveryRecord> query,
+        DateTime? afterCreationTime,
+        Guid? afterId)
+    {
+        if (!afterCreationTime.HasValue || !afterId.HasValue)
+        {
+            return query;
+        }
+
+        var creationTime = afterCreationTime.Value;
+        var id = afterId.Value;
+        return query.Where(delivery =>
+            delivery.CreationTime > creationTime ||
+            delivery.CreationTime == creationTime && delivery.Id.CompareTo(id) > 0);
+    }
+
     private static bool IsDeliveryRetentionEligible(NotificationDeliveryRecord delivery, DateTime cutoff)
     {
         return IsTerminal(delivery.State) &&
@@ -615,6 +799,10 @@ public class NotificationRetentionCleanupService :
             result.DeletedDeliveries,
             result.SkippedDeliveries,
             result.DeliveryErrors);
+        NotificationRetentionMetrics.RecordOldestRetained(
+            result.OldestRetainedNotificationCreationTime,
+            result.OldestRetainedUserNotificationCreationTime,
+            result.OldestRetainedDeliveryCreationTime);
     }
 
     private static void ValidateBatchSize(int batchSize)

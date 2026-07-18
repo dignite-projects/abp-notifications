@@ -1,14 +1,18 @@
 using System;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Dignite.Abp.Notifications;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Shouldly;
 using Volo.Abp.Data;
 using Volo.Abp.Domain.Entities;
 using Volo.Abp.Domain.Repositories;
+using Volo.Abp.Linq;
 using Volo.Abp.Modularity;
 using Volo.Abp.MultiTenancy;
+using Volo.Abp.Timing;
+using Volo.Abp.Uow;
 using Xunit;
 
 namespace Dignite.Abp.NotificationCenter;
@@ -65,21 +69,28 @@ public abstract class NotificationRetentionCleanup_Tests<TStartupModule> : Notif
             old,
             old.AddMinutes(1));
 
-        var result = await CleanupAsync(now);
+        var firstPass = await CleanupAsync(now);
 
-        result.DeletedUserNotifications.ShouldBe(1);
-        result.DeletedDeliveries.ShouldBe(1);
-        result.DeletedNotifications.ShouldBe(3);
-        result.SkippedNotifications.ShouldBe(2);
+        firstPass.DeletedUserNotifications.ShouldBe(1);
+        firstPass.DeletedDeliveries.ShouldBe(1);
+        firstPass.DeletedNotifications.ShouldBe(0);
+        firstPass.SkippedNotifications.ShouldBe(5);
+
+        (await ExistsAsync<Notification>(orphanId)).ShouldBeTrue();
+        (await ExistsAsync<UserNotification>(readUserNotificationId)).ShouldBeFalse();
+        (await ExistsAsync<NotificationDeliveryRecord>(terminalDeliveryId)).ShouldBeFalse();
+
+        var secondPass = await CleanupAsync(now.AddMinutes(6));
+
+        secondPass.DeletedNotifications.ShouldBe(3);
+        secondPass.SkippedNotifications.ShouldBe(2);
 
         (await ExistsAsync<Notification>(orphanId)).ShouldBeFalse();
-        (await ExistsAsync<UserNotification>(readUserNotificationId)).ShouldBeFalse();
         (await ExistsAsync<Notification>(readNotificationId)).ShouldBeFalse();
         (await ExistsAsync<UserNotification>(unreadUserNotificationId)).ShouldBeTrue();
         (await ExistsAsync<Notification>(unreadNotificationId)).ShouldBeTrue();
         (await ExistsAsync<NotificationDeliveryRecord>(pendingDeliveryId)).ShouldBeTrue();
         (await ExistsAsync<Notification>(pendingNotificationId)).ShouldBeTrue();
-        (await ExistsAsync<NotificationDeliveryRecord>(terminalDeliveryId)).ShouldBeFalse();
         (await ExistsAsync<Notification>(terminalNotificationId)).ShouldBeFalse();
     }
 
@@ -105,8 +116,8 @@ public abstract class NotificationRetentionCleanup_Tests<TStartupModule> : Notif
         var retainedId = Guid.NewGuid();
         var failingId = Guid.NewGuid();
         var old = now.AddDays(-120);
-        await InsertNotificationAsync(retainedId, old);
-        await InsertNotificationAsync(failingId, old.AddMinutes(1));
+        await InsertNotificationAsync(retainedId, old, retentionDeletionTime: old.AddMinutes(2));
+        await InsertNotificationAsync(failingId, old.AddMinutes(1), retentionDeletionTime: old.AddMinutes(3));
         TestNotificationRetentionDeletionContributor.VetoReasons[retainedId] = "audit-hold";
         TestNotificationRetentionDeletionContributor.ThrowReasons[failingId] = "archive-writer-unavailable";
 
@@ -129,10 +140,10 @@ public abstract class NotificationRetentionCleanup_Tests<TStartupModule> : Notif
         var notificationId = Guid.NewGuid();
         var userNotificationId = Guid.NewGuid();
         var userId = Guid.NewGuid();
-        await InsertNotificationAsync(notificationId, old);
+        await InsertNotificationAsync(notificationId, old, retentionDeletionTime: old.AddMinutes(1));
         TestNotificationRetentionDeletionContributor.Callbacks[notificationId] = async (candidate, cancellationToken) =>
         {
-            await InsertUserNotificationAsync(
+            await InsertUserNotificationThroughStoreAsync(
                 userNotificationId,
                 candidate.NotificationId!.Value,
                 userId,
@@ -151,6 +162,44 @@ public abstract class NotificationRetentionCleanup_Tests<TStartupModule> : Notif
     }
 
     [Fact]
+    public async Task Reference_created_after_the_final_check_causes_a_concurrency_failure_instead_of_payload_deletion()
+    {
+        var now = new DateTime(2026, 7, 18, 12, 0, 0, DateTimeKind.Utc);
+        var old = now.AddDays(-120);
+        var notificationId = Guid.NewGuid();
+        var userNotificationId = Guid.NewGuid();
+        await InsertNotificationAsync(notificationId, old, retentionDeletionTime: old.AddMinutes(1));
+        var service = new RaceAfterFinalCheckCleanupService(
+            GetRequiredService<IRepository<Notification, Guid>>(),
+            GetRequiredService<IRepository<UserNotification, Guid>>(),
+            GetRequiredService<IRepository<NotificationDeliveryRecord, Guid>>(),
+            GetRequiredService<IAsyncQueryableExecuter>(),
+            GetRequiredService<IDataFilter>(),
+            GetRequiredService<IClock>(),
+            GetRequiredService<IUnitOfWorkManager>(),
+            GetRequiredService<IOptions<NotificationRetentionOptions>>(),
+            new[] { GetRequiredService<INotificationRetentionDeletionContributor>() },
+            GetRequiredService<ILogger<NotificationRetentionCleanupService>>(),
+            cancellationToken => InsertUserNotificationThroughStoreAsync(
+                userNotificationId,
+                notificationId,
+                Guid.NewGuid(),
+                UserNotificationState.Unread,
+                old,
+                cancellationToken: cancellationToken));
+
+        var result = await service.CleanupAsync(new NotificationRetentionCleanupRequest
+        {
+            Now = now
+        });
+
+        result.DeletedNotifications.ShouldBe(0);
+        result.NotificationErrors.ShouldBe(1);
+        (await ExistsAsync<Notification>(notificationId)).ShouldBeTrue();
+        (await ExistsAsync<UserNotification>(userNotificationId)).ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task Tenant_local_reference_checks_do_not_mix_host_or_other_tenant_records()
     {
         var now = new DateTime(2026, 7, 18, 12, 0, 0, DateTimeKind.Utc);
@@ -159,7 +208,7 @@ public abstract class NotificationRetentionCleanup_Tests<TStartupModule> : Notif
         var tenantB = Guid.NewGuid();
         var tenantANotificationId = Guid.NewGuid();
         var tenantBInboxRowId = Guid.NewGuid();
-        await InsertNotificationAsync(tenantANotificationId, old, tenantA);
+        await InsertNotificationAsync(tenantANotificationId, old, tenantA, old.AddMinutes(1));
         await InsertUserNotificationAsync(
             tenantBInboxRowId,
             tenantANotificationId,
@@ -176,25 +225,33 @@ public abstract class NotificationRetentionCleanup_Tests<TStartupModule> : Notif
     }
 
     [Fact]
-    public async Task Batch_size_limits_each_pass_and_next_pass_continues_from_remaining_candidates()
+    public async Task Batch_pages_continue_past_skipped_candidates_without_starving_later_orphans()
     {
         var now = new DateTime(2026, 7, 18, 12, 0, 0, DateTimeKind.Utc);
-        var firstId = Guid.NewGuid();
-        var secondId = Guid.NewGuid();
-        await InsertNotificationAsync(firstId, now.AddDays(-121));
-        await InsertNotificationAsync(secondId, now.AddDays(-120));
+        var protectedId = Guid.NewGuid();
+        var protectedInboxId = Guid.NewGuid();
+        var orphanId = Guid.NewGuid();
+        await InsertNotificationAsync(protectedId, now.AddDays(-122));
+        await InsertUserNotificationAsync(
+            protectedInboxId,
+            protectedId,
+            Guid.NewGuid(),
+            UserNotificationState.Unread,
+            now.AddDays(-122));
+        await InsertNotificationAsync(orphanId, now.AddDays(-120));
 
         var firstPass = await CleanupAsync(now, batchSize: 1);
 
-        firstPass.ScannedNotifications.ShouldBe(1);
-        firstPass.DeletedNotifications.ShouldBe(1);
-        (await ExistingNotificationIdsAsync(firstId, secondId)).Count.ShouldBe(1);
+        firstPass.ScannedNotifications.ShouldBe(2);
+        firstPass.DeletedNotifications.ShouldBe(0);
+        firstPass.SkippedNotifications.ShouldBe(2);
+        (await ExistsAsync<Notification>(orphanId)).ShouldBeTrue();
 
-        var secondPass = await CleanupAsync(now, batchSize: 1);
+        var secondPass = await CleanupAsync(now.AddMinutes(6), batchSize: 1);
 
-        secondPass.ScannedNotifications.ShouldBe(1);
         secondPass.DeletedNotifications.ShouldBe(1);
-        (await ExistingNotificationIdsAsync(firstId, secondId)).ShouldBeEmpty();
+        (await ExistsAsync<Notification>(protectedId)).ShouldBeTrue();
+        (await ExistsAsync<Notification>(orphanId)).ShouldBeFalse();
     }
 
     private async Task<NotificationRetentionCleanupResult> CleanupAsync(
@@ -211,11 +268,15 @@ public abstract class NotificationRetentionCleanup_Tests<TStartupModule> : Notif
             });
     }
 
-    private async Task InsertNotificationAsync(Guid notificationId, DateTime creationTime, Guid? tenantId = null)
+    private async Task InsertNotificationAsync(
+        Guid notificationId,
+        DateTime creationTime,
+        Guid? tenantId = null,
+        DateTime? retentionDeletionTime = null)
     {
         await WithTenantUnitOfWorkAsync(tenantId, async () =>
         {
-            await GetRequiredService<IRepository<Notification, Guid>>().InsertAsync(new Notification(
+            var notification = new Notification(
                 notificationId,
                 "order.shipped",
                 data: null,
@@ -223,7 +284,13 @@ public abstract class NotificationRetentionCleanup_Tests<TStartupModule> : Notif
                 entityId: null,
                 NotificationSeverity.Info,
                 creationTime,
-                tenantId));
+                tenantId);
+            if (retentionDeletionTime.HasValue)
+            {
+                notification.MarkRetentionDeletion(retentionDeletionTime.Value);
+            }
+
+            await GetRequiredService<IRepository<Notification, Guid>>().InsertAsync(notification);
         });
     }
 
@@ -245,6 +312,29 @@ public abstract class NotificationRetentionCleanup_Tests<TStartupModule> : Notif
                 state,
                 creationTime,
                 tenantId), cancellationToken: cancellationToken);
+        });
+    }
+
+    private async Task InsertUserNotificationThroughStoreAsync(
+        Guid id,
+        Guid notificationId,
+        Guid userId,
+        UserNotificationState state,
+        DateTime creationTime,
+        Guid? tenantId = null,
+        CancellationToken cancellationToken = default)
+    {
+        await WithTenantUnitOfWorkAsync(tenantId, async () =>
+        {
+            await GetRequiredService<INotificationStore>().InsertUserNotificationAsync(new UserNotificationInfo
+            {
+                Id = id,
+                NotificationId = notificationId,
+                UserId = userId,
+                State = state,
+                CreationTime = creationTime,
+                TenantId = tenantId
+            });
         });
     }
 
@@ -324,26 +414,50 @@ public abstract class NotificationRetentionCleanup_Tests<TStartupModule> : Notif
         return exists;
     }
 
-    private async Task<System.Collections.Generic.List<Guid>> ExistingNotificationIdsAsync(params Guid[] ids)
-    {
-        System.Collections.Generic.List<Guid>? existing = null;
-        await WithUnitOfWorkAsync(async () =>
-        {
-            using (GetRequiredService<IDataFilter>().Disable<IMultiTenant>())
-            {
-                var repository = GetRequiredService<IRepository<Notification, Guid>>();
-                var rows = await repository.GetListAsync(notification => ids.Contains(notification.Id));
-                existing = rows.Select(notification => notification.Id).ToList();
-            }
-        });
-        return existing!;
-    }
-
     private async Task WithTenantUnitOfWorkAsync(Guid? tenantId, Func<Task> action)
     {
         using (GetRequiredService<ICurrentTenant>().Change(tenantId, tenantId.HasValue ? "tenant" : null))
         {
             await WithUnitOfWorkAsync(action);
+        }
+    }
+
+    private sealed class RaceAfterFinalCheckCleanupService : NotificationRetentionCleanupService
+    {
+        private readonly Func<CancellationToken, Task> _beforeDelete;
+
+        public RaceAfterFinalCheckCleanupService(
+            IRepository<Notification, Guid> notificationRepository,
+            IRepository<UserNotification, Guid> userNotificationRepository,
+            IRepository<NotificationDeliveryRecord, Guid> deliveryRepository,
+            IAsyncQueryableExecuter asyncExecuter,
+            IDataFilter dataFilter,
+            IClock clock,
+            IUnitOfWorkManager unitOfWorkManager,
+            IOptions<NotificationRetentionOptions> options,
+            System.Collections.Generic.IEnumerable<INotificationRetentionDeletionContributor> deletionContributors,
+            ILogger<NotificationRetentionCleanupService> logger,
+            Func<CancellationToken, Task> beforeDelete)
+            : base(
+                notificationRepository,
+                userNotificationRepository,
+                deliveryRepository,
+                asyncExecuter,
+                dataFilter,
+                clock,
+                unitOfWorkManager,
+                options,
+                deletionContributors,
+                logger)
+        {
+            _beforeDelete = beforeDelete;
+        }
+
+        protected override Task BeforeDeleteNotificationAsync(
+            Notification notification,
+            CancellationToken cancellationToken)
+        {
+            return _beforeDelete(cancellationToken);
         }
     }
 }

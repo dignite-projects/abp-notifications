@@ -118,6 +118,7 @@ public class NotificationStore : INotificationStore, IBatchedNotificationStore, 
             userNotification.CreationTime == default ? Clock.Now : userNotification.CreationTime,
             userNotification.TenantId ?? CurrentTenant.Id);
 
+        await CancelRetentionDeletionAsync(entity.NotificationId, entity.TenantId, CancellationToken.None);
         await UserNotificationRepository.InsertAsync(entity);
     }
 
@@ -137,6 +138,12 @@ public class NotificationStore : INotificationStore, IBatchedNotificationStore, 
             userNotification.State,
             userNotification.CreationTime == default ? Clock.Now : userNotification.CreationTime,
             userNotification.TenantId ?? CurrentTenant.Id)).ToList();
+
+        foreach (var group in entities
+                     .GroupBy(entity => new { entity.TenantId, entity.NotificationId }))
+        {
+            await CancelRetentionDeletionAsync(group.Key.NotificationId, group.Key.TenantId, cancellationToken);
+        }
 
         await BatchPersistence.InsertAsync(entities, cancellationToken);
     }
@@ -404,6 +411,23 @@ public class NotificationStore : INotificationStore, IBatchedNotificationStore, 
                 RawJson = json ?? string.Empty
             };
         }
+    }
+
+    protected virtual async Task CancelRetentionDeletionAsync(
+        Guid notificationId,
+        Guid? tenantId,
+        CancellationToken cancellationToken)
+    {
+        var notification = await NotificationRepository.FirstOrDefaultAsync(
+            entity => entity.Id == notificationId && entity.TenantId == tenantId,
+            cancellationToken: cancellationToken);
+        if (notification?.RetentionDeletionTime == null)
+        {
+            return;
+        }
+
+        notification.CancelRetentionDeletion();
+        await NotificationRepository.UpdateAsync(notification, autoSave: true, cancellationToken: cancellationToken);
     }
 
     private static bool IsRecoverableReadException(Exception exception)

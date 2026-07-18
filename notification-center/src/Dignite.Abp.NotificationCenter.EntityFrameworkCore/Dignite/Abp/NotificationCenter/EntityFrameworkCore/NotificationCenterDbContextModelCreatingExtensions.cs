@@ -25,6 +25,8 @@ public static class NotificationCenterDbContextModelCreatingExtensions
             // Retention cleanup scans old base payload rows and deletes only tenant-local orphans.
             b.HasIndex(x => new { x.TenantId, x.CreationTime });
             b.HasIndex(x => x.CreationTime);
+            // Two-phase payload cleanup physically deletes only after a marker quarantine period.
+            b.HasIndex(x => new { x.TenantId, x.RetentionDeletionTime, x.CreationTime });
         });
 
         builder.Entity<UserNotification>(b =>

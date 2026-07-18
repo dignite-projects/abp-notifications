@@ -81,6 +81,12 @@ public class NotificationCenterMongoDbContext : AbpMongoDbContext, INotification
                 indexes.CreateOne(new CreateIndexModel<BsonDocument>(
                     Builders<BsonDocument>.IndexKeys
                         .Ascending(nameof(Notification.CreationTime))));
+
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(Notification.TenantId))
+                        .Ascending(nameof(Notification.RetentionDeletionTime))
+                        .Ascending(nameof(Notification.CreationTime))));
             });
         });
 
