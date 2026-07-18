@@ -22,6 +22,8 @@ public class NotificationCenterMongoDbContext : AbpMongoDbContext, INotification
 
     public IMongoCollection<NotificationQuietHours> NotificationQuietHours => Collection<NotificationQuietHours>();
 
+    public IMongoCollection<NotificationRetentionCleanupCursor> NotificationRetentionCleanupCursors => Collection<NotificationRetentionCleanupCursor>();
+
     public IMongoCollection<IncomingEventRecord> IncomingEvents => Collection<IncomingEventRecord>();
 
     public IMongoCollection<OutgoingEventRecord> OutgoingEvents => Collection<OutgoingEventRecord>();
@@ -223,6 +225,20 @@ public class NotificationCenterMongoDbContext : AbpMongoDbContext, INotification
                     Builders<BsonDocument>.IndexKeys
                         .Ascending(nameof(NotificationQuietHoursEntity.TenantKey))
                         .Ascending(nameof(NotificationQuietHoursEntity.UserId)),
+                    new CreateIndexOptions { Unique = true }));
+            });
+        });
+
+        modelBuilder.Entity<NotificationRetentionCleanupCursor>(b =>
+        {
+            b.CollectionName = NotificationCenterDbProperties.DbTablePrefix + "NotificationRetentionCleanupCursors";
+            b.ConfigureIndexes(indexes =>
+            {
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(NotificationRetentionCleanupCursor.IsTenantScoped))
+                        .Ascending(nameof(NotificationRetentionCleanupCursor.TenantKey))
+                        .Ascending(nameof(NotificationRetentionCleanupCursor.RecordKind)),
                     new CreateIndexOptions { Unique = true }));
             });
         });

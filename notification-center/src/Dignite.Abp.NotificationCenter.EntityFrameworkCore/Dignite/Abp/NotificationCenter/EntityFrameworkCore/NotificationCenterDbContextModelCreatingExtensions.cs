@@ -119,5 +119,14 @@ public static class NotificationCenterDbContextModelCreatingExtensions
             b.Property(x => x.TimeZoneId).IsRequired().HasMaxLength(NotificationCenterConsts.MaxTimeZoneIdLength);
             b.HasIndex(x => new { x.TenantKey, x.UserId }).IsUnique();
         });
+
+        builder.Entity<NotificationRetentionCleanupCursor>(b =>
+        {
+            b.ToTable(NotificationCenterDbProperties.DbTablePrefix + "NotificationRetentionCleanupCursors", NotificationCenterDbProperties.DbSchema);
+            b.ConfigureByConvention();
+
+            // One cursor per cleanup scope and record kind lets bounded passes continue past retained prefixes.
+            b.HasIndex(x => new { x.IsTenantScoped, x.TenantKey, x.RecordKind }).IsUnique();
+        });
     }
 }

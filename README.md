@@ -386,7 +386,7 @@ requirements:
 Configure<NotificationRetentionOptions>(options =>
 {
     options.IsCleanupEnabled = true;
-    options.CleanupBatchSize = 500;              // page size per record kind
+    options.CleanupBatchSize = 500;              // max scanned candidates per record kind and pass
     options.CleanupWorkerPeriod = TimeSpan.FromHours(6);
     options.ReadUserNotificationRetention = TimeSpan.FromDays(180);
     options.TerminalDeliveryRetention = TimeSpan.FromDays(30);
@@ -420,25 +420,30 @@ Retention ownership and deletion rules:
 | `NotificationDeliveryRecord` | Channel consumer / Notification Center | Cleanup deletes only terminal `Succeeded`, `Suppressed`, or `DeadLetter` rows older than `TerminalDeliveryRetention`. `Pending`, retryable `Failed`, and leased `Claimed` rows are active work and are never time-deleted. |
 | `NotificationSubscription` | User subscription settings | Not time-based. Delete only by the exact subscription identity through the subscription APIs. |
 | `NotificationDeliveryPreference` / `NotificationQuietHours` | User delivery settings | Not time-based. Delete only by user/settings APIs; absence means default allow/no quiet hours. |
+| `NotificationRetentionCleanupCursor` | Notification Center retention cleanup | Internal scan state. One cursor per cleanup scope and record kind records the last keyset position so bounded runs can resume after retained, vetoed, or failing prefixes. |
 | ABP event inbox/outbox records | ABP distributed event bus | Use ABP's status-aware event-box cleanup windows. Do not add TTL deletes that bypass processed/in-progress state. |
 
 Applications can implement `INotificationRetentionDeletionContributor` to archive a candidate or veto deletion
 before a physical delete. If a contributor throws, cleanup records an error for that row, leaves the row intact,
-and continues with the next candidate. Cleanup reads candidates in keyset-ordered pages, so protected, vetoed, or
-temporarily failing old rows do not starve later eligible rows. Base notification deletion checks references again
-after contributors run, and its concurrency stamp prevents physical deletion from winning over a same-tenant
-retained reference that cancels the marker concurrently.
+and continues with the next candidate. Cleanup reads candidates in keyset order, caps each pass at
+`CleanupBatchSize` scanned candidates per record kind, and persists the last scan position in
+`NotificationRetentionCleanupCursor`, so protected, vetoed, or temporarily failing old rows do not starve later
+eligible rows. Base notification deletion checks references again after contributors run, and its concurrency stamp
+prevents physical deletion from winning over a same-tenant retained reference that cancels the marker concurrently.
 
 **Retention database upgrade:** EF Core hosts should add a host-owned migration for the new retention query indexes
 from `ConfigureNotificationCenter()`: `AbpNotifications.RetentionDeletionTime` and its concurrency stamp, old
 payload scans (`CreationTime`, `TenantId + CreationTime`, `TenantId + RetentionDeletionTime + CreationTime`), old
 read inbox scans and payload-reference checks (`State + CreationTime`, `TenantId + State + CreationTime`,
-`TenantId + NotificationId`), and terminal delivery scans/reference checks (`State + CompletedTime`,
-`TenantKey + State + CompletedTime`, `TenantKey + NotificationId`). MongoDB contexts create the equivalent indexes
-from `NotificationCenterMongoDbContext.CreateModel`; custom MongoDB contexts must mirror them. Existing
-notifications require no backfill: a null `RetentionDeletionTime` means "not marked." Take a normal database backup
-before first enabling destructive cleanup and verify restore procedures against both the notification
-tables/collections and ABP event-box collections.
+`TenantId + NotificationId`), terminal delivery scans/reference checks (`State + CompletedTime`,
+`TenantKey + State + CompletedTime`, `TenantKey + NotificationId`), and the
+`AbpNotificationRetentionCleanupCursors` table with its unique `IsTenantScoped + TenantKey + RecordKind` cursor
+index. MongoDB contexts create the equivalent indexes and cursor collection from
+`NotificationCenterMongoDbContext.CreateModel`; custom MongoDB contexts must mirror them. Existing notifications
+require no backfill: a null `RetentionDeletionTime` means "not marked", and missing cleanup cursors are created on
+the first non-dry-run cleanup pass. Take a normal database backup before first enabling destructive cleanup and
+verify restore procedures against both the notification tables/collections, cleanup cursor state, and ABP event-box
+collections.
 
 #### Per-user delivery preferences and quiet hours
 

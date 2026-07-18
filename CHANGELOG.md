@@ -17,7 +17,8 @@ changes.
   `INotificationRetentionDeletionContributor` hooks for archive/veto behavior. Cleanup deletes only expired read
   inbox rows, expired terminal delivery rows, and tenant-local orphan payload rows; base payload deletion is
   two-phase through `RetentionDeletionTime` so unread inbox rows, active delivery work, and concurrently
-  materialized retained references protect the base notification.
+  materialized retained references protect the base notification. Bounded cleanup passes persist
+  `NotificationRetentionCleanupCursor` scan state so retained or vetoed prefixes do not starve later candidates.
 - Added per-user permanent delivery preferences with explicit
   notification+channel > notification > channel > global > default-allow precedence, plus separate time-zone-aware
   quiet hours. Explicit and subscription recipients share the same post-inbox policy, Core-only mode defaults to
@@ -66,8 +67,9 @@ changes.
 
 - Notification Center database models add `RetentionDeletionTime` and a concurrency stamp to base notifications,
   plus retention query indexes for old payload scans, old read inbox scans, tenant-local payload-reference checks,
-  and terminal delivery cleanup. EF Core consumers should generate a host-owned migration before enabling
-  destructive cleanup; MongoDB contexts create the equivalent indexes from model initialization.
+  terminal delivery cleanup, and `AbpNotificationRetentionCleanupCursors` scan-state storage with a unique
+  scope/kind cursor index. EF Core consumers should generate a host-owned migration before enabling destructive
+  cleanup; MongoDB contexts create the equivalent collection and indexes from model initialization.
 - Notification Center database models add `AbpNotificationDeliveryPreferences`, `AbpNotificationQuietHours`, and
   delivery-ledger intent/not-before/reason fields. Consumer-owned EF Core migrations and MongoDB collection/index
   upgrades are required; no preference backfill is needed because missing rows mean allow/no quiet hours. Upgrade

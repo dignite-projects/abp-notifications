@@ -22,4 +22,6 @@ public interface INotificationCenterMongoDbContext :
     IMongoCollection<NotificationDeliveryPreference> NotificationDeliveryPreferences { get; }
 
     IMongoCollection<NotificationQuietHours> NotificationQuietHours { get; }
+
+    IMongoCollection<NotificationRetentionCleanupCursor> NotificationRetentionCleanupCursors { get; }
 }

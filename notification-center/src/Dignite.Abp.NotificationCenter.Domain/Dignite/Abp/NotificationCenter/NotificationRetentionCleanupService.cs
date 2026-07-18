@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Dignite.Abp.Notifications;
@@ -23,6 +26,7 @@ public class NotificationRetentionCleanupService :
     protected IRepository<Notification, Guid> NotificationRepository { get; }
     protected IRepository<UserNotification, Guid> UserNotificationRepository { get; }
     protected IRepository<NotificationDeliveryRecord, Guid> DeliveryRepository { get; }
+    protected IRepository<NotificationRetentionCleanupCursor, Guid> CleanupCursorRepository { get; }
     protected IAsyncQueryableExecuter AsyncExecuter { get; }
     protected IDataFilter DataFilter { get; }
     protected IClock Clock { get; }
@@ -35,6 +39,7 @@ public class NotificationRetentionCleanupService :
         IRepository<Notification, Guid> notificationRepository,
         IRepository<UserNotification, Guid> userNotificationRepository,
         IRepository<NotificationDeliveryRecord, Guid> deliveryRepository,
+        IRepository<NotificationRetentionCleanupCursor, Guid> cleanupCursorRepository,
         IAsyncQueryableExecuter asyncExecuter,
         IDataFilter dataFilter,
         IClock clock,
@@ -46,6 +51,7 @@ public class NotificationRetentionCleanupService :
         NotificationRepository = notificationRepository;
         UserNotificationRepository = userNotificationRepository;
         DeliveryRepository = deliveryRepository;
+        CleanupCursorRepository = cleanupCursorRepository;
         AsyncExecuter = asyncExecuter;
         DataFilter = dataFilter;
         Clock = clock;
@@ -93,8 +99,15 @@ public class NotificationRetentionCleanupService :
         }
 
         var cutoff = now - Options.Value.ReadUserNotificationRetention.Value;
-        DateTime? afterCreationTime = null;
-        Guid? afterId = null;
+        var cursor = await GetCleanupCursorAsync(
+            NotificationRetentionRecordKind.UserNotification,
+            request,
+            cancellationToken);
+        var afterCreationTime = cursor?.LastCreationTime;
+        var afterId = cursor?.LastRecordId;
+        var hasWrapped = false;
+        var shouldResetCursor = false;
+        var scannedBefore = result.ScannedUserNotifications;
 
         while (result.ScannedUserNotifications < batchSize)
         {
@@ -108,6 +121,18 @@ public class NotificationRetentionCleanupService :
                 cancellationToken);
             if (candidates.Count == 0)
             {
+                if (!hasWrapped &&
+                    afterCreationTime.HasValue &&
+                    afterId.HasValue &&
+                    result.ScannedUserNotifications == scannedBefore)
+                {
+                    afterCreationTime = null;
+                    afterId = null;
+                    hasWrapped = true;
+                    shouldResetCursor = true;
+                    continue;
+                }
+
                 break;
             }
 
@@ -137,6 +162,15 @@ public class NotificationRetentionCleanupService :
                 }
             }
         }
+
+        await SaveCleanupCursorAsync(
+            NotificationRetentionRecordKind.UserNotification,
+            request,
+            now,
+            afterCreationTime,
+            afterId,
+            result.ScannedUserNotifications > scannedBefore || shouldResetCursor,
+            cancellationToken);
     }
 
     protected virtual async Task CleanupDeliveriesAsync(
@@ -152,8 +186,15 @@ public class NotificationRetentionCleanupService :
         }
 
         var cutoff = now - Options.Value.TerminalDeliveryRetention.Value;
-        DateTime? afterCreationTime = null;
-        Guid? afterId = null;
+        var cursor = await GetCleanupCursorAsync(
+            NotificationRetentionRecordKind.NotificationDelivery,
+            request,
+            cancellationToken);
+        var afterCreationTime = cursor?.LastCreationTime;
+        var afterId = cursor?.LastRecordId;
+        var hasWrapped = false;
+        var shouldResetCursor = false;
+        var scannedBefore = result.ScannedDeliveries;
 
         while (result.ScannedDeliveries < batchSize)
         {
@@ -167,6 +208,18 @@ public class NotificationRetentionCleanupService :
                 cancellationToken);
             if (candidates.Count == 0)
             {
+                if (!hasWrapped &&
+                    afterCreationTime.HasValue &&
+                    afterId.HasValue &&
+                    result.ScannedDeliveries == scannedBefore)
+                {
+                    afterCreationTime = null;
+                    afterId = null;
+                    hasWrapped = true;
+                    shouldResetCursor = true;
+                    continue;
+                }
+
                 break;
             }
 
@@ -196,6 +249,15 @@ public class NotificationRetentionCleanupService :
                 }
             }
         }
+
+        await SaveCleanupCursorAsync(
+            NotificationRetentionRecordKind.NotificationDelivery,
+            request,
+            now,
+            afterCreationTime,
+            afterId,
+            result.ScannedDeliveries > scannedBefore || shouldResetCursor,
+            cancellationToken);
     }
 
     protected virtual async Task CleanupNotificationsAsync(
@@ -211,8 +273,15 @@ public class NotificationRetentionCleanupService :
         }
 
         var cutoff = now - Options.Value.OrphanNotificationRetention.Value;
-        DateTime? afterCreationTime = null;
-        Guid? afterId = null;
+        var cursor = await GetCleanupCursorAsync(
+            NotificationRetentionRecordKind.Notification,
+            request,
+            cancellationToken);
+        var afterCreationTime = cursor?.LastCreationTime;
+        var afterId = cursor?.LastRecordId;
+        var hasWrapped = false;
+        var shouldResetCursor = false;
+        var scannedBefore = result.ScannedNotifications;
 
         while (result.ScannedNotifications < batchSize)
         {
@@ -226,6 +295,18 @@ public class NotificationRetentionCleanupService :
                 cancellationToken);
             if (candidates.Count == 0)
             {
+                if (!hasWrapped &&
+                    afterCreationTime.HasValue &&
+                    afterId.HasValue &&
+                    result.ScannedNotifications == scannedBefore)
+                {
+                    afterCreationTime = null;
+                    afterId = null;
+                    hasWrapped = true;
+                    shouldResetCursor = true;
+                    continue;
+                }
+
                 break;
             }
 
@@ -256,6 +337,15 @@ public class NotificationRetentionCleanupService :
                 }
             }
         }
+
+        await SaveCleanupCursorAsync(
+            NotificationRetentionRecordKind.Notification,
+            request,
+            now,
+            afterCreationTime,
+            afterId,
+            result.ScannedNotifications > scannedBefore || shouldResetCursor,
+            cancellationToken);
     }
 
     protected virtual async Task<List<UserNotification>> GetUserNotificationCandidatesAsync(
@@ -612,6 +702,88 @@ public class NotificationRetentionCleanupService :
             delivery.TenantKey == tenantKey), cancellationToken);
     }
 
+    protected virtual async Task<NotificationRetentionCleanupCursor?> GetCleanupCursorAsync(
+        NotificationRetentionRecordKind recordKind,
+        NotificationRetentionCleanupRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request.IsDryRun)
+        {
+            return null;
+        }
+
+        using var unitOfWork = UnitOfWorkManager.Begin(requiresNew: true, isTransactional: false);
+        using (DataFilter.Disable<IMultiTenant>())
+        {
+            var cursor = await CleanupCursorRepository.FindAsync(
+                CreateCleanupCursorId(recordKind, request),
+                cancellationToken: cancellationToken);
+            await unitOfWork.CompleteAsync(cancellationToken);
+            return cursor;
+        }
+    }
+
+    protected virtual async Task SaveCleanupCursorAsync(
+        NotificationRetentionRecordKind recordKind,
+        NotificationRetentionCleanupRequest request,
+        DateTime now,
+        DateTime? afterCreationTime,
+        Guid? afterId,
+        bool shouldSave,
+        CancellationToken cancellationToken)
+    {
+        if (request.IsDryRun || !shouldSave)
+        {
+            return;
+        }
+
+        try
+        {
+            using var unitOfWork = UnitOfWorkManager.Begin(requiresNew: true, isTransactional: false);
+            using (DataFilter.Disable<IMultiTenant>())
+            {
+                var cursorId = CreateCleanupCursorId(recordKind, request);
+                var cursor = await CleanupCursorRepository.FindAsync(cursorId, cancellationToken: cancellationToken);
+                if (cursor == null)
+                {
+                    if (!afterCreationTime.HasValue || !afterId.HasValue)
+                    {
+                        await unitOfWork.CompleteAsync(cancellationToken);
+                        return;
+                    }
+
+                    cursor = new NotificationRetentionCleanupCursor(
+                        cursorId,
+                        recordKind,
+                        request.IsTenantScoped,
+                        request.TenantId,
+                        now);
+                    cursor.MoveTo(afterCreationTime.Value, afterId.Value, now);
+                    await CleanupCursorRepository.InsertAsync(cursor, autoSave: true, cancellationToken: cancellationToken);
+                }
+                else if (afterCreationTime.HasValue && afterId.HasValue)
+                {
+                    cursor.MoveTo(afterCreationTime.Value, afterId.Value, now);
+                    await CleanupCursorRepository.UpdateAsync(cursor, autoSave: true, cancellationToken: cancellationToken);
+                }
+                else
+                {
+                    cursor.Reset(now);
+                    await CleanupCursorRepository.UpdateAsync(cursor, autoSave: true, cancellationToken: cancellationToken);
+                }
+
+                await unitOfWork.CompleteAsync(cancellationToken);
+            }
+        }
+        catch (Exception exception) when (IsRecoverableCleanupException(exception, cancellationToken))
+        {
+            Logger.LogWarning(
+                exception,
+                "Retention cleanup failed to persist the {RecordKind} scan cursor.",
+                recordKind);
+        }
+    }
+
     protected virtual async Task SetOldestRetainedTimestampsAsync(
         NotificationRetentionCleanupRequest request,
         NotificationRetentionCleanupResult result,
@@ -777,6 +949,37 @@ public class NotificationRetentionCleanupService :
     private static DateTime Min(DateTime? current, DateTime candidate)
     {
         return !current.HasValue || candidate < current.Value ? candidate : current.Value;
+    }
+
+    private static Guid CreateCleanupCursorId(
+        NotificationRetentionRecordKind recordKind,
+        NotificationRetentionCleanupRequest request)
+    {
+        var tenantKey = request.IsTenantScoped
+            ? (request.TenantId ?? Guid.Empty).ToString("N", CultureInfo.InvariantCulture)
+            : "all-tenants";
+        var hash = ComputeHash(
+            "notification-retention-cleanup-cursor",
+            recordKind.ToString(),
+            request.IsTenantScoped ? "tenant-scoped" : "global",
+            tenantKey);
+        var guidBytes = new byte[16];
+        Array.Copy(hash, guidBytes, guidBytes.Length);
+        return new Guid(guidBytes);
+    }
+
+    private static byte[] ComputeHash(params string[] parts)
+    {
+        var canonical = new StringBuilder();
+        foreach (var part in parts)
+        {
+            canonical.Append(part.Length.ToString(CultureInfo.InvariantCulture));
+            canonical.Append(':');
+            canonical.Append(part);
+        }
+
+        using var sha256 = SHA256.Create();
+        return sha256.ComputeHash(Encoding.UTF8.GetBytes(canonical.ToString()));
     }
 
     private static void RecordMetrics(NotificationRetentionCleanupResult result)

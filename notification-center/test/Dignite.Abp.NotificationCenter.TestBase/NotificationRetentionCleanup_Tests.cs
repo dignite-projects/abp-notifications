@@ -222,6 +222,7 @@ public abstract class NotificationRetentionCleanup_Tests<TStartupModule> : Notif
             GetRequiredService<IRepository<Notification, Guid>>(),
             GetRequiredService<IRepository<UserNotification, Guid>>(),
             GetRequiredService<IRepository<NotificationDeliveryRecord, Guid>>(),
+            GetRequiredService<IRepository<NotificationRetentionCleanupCursor, Guid>>(),
             GetRequiredService<IAsyncQueryableExecuter>(),
             GetRequiredService<IDataFilter>(),
             GetRequiredService<IClock>(),
@@ -274,19 +275,28 @@ public abstract class NotificationRetentionCleanup_Tests<TStartupModule> : Notif
     }
 
     [Fact]
-    public async Task Batch_pages_continue_past_skipped_candidates_within_scan_budget()
+    public async Task Cursor_continues_after_budget_is_filled_by_skipped_candidates()
     {
         var now = new DateTime(2026, 7, 18, 12, 0, 0, DateTimeKind.Utc);
-        var protectedId = Guid.NewGuid();
-        var protectedInboxId = Guid.NewGuid();
+        var firstProtectedId = Guid.NewGuid();
+        var firstProtectedInboxId = Guid.NewGuid();
+        var secondProtectedId = Guid.NewGuid();
+        var secondProtectedInboxId = Guid.NewGuid();
         var orphanId = Guid.NewGuid();
-        await InsertNotificationAsync(protectedId, now.AddDays(-122));
+        await InsertNotificationAsync(firstProtectedId, now.AddDays(-122));
         await InsertUserNotificationAsync(
-            protectedInboxId,
-            protectedId,
+            firstProtectedInboxId,
+            firstProtectedId,
             Guid.NewGuid(),
             UserNotificationState.Unread,
             now.AddDays(-122));
+        await InsertNotificationAsync(secondProtectedId, now.AddDays(-121));
+        await InsertUserNotificationAsync(
+            secondProtectedInboxId,
+            secondProtectedId,
+            Guid.NewGuid(),
+            UserNotificationState.Unread,
+            now.AddDays(-121));
         await InsertNotificationAsync(orphanId, now.AddDays(-120));
 
         var firstPass = await CleanupAsync(now, batchSize: 2);
@@ -296,10 +306,19 @@ public abstract class NotificationRetentionCleanup_Tests<TStartupModule> : Notif
         firstPass.SkippedNotifications.ShouldBe(2);
         (await ExistsAsync<Notification>(orphanId)).ShouldBeTrue();
 
-        var secondPass = await CleanupAsync(now.AddMinutes(6), batchSize: 2);
+        var secondPass = await CleanupAsync(now, batchSize: 2);
 
-        secondPass.DeletedNotifications.ShouldBe(1);
-        (await ExistsAsync<Notification>(protectedId)).ShouldBeTrue();
+        secondPass.ScannedNotifications.ShouldBe(1);
+        secondPass.DeletedNotifications.ShouldBe(0);
+        secondPass.SkippedNotifications.ShouldBe(1);
+        (await ExistsAsync<Notification>(orphanId)).ShouldBeTrue();
+
+        await CleanupAsync(now.AddMinutes(6), batchSize: 2);
+        var fourthPass = await CleanupAsync(now.AddMinutes(6), batchSize: 2);
+
+        fourthPass.DeletedNotifications.ShouldBe(1);
+        (await ExistsAsync<Notification>(firstProtectedId)).ShouldBeTrue();
+        (await ExistsAsync<Notification>(secondProtectedId)).ShouldBeTrue();
         (await ExistsAsync<Notification>(orphanId)).ShouldBeFalse();
     }
 
@@ -479,6 +498,7 @@ public abstract class NotificationRetentionCleanup_Tests<TStartupModule> : Notif
             IRepository<Notification, Guid> notificationRepository,
             IRepository<UserNotification, Guid> userNotificationRepository,
             IRepository<NotificationDeliveryRecord, Guid> deliveryRepository,
+            IRepository<NotificationRetentionCleanupCursor, Guid> cleanupCursorRepository,
             IAsyncQueryableExecuter asyncExecuter,
             IDataFilter dataFilter,
             IClock clock,
@@ -491,6 +511,7 @@ public abstract class NotificationRetentionCleanup_Tests<TStartupModule> : Notif
                 notificationRepository,
                 userNotificationRepository,
                 deliveryRepository,
+                cleanupCursorRepository,
                 asyncExecuter,
                 dataFilter,
                 clock,
