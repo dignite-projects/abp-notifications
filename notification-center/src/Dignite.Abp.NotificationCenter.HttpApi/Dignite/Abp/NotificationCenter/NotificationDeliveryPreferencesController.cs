@@ -38,23 +38,4 @@ public class NotificationDeliveryPreferencesController :
     {
         return AppService.DeleteAsync(input);
     }
-
-    [HttpGet("quiet-hours")]
-    public virtual Task<NotificationQuietHoursDto?> GetQuietHoursAsync()
-    {
-        return AppService.GetQuietHoursAsync();
-    }
-
-    [HttpPut("quiet-hours")]
-    public virtual Task<NotificationQuietHoursDto> SetQuietHoursAsync(
-        [FromBody] SetNotificationQuietHoursDto input)
-    {
-        return AppService.SetQuietHoursAsync(input);
-    }
-
-    [HttpDelete("quiet-hours")]
-    public virtual Task DeleteQuietHoursAsync()
-    {
-        return AppService.DeleteQuietHoursAsync();
-    }
 }

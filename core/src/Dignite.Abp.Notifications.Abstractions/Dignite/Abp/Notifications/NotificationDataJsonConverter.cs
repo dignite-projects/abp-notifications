@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
@@ -7,14 +6,13 @@ using System.Text.Json.Serialization;
 namespace Dignite.Abp.Notifications;
 
 /// <summary>
-/// Polymorphic (de)serializer for <see cref="NotificationData"/>. It owns the stable <c>type</c> +
-/// <c>schemaVersion</c> envelope, runs deterministic JSON upcasters, and never resolves CLR names from JSON.
-/// The one-argument constructor remains strict; durable/event/HTTP boundaries explicitly opt into tolerant reads.
+/// Polymorphic (de)serializer for <see cref="NotificationData"/>. It owns the stable <c>type</c> discriminator
+/// envelope and never resolves CLR names from JSON. The one-argument constructor remains strict; durable/event/HTTP
+/// boundaries explicitly opt into tolerant reads that fall back to <see cref="UnsupportedNotificationData"/>.
 /// </summary>
 public sealed class NotificationDataJsonConverter : JsonConverter<NotificationData>
 {
     public const string DiscriminatorPropertyName = "type";
-    public const string SchemaVersionPropertyName = "schemaVersion";
 
     private readonly INotificationDataTypeRegistry _registry;
     private readonly NotificationDataReadMode _readMode;
@@ -90,19 +88,6 @@ public sealed class NotificationDataJsonConverter : JsonConverter<NotificationDa
             }
 
             var discriminator = typeElement.GetString()!;
-            var schemaVersion = NotificationDataSchema.LegacyVersion;
-            if (root.TryGetProperty(SchemaVersionPropertyName, out var versionElement) &&
-                (versionElement.ValueKind != JsonValueKind.Number ||
-                 !versionElement.TryGetInt32(out schemaVersion) ||
-                 schemaVersion < NotificationDataSchema.LegacyVersion))
-            {
-                return HandleFailure(
-                    UnsupportedNotificationDataReason.MalformedPayload,
-                    $"NotificationData '{discriminator}' has an invalid '{SchemaVersionPropertyName}'.",
-                    rawJson,
-                    discriminator);
-            }
-
             var clrType = _registry.GetTypeOrNull(discriminator);
             if (clrType == null)
             {
@@ -110,20 +95,7 @@ public sealed class NotificationDataJsonConverter : JsonConverter<NotificationDa
                     UnsupportedNotificationDataReason.UnknownDiscriminator,
                     $"Unknown notification data type '{discriminator}'. Register it via NotificationDataOptions.",
                     rawJson,
-                    discriminator,
-                    schemaVersion);
-            }
-
-            var currentVersion = _registry.GetCurrentSchemaVersion(discriminator);
-            if (schemaVersion > currentVersion)
-            {
-                return HandleFailure(
-                    UnsupportedNotificationDataReason.UnsupportedFutureVersion,
-                    $"Notification data '{discriminator}' schema v{schemaVersion} is newer than this consumer's " +
-                    $"current schema v{currentVersion}.",
-                    rawJson,
-                    discriminator,
-                    schemaVersion);
+                    discriminator);
             }
 
             JsonObject payload;
@@ -141,28 +113,7 @@ public sealed class NotificationDataJsonConverter : JsonConverter<NotificationDa
                     $"Notification data '{discriminator}' could not be read as a JSON object.",
                     rawJson,
                     discriminator,
-                    schemaVersion,
                     exception);
-            }
-
-            if (schemaVersion < currentVersion)
-            {
-                try
-                {
-                    payload = _registry.Upcast(discriminator, schemaVersion, payload);
-                    EnsureNoReservedEnvelopeMembers(payload);
-                }
-                catch (Exception exception) when (IsRecoverableReadException(exception))
-                {
-                    return HandleFailure(
-                        UnsupportedNotificationDataReason.UpcastFailed,
-                        $"Notification data '{discriminator}' failed to upcast from schema v{schemaVersion} " +
-                        $"to v{currentVersion}.",
-                        rawJson,
-                        discriminator,
-                        schemaVersion,
-                        exception);
-                }
             }
 
             try
@@ -173,22 +124,18 @@ public sealed class NotificationDataJsonConverter : JsonConverter<NotificationDa
                     GetInnerOptions(options));
                 if (data == null)
                 {
-                    throw new JsonException(
-                        $"Notification data '{discriminator}' deserialized to null.");
+                    throw new JsonException($"Notification data '{discriminator}' deserialized to null.");
                 }
 
-                data.SchemaVersion = currentVersion;
                 return data;
             }
             catch (Exception exception) when (IsRecoverableReadException(exception))
             {
                 return HandleFailure(
                     UnsupportedNotificationDataReason.MalformedPayload,
-                    $"Notification data '{discriminator}' schema v{schemaVersion} is malformed for the " +
-                    $"registered current model v{currentVersion}.",
+                    $"Notification data '{discriminator}' is malformed for the registered model.",
                     rawJson,
                     discriminator,
-                    schemaVersion,
                     exception);
             }
         }
@@ -204,7 +151,6 @@ public sealed class NotificationDataJsonConverter : JsonConverter<NotificationDa
             ?? throw new JsonException(
                 $"Notification data type '{clrType.FullName}' is not registered. " +
                 "Annotate it with [NotificationDataType(\"...\")] and register it via NotificationDataOptions.");
-        var currentVersion = _registry.GetCurrentSchemaVersion(discriminator);
 
         using var document = JsonSerializer.SerializeToDocument(value, clrType, GetInnerOptions(options));
         if (document.RootElement.ValueKind != JsonValueKind.Object)
@@ -215,10 +161,9 @@ public sealed class NotificationDataJsonConverter : JsonConverter<NotificationDa
 
         writer.WriteStartObject();
         writer.WriteString(DiscriminatorPropertyName, discriminator);
-        writer.WriteNumber(SchemaVersionPropertyName, currentVersion);
         foreach (var property in document.RootElement.EnumerateObject())
         {
-            if (IsReservedEnvelopeMember(property.Name))
+            if (string.Equals(property.Name, DiscriminatorPropertyName, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
@@ -234,23 +179,16 @@ public sealed class NotificationDataJsonConverter : JsonConverter<NotificationDa
         string message,
         string rawJson,
         string? discriminator = null,
-        int? schemaVersion = null,
         Exception? innerException = null)
     {
         if (_readMode == NotificationDataReadMode.Strict)
         {
-            throw new NotificationDataReadException(
-                reason,
-                message,
-                discriminator,
-                schemaVersion,
-                innerException);
+            throw new NotificationDataReadException(reason, message, discriminator, innerException);
         }
 
         return new UnsupportedNotificationData
         {
             OriginalDiscriminator = discriminator,
-            OriginalSchemaVersion = schemaVersion,
             Reason = reason,
             RawJson = rawJson
         };
@@ -261,7 +199,7 @@ public sealed class NotificationDataJsonConverter : JsonConverter<NotificationDa
         var payload = new JsonObject();
         foreach (var property in root.EnumerateObject())
         {
-            if (IsReservedEnvelopeMember(property.Name))
+            if (string.Equals(property.Name, DiscriminatorPropertyName, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
@@ -270,25 +208,6 @@ public sealed class NotificationDataJsonConverter : JsonConverter<NotificationDa
         }
 
         return payload;
-    }
-
-    private static void EnsureNoReservedEnvelopeMembers(JsonObject payload)
-    {
-        var reservedMember = payload
-            .Select(pair => pair.Key)
-            .FirstOrDefault(IsReservedEnvelopeMember);
-        if (reservedMember != null)
-        {
-            throw new InvalidOperationException(
-                $"An upcaster returned reserved envelope member '{reservedMember}'. " +
-                $"Upcasters may only transform payload members.");
-        }
-    }
-
-    private static bool IsReservedEnvelopeMember(string propertyName)
-    {
-        return string.Equals(propertyName, DiscriminatorPropertyName, StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(propertyName, SchemaVersionPropertyName, StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsRecoverableReadException(Exception exception)

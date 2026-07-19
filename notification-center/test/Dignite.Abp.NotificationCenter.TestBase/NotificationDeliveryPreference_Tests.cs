@@ -11,12 +11,11 @@ using Volo.Abp.Domain.Repositories;
 using Volo.Abp.EventBus.Distributed;
 using Volo.Abp.Modularity;
 using Volo.Abp.MultiTenancy;
-using Volo.Abp.Timing;
 using Xunit;
 
 namespace Dignite.Abp.NotificationCenter;
 
-/// <summary>Provider-parity scenarios for persistent user delivery preferences.</summary>
+/// <summary>Provider-parity scenarios for persistent per-channel user delivery preferences (opt-out).</summary>
 public abstract class NotificationDeliveryPreference_Tests<TStartupModule> : NotificationCenterTestBase<TStartupModule>
     where TStartupModule : IAbpModule
 {
@@ -44,10 +43,8 @@ public abstract class NotificationDeliveryPreference_Tests<TStartupModule> : Not
                     new NotificationDeliveryPreferenceCandidate(userId, "SignalR")
                 },
                 NotificationDeliveryPreferenceBehavior.RespectPreferences);
-            decisions.Single(decision => decision.Channel == "EMAIL").Intent
-                .ShouldBe(NotificationDeliveryIntent.Deliver);
-            decisions.Single(decision => decision.Channel == "SIGNALR").Intent
-                .ShouldBe(NotificationDeliveryIntent.Suppress);
+            decisions.Single(decision => decision.Channel == "EMAIL").ShouldDeliver.ShouldBeTrue();
+            decisions.Single(decision => decision.Channel == "SIGNALR").ShouldDeliver.ShouldBeFalse();
 
             var other = await GetRequiredService<INotificationDeliveryPreferenceEvaluator>().EvaluateAsync(
                 "other.notification",
@@ -58,10 +55,8 @@ public abstract class NotificationDeliveryPreference_Tests<TStartupModule> : Not
                     new NotificationDeliveryPreferenceCandidate(userId, "SignalR")
                 },
                 NotificationDeliveryPreferenceBehavior.RespectPreferences);
-            other.Single(decision => decision.Channel == "EMAIL").Intent
-                .ShouldBe(NotificationDeliveryIntent.Deliver);
-            other.Single(decision => decision.Channel == "SIGNALR").Intent
-                .ShouldBe(NotificationDeliveryIntent.Suppress);
+            other.Single(decision => decision.Channel == "EMAIL").ShouldDeliver.ShouldBeTrue();
+            other.Single(decision => decision.Channel == "SIGNALR").ShouldDeliver.ShouldBeFalse();
         });
 
         await WithUnitOfWorkAsync(async () =>
@@ -72,7 +67,7 @@ public abstract class NotificationDeliveryPreference_Tests<TStartupModule> : Not
                 null,
                 new[] { new NotificationDeliveryPreferenceCandidate(defaultUser, "Email") },
                 NotificationDeliveryPreferenceBehavior.RespectPreferences)).Single();
-            decision.Intent.ShouldBe(NotificationDeliveryIntent.Deliver);
+            decision.ShouldDeliver.ShouldBeTrue();
         });
     }
 
@@ -107,13 +102,14 @@ public abstract class NotificationDeliveryPreference_Tests<TStartupModule> : Not
             new[] { explicitUser }));
         await WithUnitOfWorkAsync(() => distributor.DistributeAsync(subscriptionNotification));
 
-        published.Count.ShouldBe(4);
+        // Email is opted out for both users, so only the SignalR channel event is published for each; the Email
+        // opt-out produces no event at all. The inbox row is still written for both users.
+        published.Count.ShouldBe(2);
+        published.ShouldAllBe(item => item.Channel == "SignalR");
         foreach (var userId in new[] { explicitUser, subscriber })
         {
-            published.Single(item => item.UserId == userId && item.Channel == "Email").Intent
-                .ShouldBe(NotificationDeliveryIntent.Suppress);
-            published.Single(item => item.UserId == userId && item.Channel == "SignalR").Intent
-                .ShouldBe(NotificationDeliveryIntent.Deliver);
+            published.ShouldContain(item => item.UserId == userId && item.Channel == "SignalR");
+            published.ShouldNotContain(item => item.UserId == userId && item.Channel == "Email");
         }
 
         await WithUnitOfWorkAsync(async () =>
@@ -125,40 +121,7 @@ public abstract class NotificationDeliveryPreference_Tests<TStartupModule> : Not
     }
 
     [Fact]
-    public async Task Quiet_hours_delay_normal_work_while_mandatory_work_is_immediate()
-    {
-        var userId = Guid.NewGuid();
-        var clock = GetRequiredService<IClock>();
-        var now = clock.Now.ToUniversalTime();
-        var minute = now.Hour * 60 + now.Minute;
-        await WithUnitOfWorkAsync(() => GetRequiredService<NotificationDeliveryPreferenceManager>()
-            .SetQuietHoursAsync(userId, (minute + 1439) % 1440, (minute + 10) % 1440, "UTC"));
-
-        await WithUnitOfWorkAsync(async () =>
-        {
-            var evaluator = GetRequiredService<INotificationDeliveryPreferenceEvaluator>();
-            var candidates = new[] { new NotificationDeliveryPreferenceCandidate(userId, "Email") };
-            var normal = (await evaluator.EvaluateAsync(
-                "order.shipped",
-                null,
-                candidates,
-                NotificationDeliveryPreferenceBehavior.RespectPreferences)).Single();
-            normal.Intent.ShouldBe(NotificationDeliveryIntent.Delay);
-            normal.ReasonCode.ShouldBe(NotificationDeliveryPreferenceReasonCodes.QuietHours);
-            normal.NotBefore.ShouldNotBeNull().ShouldBeGreaterThan(now);
-
-            var mandatory = (await evaluator.EvaluateAsync(
-                "mandatory.test",
-                null,
-                candidates,
-                NotificationDeliveryPreferenceBehavior.Mandatory)).Single();
-            mandatory.Intent.ShouldBe(NotificationDeliveryIntent.Deliver);
-            mandatory.NotBefore.ShouldBeNull();
-        });
-    }
-
-    [Fact]
-    public async Task Preferences_and_quiet_hours_are_tenant_isolated()
+    public async Task Preferences_are_tenant_isolated()
     {
         var tenantA = Guid.NewGuid();
         var tenantB = Guid.NewGuid();
@@ -175,7 +138,7 @@ public abstract class NotificationDeliveryPreference_Tests<TStartupModule> : Not
             await WithUnitOfWorkAsync(async () =>
             {
                 var decision = await EvaluateOneAsync(tenantA, userId);
-                decision.Intent.ShouldBe(NotificationDeliveryIntent.Suppress);
+                decision.ShouldDeliver.ShouldBeFalse();
             });
         }
 
@@ -184,13 +147,13 @@ public abstract class NotificationDeliveryPreference_Tests<TStartupModule> : Not
             await WithUnitOfWorkAsync(async () =>
             {
                 var decision = await EvaluateOneAsync(tenantB, userId);
-                decision.Intent.ShouldBe(NotificationDeliveryIntent.Deliver);
+                decision.ShouldDeliver.ShouldBeTrue();
             });
         }
     }
 
     [Fact]
-    public async Task Current_user_API_round_trips_rules_and_quiet_hours_without_cross_user_access()
+    public async Task Current_user_API_round_trips_rules_without_cross_user_access()
     {
         var firstUser = Guid.NewGuid();
         var secondUser = Guid.NewGuid();
@@ -204,12 +167,6 @@ public abstract class NotificationDeliveryPreference_Tests<TStartupModule> : Not
                     Channel = "Email",
                     IsDeliveryEnabled = false
                 });
-                await appService.SetQuietHoursAsync(new SetNotificationQuietHoursDto
-                {
-                    StartMinute = 1320,
-                    EndMinute = 420,
-                    TimeZoneId = "UTC"
-                });
             });
 
             await WithUnitOfWorkAsync(async () =>
@@ -218,8 +175,6 @@ public abstract class NotificationDeliveryPreference_Tests<TStartupModule> : Not
                 var rule = (await appService.GetListAsync()).Items.Single();
                 rule.Channel.ShouldBe("EMAIL");
                 rule.IsDeliveryEnabled.ShouldBeFalse();
-                var quietHours = await appService.GetQuietHoursAsync();
-                quietHours.ShouldNotBeNull().StartMinute.ShouldBe(1320);
             });
         }
 
@@ -229,7 +184,6 @@ public abstract class NotificationDeliveryPreference_Tests<TStartupModule> : Not
             {
                 var appService = GetRequiredService<INotificationDeliveryPreferenceAppService>();
                 (await appService.GetListAsync()).Items.ShouldBeEmpty();
-                (await appService.GetQuietHoursAsync()).ShouldBeNull();
             });
         }
     }

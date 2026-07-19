@@ -13,13 +13,11 @@ public class AbpNotificationsAbstractionsModule : AbpModule
 {
     public override void ConfigureServices(ServiceConfigurationContext context)
     {
+        // Force options materialization at startup so duplicate/ambiguous discriminator registrations fail fast
+        // (the discriminator dictionary rejects conflicts as they are added).
         context.Services
             .AddOptions<NotificationDataOptions>()
-            .Validate(options =>
-            {
-                options.ValidateEvolution();
-                return true;
-            })
+            .Validate(_ => true)
             .ValidateOnStart();
 
         Configure<NotificationDataOptions>(options =>
@@ -30,7 +28,7 @@ public class AbpNotificationsAbstractionsModule : AbpModule
         });
 
         // Abstractions is the deployment boundary shared by Core and independently hosted Notifier plugins.
-        // Register here (once) so old/new distributed-event consumers get the same tolerant evolution behavior.
+        // Register here (once) so old/new distributed-event consumers get the same tolerant read behavior.
         context.Services
             .AddOptions<AbpSystemTextJsonSerializerOptions>()
             .Configure<INotificationDataTypeRegistry>((options, registry) =>

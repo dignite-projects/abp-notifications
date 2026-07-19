@@ -19,19 +19,15 @@ public class NotificationDeliveryPreferenceAppService :
 
     protected IRepository<NotificationDeliveryPreference, Guid> PreferenceRepository { get; }
 
-    protected IRepository<NotificationQuietHours, Guid> QuietHoursRepository { get; }
-
     protected INotificationDefinitionManager DefinitionManager { get; }
 
     public NotificationDeliveryPreferenceAppService(
         NotificationDeliveryPreferenceManager preferenceManager,
         IRepository<NotificationDeliveryPreference, Guid> preferenceRepository,
-        IRepository<NotificationQuietHours, Guid> quietHoursRepository,
         INotificationDefinitionManager definitionManager)
     {
         PreferenceManager = preferenceManager;
         PreferenceRepository = preferenceRepository;
-        QuietHoursRepository = quietHoursRepository;
         DefinitionManager = definitionManager;
     }
 
@@ -66,30 +62,6 @@ public class NotificationDeliveryPreferenceAppService :
         // definition was later renamed or removed would otherwise be undeletable forever. The manager computes
         // the same normalized identity keys from the raw scope, so this targets exactly the row SetPreference created.
         return PreferenceManager.DeleteAsync(CurrentUser.GetId(), input.NotificationName, input.Channel);
-    }
-
-    public virtual async Task<NotificationQuietHoursDto?> GetQuietHoursAsync()
-    {
-        var id = NotificationDeliveryPreferenceIdentity.CreateQuietHoursId(
-            CurrentTenant.Id,
-            CurrentUser.GetId());
-        var schedule = await QuietHoursRepository.FindAsync(id);
-        return schedule == null ? null : MapQuietHours(schedule);
-    }
-
-    public virtual async Task<NotificationQuietHoursDto> SetQuietHoursAsync(SetNotificationQuietHoursDto input)
-    {
-        var schedule = await PreferenceManager.SetQuietHoursAsync(
-            CurrentUser.GetId(),
-            input.StartMinute,
-            input.EndMinute,
-            input.TimeZoneId);
-        return MapQuietHours(schedule);
-    }
-
-    public virtual Task DeleteQuietHoursAsync()
-    {
-        return PreferenceManager.DeleteQuietHoursAsync(CurrentUser.GetId());
     }
 
     protected virtual (string? NotificationName, string? Channel) ValidateScope(
@@ -128,16 +100,6 @@ public class NotificationDeliveryPreferenceAppService :
             NotificationName = preference.NotificationName,
             Channel = preference.Channel,
             IsDeliveryEnabled = preference.IsDeliveryEnabled
-        };
-    }
-
-    private static NotificationQuietHoursDto MapQuietHours(NotificationQuietHours schedule)
-    {
-        return new NotificationQuietHoursDto
-        {
-            StartMinute = schedule.StartMinute,
-            EndMinute = schedule.EndMinute,
-            TimeZoneId = schedule.TimeZoneId
         };
     }
 }

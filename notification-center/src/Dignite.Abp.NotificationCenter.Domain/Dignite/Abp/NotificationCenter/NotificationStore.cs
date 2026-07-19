@@ -147,12 +147,6 @@ public class NotificationStore : INotificationStore, ITransientDependency
                 return;
             }
 
-            foreach (var group in entities
-                         .GroupBy(entity => new { entity.TenantId, entity.NotificationId }))
-            {
-                await CancelRetentionDeletionAsync(group.Key.NotificationId, group.Key.TenantId, cancellationToken);
-            }
-
             try
             {
                 await BatchPersistence.InsertAsync(entities, cancellationToken);
@@ -504,23 +498,6 @@ public class NotificationStore : INotificationStore, ITransientDependency
     protected virtual NotificationData? DeserializeDurableData(string? json)
     {
         return DataSerializer.Deserialize(json, NotificationDataReadMode.Tolerant);
-    }
-
-    protected virtual async Task CancelRetentionDeletionAsync(
-        Guid notificationId,
-        Guid? tenantId,
-        CancellationToken cancellationToken)
-    {
-        var notification = await NotificationRepository.FirstOrDefaultAsync(
-            entity => entity.Id == notificationId && entity.TenantId == tenantId,
-            cancellationToken: cancellationToken);
-        if (notification?.RetentionDeletionTime == null)
-        {
-            return;
-        }
-
-        notification.CancelRetentionDeletion();
-        await NotificationRepository.UpdateAsync(notification, autoSave: true, cancellationToken: cancellationToken);
     }
 
     protected virtual NotificationSubscriptionInfo MapToSubscriptionInfo(NotificationSubscription s)

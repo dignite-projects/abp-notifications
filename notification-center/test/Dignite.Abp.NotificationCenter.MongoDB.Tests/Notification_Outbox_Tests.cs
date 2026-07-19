@@ -23,7 +23,7 @@ using Xunit;
 
 namespace Dignite.Abp.NotificationCenter;
 
-/// <summary>Runs the transactional event-box contract and MongoDB capability scenarios on real topologies.</summary>
+/// <summary>Runs the transactional event-box contract on real topologies.</summary>
 [Collection(MongoTestCollection.Name)]
 public class Notification_Outbox_Tests :
     Notification_Outbox_Tests<AbpNotificationCenterMongoDbOutboxTestModule>
@@ -60,28 +60,6 @@ public class Notification_Outbox_Tests :
             typeof(IMongoDbContextEventOutbox<NotificationCenterMongoDbContext>));
         options.Inboxes.Values.ShouldHaveSingleItem().ImplementationType.ShouldBe(
             typeof(IMongoDbContextEventInbox<NotificationCenterMongoDbContext>));
-    }
-
-    [Fact]
-    public async Task Capability_checker_reports_the_replica_set_transaction_guarantee()
-    {
-        var capability = await GetRequiredService<INotificationCenterMongoDbOutboxCapabilityChecker>()
-            .CheckAsync();
-
-        capability.IsSupported.ShouldBeTrue();
-        capability.Topology.ShouldBe(NotificationCenterMongoDbTopology.ReplicaSet);
-        capability.SupportsLogicalSessions.ShouldBeTrue();
-        capability.TransactionProbeSucceeded.ShouldBeTrue();
-        capability.MaxWireVersion.ShouldBeGreaterThanOrEqualTo(7);
-    }
-
-    [Fact]
-    public async Task Host_lifecycle_validator_accepts_the_verified_replica_set()
-    {
-        var validator = ServiceProvider.GetServices<IHostedService>().Single(service =>
-            service.GetType().Name == "NotificationCenterMongoDbOutboxCapabilityHostedService");
-
-        await validator.StartAsync(CancellationToken.None);
     }
 
     [Fact]
@@ -154,30 +132,6 @@ public class Notification_Outbox_Tests :
             var inbox = (IEventInbox)ServiceProvider.GetRequiredService(inboxConfig.ImplementationType);
             (await inbox.GetWaitingEventsAsync(10)).ShouldBeEmpty();
         });
-    }
-
-    [Fact]
-    public async Task Startup_rejects_a_standalone_server_instead_of_claiming_atomicity()
-    {
-        using var runner = MongoRunner.Run(new MongoRunnerOptions
-        {
-            UseSingleNodeReplicaSet = false
-        });
-        AbpNotificationCenterStandaloneMongoDbOutboxTestModule.ConnectionString =
-            MongoDbFixture.GetConnectionString(runner, "Standalone_" + Guid.NewGuid().ToString("N"));
-
-        using var application = await AbpApplicationFactory
-            .CreateAsync<AbpNotificationCenterStandaloneMongoDbOutboxTestModule>();
-        await application.InitializeAsync();
-
-        var validator = application.ServiceProvider.GetServices<IHostedService>().Single(service =>
-            service.GetType().Name == "NotificationCenterMongoDbOutboxCapabilityHostedService");
-
-        var exception = await Should.ThrowAsync<AbpInitializationException>(
-            () => validator.StartAsync(CancellationToken.None));
-        exception.Message.ShouldContain("requires a verified transaction-capable replica set");
-        exception.Message.ShouldContain("Detected Standalone");
-        await application.ShutdownAsync();
     }
 
     private async Task<bool> EnqueueIncomingAsync(string messageId, string eventName, byte[] eventData)

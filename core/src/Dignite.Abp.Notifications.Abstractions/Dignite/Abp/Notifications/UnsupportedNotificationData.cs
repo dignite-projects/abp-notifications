@@ -11,8 +11,6 @@ public sealed class UnsupportedNotificationData : NotificationData
 
     public string? OriginalDiscriminator { get; set; }
 
-    public int? OriginalSchemaVersion { get; set; }
-
     public UnsupportedNotificationDataReason Reason { get; set; }
 
     /// <summary>

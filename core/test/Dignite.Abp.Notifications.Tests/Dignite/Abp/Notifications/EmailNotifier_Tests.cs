@@ -51,12 +51,6 @@ public class EmailNotifier_Tests
         var userId = Guid.NewGuid();
         var workItem = new NotificationDeliveryRequestedEto
         {
-            DeliveryId = NotificationDeliveryIdentity.CreateId(null, notificationId, userId, EmailNotifier.ChannelName),
-            IdempotencyKey = NotificationDeliveryIdentity.CreateIdempotencyKey(
-                null,
-                notificationId,
-                userId,
-                EmailNotifier.ChannelName),
             NotificationId = notificationId,
             NotificationName = "order.shipped",
             Data = new MessageNotificationData("Shipped!"),
@@ -582,12 +576,6 @@ public class EmailNotifier_Tests
         var notificationId = Guid.NewGuid();
         return new NotificationDeliveryRequestedEto
         {
-            DeliveryId = NotificationDeliveryIdentity.CreateId(tenantId, notificationId, userId, channel),
-            IdempotencyKey = NotificationDeliveryIdentity.CreateIdempotencyKey(
-                tenantId,
-                notificationId,
-                userId,
-                channel),
             NotificationId = notificationId,
             NotificationName = "order.shipped",
             Data = data ?? new MessageNotificationData("Shipped!"),

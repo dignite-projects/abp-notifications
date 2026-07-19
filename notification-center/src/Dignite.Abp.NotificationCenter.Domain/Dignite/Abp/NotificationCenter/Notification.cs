@@ -27,12 +27,6 @@ public class Notification : BasicAggregateRoot<Guid>, IMultiTenant, IHasConcurre
 
     public virtual DateTime CreationTime { get; protected set; }
 
-    /// <summary>
-    /// First pass marker for conservative two-phase payload deletion. New same-tenant retained references clear this
-    /// marker before inserting their row; physical cleanup only deletes after the marker has aged past quarantine.
-    /// </summary>
-    public virtual DateTime? RetentionDeletionTime { get; protected set; }
-
     protected Notification()
     {
     }
@@ -55,15 +49,5 @@ public class Notification : BasicAggregateRoot<Guid>, IMultiTenant, IHasConcurre
         Severity = severity;
         CreationTime = creationTime;
         TenantId = tenantId;
-    }
-
-    public virtual void MarkRetentionDeletion(DateTime deletionTime)
-    {
-        RetentionDeletionTime ??= deletionTime;
-    }
-
-    public virtual void CancelRetentionDeletion()
-    {
-        RetentionDeletionTime = null;
     }
 }

@@ -17,13 +17,5 @@ public interface INotificationCenterMongoDbContext :
 
     IMongoCollection<NotificationSubscription> NotificationSubscriptions { get; }
 
-    IMongoCollection<NotificationDeliveryRecord> NotificationDeliveries { get; }
-
     IMongoCollection<NotificationDeliveryPreference> NotificationDeliveryPreferences { get; }
-
-    IMongoCollection<NotificationQuietHours> NotificationQuietHours { get; }
-
-    IMongoCollection<NotificationRetentionCleanupCursor> NotificationRetentionCleanupCursors { get; }
-
-    IMongoCollection<NotificationAudienceBroadcastState> NotificationAudienceBroadcastStates { get; }
 }

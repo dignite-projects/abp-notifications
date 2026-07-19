@@ -4,7 +4,7 @@ using Volo.Abp.Application.Services;
 
 namespace Dignite.Abp.NotificationCenter;
 
-/// <summary>Current-user API for permanent delivery rules and a separate daily quiet-hours schedule.</summary>
+/// <summary>Current-user API for permanent per-channel delivery preferences (opt-out).</summary>
 public interface INotificationDeliveryPreferenceAppService : IApplicationService
 {
     Task<ListResultDto<NotificationDeliveryPreferenceDto>> GetListAsync();
@@ -13,10 +13,4 @@ public interface INotificationDeliveryPreferenceAppService : IApplicationService
     Task<NotificationDeliveryPreferenceDto> SetPreferenceAsync(SetNotificationDeliveryPreferenceDto input);
 
     Task DeleteAsync(DeleteNotificationDeliveryPreferenceDto input);
-
-    Task<NotificationQuietHoursDto?> GetQuietHoursAsync();
-
-    Task<NotificationQuietHoursDto> SetQuietHoursAsync(SetNotificationQuietHoursDto input);
-
-    Task DeleteQuietHoursAsync();
 }

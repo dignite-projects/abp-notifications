@@ -23,16 +23,15 @@ Newtonsoft.Json anywhere in this pipeline.
   `AbpNotificationsAbstractionsModule.ConfigureServices`, so independently hosted Notifiers receive it too),
   not a one-off converter or a hand-rolled switch
   statement in a specific layer.
-- The payload envelope always writes an explicit positive integer `schemaVersion`; versionless historical
-  JSON is schema v1. A breaking payload-shape change keeps the discriminator, advances the attribute's current
-  version, and registers every deterministic N→N+1 JSON upcaster. Duplicate, missing, or out-of-range steps fail
-  at startup; never make an upcaster depend on ambient tenant/user/time or mutate the reserved envelope members.
+- The payload envelope carries only the stable `type` discriminator — no `schemaVersion`, no upcaster chain.
+  (An earlier design added event-sourcing-style schema versioning + N→N+1 upcasters; it was removed as
+  over-engineering — notifications are read-once, not a replayable event stream. Don't reintroduce it.)
 - Trusted reads stay strict and expose a typed failure reason. Durable inbox, distributed-event, and HTTP reads
-  are tolerant: unknown discriminators, future versions, malformed known data, and failed upcasts become
-  `UnsupportedNotificationData`. Preserve raw JSON only as escaped diagnostic data; never interpret it as a CLR
-  name or show it in the fallback UI.
-- Use the canonical `INotificationDataSerializer.Deserialize(json, readMode)` and canonical
-  `INotificationDataTypeRegistry` evolution members. Do not reintroduce optional reader/evolution capability probes.
+  are tolerant: unknown discriminators and malformed known data become `UnsupportedNotificationData`. A newer
+  payload of a *known* type reads leniently (extra members land in `ExtensionData`). Preserve raw JSON only as
+  escaped diagnostic data; never interpret it as a CLR name or show it in the fallback UI.
+- Use the canonical `INotificationDataSerializer.Deserialize(json, readMode)`. Do not reintroduce optional
+  reader capability probes or a schema-evolution/upcaster registry.
 - **Why**: the legacy implementation wrote with System.Text.Json + `AssemblyQualifiedName`, read
   back with Newtonsoft + `Type.GetType()`, and had a separate hardcoded switch (only 2 types) in
   the HTTP client converter. Result: an assembly version bump could make historical notifications
@@ -40,9 +39,7 @@ Newtonsoft.Json anywhere in this pipeline.
   client. This was priority **P0** — the "load-bearing wall" bug, because every Notifier and every
   remote consumer sits downstream of it.
 - Add a round-trip test for any new `NotificationData` subclass: publish → persist → deserialize on
-  a "remote" client, and assert the JSON contains your discriminator + current schema version, not a CLR type name.
-  A version bump also needs historical JSON fixtures and old-producer/new-consumer plus
-  new-producer/older-schema-aware-consumer event tests.
+  a "remote" client, and assert the JSON contains your discriminator, not a CLR type name.
 
 **The same rule governs `EntityTypeName`.** `NotificationEntityIdentifier` takes a stable,
 caller-chosen string — `new NotificationEntityIdentifier("Demo.Order", orderId)`, never
@@ -84,12 +81,17 @@ identity lookups belong in a separate integration package, as `Notifications.Ema
 for ABP Identity. Everything a Notifier needs about the notification — including the entity it
 concerns (`EntityTypeName` / `EntityId`) — rides on the ETO.
 
-## 4. Delivery requests are single-recipient and cancellation-aware
+## 4. Delivery is best-effort, single-recipient, and cancellation-aware
 
 `NotificationDeliveryRequestedEto` carries exactly one `UserId` and one channel. Never reintroduce an aggregate
-recipient list at this boundary: channel plugins must relay only the per-recipient `NotificationDelivery` view.
-Forward the supplied `CancellationToken` to channel SDK calls and other cancellable I/O. The stable delivery ID and
-idempotency key remain authoritative across retries.
+recipient list at this boundary. Delivery is **best-effort**: Core's internal handler resolves the channel notifier
+and calls `DeliverAsync` once — there is no per-recipient delivery record, idempotency key, lease, or retry worker.
+The authoritative record of a notification is the inbox row; a channel that throws is logged and dropped, not
+retried. Forward the supplied `CancellationToken` to channel SDK calls and other cancellable I/O.
+
+(An earlier design added a durable per-recipient/per-channel delivery state machine with leases, idempotency keys,
+retries, and a force-delivery override — removed as over-engineering for an in-app notification module. Don't
+reintroduce it; use ABP's own distributed-event outbox if at-least-once transport is genuinely required.)
 
 ## 5. Both operation modes must keep working
 
