@@ -44,7 +44,7 @@ export class NotificationDeliveryPreferencesService {
     { apiName: this.apiName,...config });
   
 
-  set = (input: SetNotificationDeliveryPreferenceDto, config?: Partial<Rest.Config>) =>
+  setPreference = (input: SetNotificationDeliveryPreferenceDto, config?: Partial<Rest.Config>) =>
     this.restService.request<any, NotificationDeliveryPreferenceDto>({
       method: 'PUT',
       url: '/api/notifications/preferences',

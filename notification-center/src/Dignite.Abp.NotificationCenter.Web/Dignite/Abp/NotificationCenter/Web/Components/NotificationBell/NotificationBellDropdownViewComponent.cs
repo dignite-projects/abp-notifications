@@ -8,10 +8,10 @@ namespace Dignite.Abp.NotificationCenter.Web.Components.NotificationBell;
 public class NotificationBellDropdownViewComponent : NotificationBellViewComponent
 {
     public NotificationBellDropdownViewComponent(
-        INotificationAppService notificationAppService,
+        IUserNotificationAppService userNotificationAppService,
         INotificationDataTypeRegistry notificationDataTypeRegistry,
         IOptions<NotificationCenterWebOptions> webOptions)
-        : base(notificationAppService, notificationDataTypeRegistry, webOptions)
+        : base(userNotificationAppService, notificationDataTypeRegistry, webOptions)
     {
     }
 

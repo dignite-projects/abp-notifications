@@ -21,7 +21,8 @@ public class NotificationDeliveryPreference : BasicAggregateRoot<Guid>, IMultiTe
 
     public virtual string ChannelKey { get; protected set; } = default!;
 
-    public virtual bool IsEnabled { get; protected set; }
+    /// <summary>Whether a delivery matching this rule is allowed.</summary>
+    public virtual bool IsDeliveryEnabled { get; protected set; }
 
     public virtual DateTime CreationTime { get; protected set; }
 
@@ -36,7 +37,7 @@ public class NotificationDeliveryPreference : BasicAggregateRoot<Guid>, IMultiTe
         Guid userId,
         string? notificationName,
         string? channel,
-        bool isEnabled,
+        bool isDeliveryEnabled,
         DateTime creationTime,
         Guid? tenantId)
         : base(id)
@@ -53,14 +54,14 @@ public class NotificationDeliveryPreference : BasicAggregateRoot<Guid>, IMultiTe
         NotificationName = notificationName?.Trim();
         ChannelKey = NotificationDeliveryPreferenceIdentity.GetChannelKey(channel);
         Channel = channel?.Trim();
-        IsEnabled = isEnabled;
+        IsDeliveryEnabled = isDeliveryEnabled;
         CreationTime = creationTime;
         LastModificationTime = creationTime;
     }
 
-    public virtual void SetEnabled(bool isEnabled, DateTime modificationTime)
+    public virtual void SetDeliveryEnabled(bool isDeliveryEnabled, DateTime modificationTime)
     {
-        IsEnabled = isEnabled;
+        IsDeliveryEnabled = isDeliveryEnabled;
         LastModificationTime = modificationTime;
     }
 }

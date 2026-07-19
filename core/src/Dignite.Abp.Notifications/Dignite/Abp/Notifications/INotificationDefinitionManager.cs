@@ -6,7 +6,9 @@ namespace Dignite.Abp.Notifications;
 
 /// <summary>
 /// Provides the startup-validated notification definitions. Name registration and lookup use ordinal,
-/// case-sensitive comparison.
+/// case-sensitive comparison. This interface is intentionally replaceable: consuming hosts may supply a custom
+/// definition registry/availability implementation, and startup resolves the registered replacement before it
+/// initializes definitions.
 /// </summary>
 public interface INotificationDefinitionManager
 {

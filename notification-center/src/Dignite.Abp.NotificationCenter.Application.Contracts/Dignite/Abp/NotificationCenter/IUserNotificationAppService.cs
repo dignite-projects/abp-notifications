@@ -7,11 +7,12 @@ using Volo.Abp.Application.Services;
 namespace Dignite.Abp.NotificationCenter;
 
 /// <summary>Headless inbox + subscription API for the current user.</summary>
-public interface INotificationAppService : IApplicationService
+public interface IUserNotificationAppService : IApplicationService
 {
     Task<PagedResultDto<UserNotificationDto>> GetListAsync(GetUserNotificationListInput input);
 
-    Task<int> GetCountAsync(UserNotificationState? state = null);
+    /// <summary>Gets the current user's notification count, optionally filtered by state.</summary>
+    Task<int> GetNotificationCountAsync(UserNotificationState? state = null);
 
     Task MarkAsReadAsync(Guid notificationId);
 

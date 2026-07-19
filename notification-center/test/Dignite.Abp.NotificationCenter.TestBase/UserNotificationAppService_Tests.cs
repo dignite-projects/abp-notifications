@@ -12,10 +12,10 @@ using Xunit;
 namespace Dignite.Abp.NotificationCenter;
 
 /// <summary>
-/// Provider-agnostic <see cref="INotificationAppService"/> scenarios, run against both the EF Core
+/// Provider-agnostic <see cref="IUserNotificationAppService"/> scenarios, run against both the EF Core
 /// and MongoDB providers via the thin subclasses in each provider test project.
 /// </summary>
-public abstract class NotificationAppService_Tests<TStartupModule> : NotificationCenterTestBase<TStartupModule>
+public abstract class UserNotificationAppService_Tests<TStartupModule> : NotificationCenterTestBase<TStartupModule>
     where TStartupModule : IAbpModule
 {
     private readonly Guid _userId = Guid.NewGuid();
@@ -55,7 +55,7 @@ public abstract class NotificationAppService_Tests<TStartupModule> : Notificatio
         {
             await WithUnitOfWorkAsync(async () =>
             {
-                var appService = GetRequiredService<INotificationAppService>();
+                var appService = GetRequiredService<IUserNotificationAppService>();
                 var result = await appService.GetListAsync(new GetUserNotificationListInput());
 
                 result.TotalCount.ShouldBe(1);
@@ -100,7 +100,7 @@ public abstract class NotificationAppService_Tests<TStartupModule> : Notificatio
         {
             await WithUnitOfWorkAsync(async () =>
             {
-                var result = await GetRequiredService<INotificationAppService>()
+                var result = await GetRequiredService<IUserNotificationAppService>()
                     .GetListAsync(new GetUserNotificationListInput());
                 var dto = result.Items.Single(item => item.NotificationId == notificationId);
                 var unsupported = dto.Data.ShouldBeOfType<UnsupportedNotificationData>();
@@ -128,16 +128,16 @@ public abstract class NotificationAppService_Tests<TStartupModule> : Notificatio
         {
             await WithUnitOfWorkAsync(async () =>
             {
-                var appService = GetRequiredService<INotificationAppService>();
-                (await appService.GetCountAsync(UserNotificationState.Unread)).ShouldBe(1);
+                var appService = GetRequiredService<IUserNotificationAppService>();
+                (await appService.GetNotificationCountAsync(UserNotificationState.Unread)).ShouldBe(1);
                 await appService.MarkAsReadAsync(notificationId);
             });
 
             await WithUnitOfWorkAsync(async () =>
             {
-                var appService = GetRequiredService<INotificationAppService>();
-                (await appService.GetCountAsync(UserNotificationState.Unread)).ShouldBe(0);
-                (await appService.GetCountAsync(UserNotificationState.Read)).ShouldBe(1);
+                var appService = GetRequiredService<IUserNotificationAppService>();
+                (await appService.GetNotificationCountAsync(UserNotificationState.Unread)).ShouldBe(0);
+                (await appService.GetNotificationCountAsync(UserNotificationState.Read)).ShouldBe(1);
             });
         }
     }
@@ -149,12 +149,12 @@ public abstract class NotificationAppService_Tests<TStartupModule> : Notificatio
         {
             await WithUnitOfWorkAsync(async () =>
             {
-                await GetRequiredService<INotificationAppService>().SubscribeAsync("order.shipped");
+                await GetRequiredService<IUserNotificationAppService>().SubscribeAsync("order.shipped");
             });
 
             await WithUnitOfWorkAsync(async () =>
             {
-                var subscriptions = await GetRequiredService<INotificationAppService>().GetSubscriptionsAsync();
+                var subscriptions = await GetRequiredService<IUserNotificationAppService>().GetSubscriptionsAsync();
                 var subscription = subscriptions.Items.Single(s => s.NotificationName == "order.shipped");
                 subscription.IsSubscribed.ShouldBeTrue();
                 subscription.DisplayName.ShouldBe("Order Shipped");
@@ -169,7 +169,7 @@ public abstract class NotificationAppService_Tests<TStartupModule> : Notificatio
         {
             await WithUnitOfWorkAsync(async () =>
             {
-                var appService = GetRequiredService<INotificationAppService>();
+                var appService = GetRequiredService<IUserNotificationAppService>();
                 await appService.SubscribeScopedAsync(new NotificationSubscriptionScopeDto
                 {
                     NotificationName = "order.shipped"
@@ -190,7 +190,7 @@ public abstract class NotificationAppService_Tests<TStartupModule> : Notificatio
 
             await WithUnitOfWorkAsync(async () =>
             {
-                var appService = GetRequiredService<INotificationAppService>();
+                var appService = GetRequiredService<IUserNotificationAppService>();
                 var rows = (await appService.GetSubscriptionsAsync()).Items
                     .Where(subscription => subscription.NotificationName == "order.shipped")
                     .ToList();
@@ -216,7 +216,7 @@ public abstract class NotificationAppService_Tests<TStartupModule> : Notificatio
 
             await WithUnitOfWorkAsync(async () =>
             {
-                var rows = (await GetRequiredService<INotificationAppService>().GetSubscriptionsAsync()).Items
+                var rows = (await GetRequiredService<IUserNotificationAppService>().GetSubscriptionsAsync()).Items
                     .Where(subscription => subscription.NotificationName == "order.shipped")
                     .ToList();
 

@@ -1,7 +1,7 @@
 import type { EntityDto, PagedResultRequestDto } from '@abp/ng.core';
-import type { NotificationDeliveryIntent } from '../notifications/notification-delivery-intent.enum';
 import type { NotificationDeliveryState } from '../notifications/notification-delivery-state.enum';
 import type { UserNotificationState } from '../notifications/user-notification-state.enum';
+import type { NotificationDeliveryIntent } from '../notifications/notification-delivery-intent.enum';
 import type { NotificationData } from '../notifications/models';
 import type { NotificationSeverity } from '../notifications/notification-severity.enum';
 
@@ -53,7 +53,7 @@ export interface NotificationDeliveryDto {
 export interface NotificationDeliveryPreferenceDto {
   notificationName?: string | null;
   channel?: string | null;
-  isEnabled?: boolean;
+  isDeliveryEnabled?: boolean;
 }
 
 export interface NotificationQuietHoursDto {
@@ -80,7 +80,7 @@ export interface NotificationSubscriptionScopeDto {
 export interface SetNotificationDeliveryPreferenceDto {
   notificationName?: string | null;
   channel?: string | null;
-  isEnabled?: boolean;
+  isDeliveryEnabled?: boolean;
 }
 
 export interface SetNotificationQuietHoursDto {

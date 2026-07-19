@@ -3781,7 +3781,7 @@
                   }
                 },
                 {
-                  "name": "SetAsync",
+                  "name": "SetPreferenceAsync",
                   "parametersOnMethod": [
                     {
                       "name": "input",
@@ -3886,9 +3886,9 @@
               "description": null,
               "displayName": null
             },
-            "SetAsyncByInput": {
-              "uniqueName": "SetAsyncByInput",
-              "name": "SetAsync",
+            "SetPreferenceAsyncByInput": {
+              "uniqueName": "SetPreferenceAsyncByInput",
+              "name": "SetPreferenceAsync",
               "httpMethod": "PUT",
               "url": "api/notifications/preferences",
               "supportedVersions": [],
@@ -4105,8 +4105,8 @@
           "displayName": null,
           "interfaces": [
             {
-              "type": "Dignite.Abp.NotificationCenter.INotificationAppService",
-              "name": "INotificationAppService",
+              "type": "Dignite.Abp.NotificationCenter.IUserNotificationAppService",
+              "name": "IUserNotificationAppService",
               "methods": [
                 {
                   "name": "GetListAsync",
@@ -4130,7 +4130,7 @@
                   }
                 },
                 {
-                  "name": "GetCountAsync",
+                  "name": "GetNotificationCountAsync",
                   "parametersOnMethod": [
                     {
                       "name": "state",
@@ -4422,15 +4422,15 @@
               },
               "allowAnonymous": null,
               "authorizeDatas": [],
-              "implementFrom": "Dignite.Abp.NotificationCenter.INotificationAppService",
+              "implementFrom": "Dignite.Abp.NotificationCenter.IUserNotificationAppService",
               "summary": null,
               "remarks": null,
               "description": null,
               "displayName": null
             },
-            "GetCountAsyncByState": {
-              "uniqueName": "GetCountAsyncByState",
-              "name": "GetCountAsync",
+            "GetNotificationCountAsyncByState": {
+              "uniqueName": "GetNotificationCountAsyncByState",
+              "name": "GetNotificationCountAsync",
               "httpMethod": "GET",
               "url": "api/notifications/count",
               "supportedVersions": [],
@@ -4471,7 +4471,7 @@
               },
               "allowAnonymous": null,
               "authorizeDatas": [],
-              "implementFrom": "Dignite.Abp.NotificationCenter.INotificationAppService",
+              "implementFrom": "Dignite.Abp.NotificationCenter.IUserNotificationAppService",
               "summary": null,
               "remarks": null,
               "description": null,
@@ -4520,7 +4520,7 @@
               },
               "allowAnonymous": null,
               "authorizeDatas": [],
-              "implementFrom": "Dignite.Abp.NotificationCenter.INotificationAppService",
+              "implementFrom": "Dignite.Abp.NotificationCenter.IUserNotificationAppService",
               "summary": null,
               "remarks": null,
               "description": null,
@@ -4541,7 +4541,7 @@
               },
               "allowAnonymous": null,
               "authorizeDatas": [],
-              "implementFrom": "Dignite.Abp.NotificationCenter.INotificationAppService",
+              "implementFrom": "Dignite.Abp.NotificationCenter.IUserNotificationAppService",
               "summary": null,
               "remarks": null,
               "description": null,
@@ -4590,7 +4590,7 @@
               },
               "allowAnonymous": null,
               "authorizeDatas": [],
-              "implementFrom": "Dignite.Abp.NotificationCenter.INotificationAppService",
+              "implementFrom": "Dignite.Abp.NotificationCenter.IUserNotificationAppService",
               "summary": null,
               "remarks": null,
               "description": null,
@@ -4639,7 +4639,7 @@
               },
               "allowAnonymous": null,
               "authorizeDatas": [],
-              "implementFrom": "Dignite.Abp.NotificationCenter.INotificationAppService",
+              "implementFrom": "Dignite.Abp.NotificationCenter.IUserNotificationAppService",
               "summary": null,
               "remarks": null,
               "description": null,
@@ -4660,7 +4660,7 @@
               },
               "allowAnonymous": null,
               "authorizeDatas": [],
-              "implementFrom": "Dignite.Abp.NotificationCenter.INotificationAppService",
+              "implementFrom": "Dignite.Abp.NotificationCenter.IUserNotificationAppService",
               "summary": null,
               "remarks": null,
               "description": null,
@@ -4709,7 +4709,7 @@
               },
               "allowAnonymous": null,
               "authorizeDatas": [],
-              "implementFrom": "Dignite.Abp.NotificationCenter.INotificationAppService",
+              "implementFrom": "Dignite.Abp.NotificationCenter.IUserNotificationAppService",
               "summary": null,
               "remarks": null,
               "description": null,
@@ -4758,7 +4758,7 @@
               },
               "allowAnonymous": null,
               "authorizeDatas": [],
-              "implementFrom": "Dignite.Abp.NotificationCenter.INotificationAppService",
+              "implementFrom": "Dignite.Abp.NotificationCenter.IUserNotificationAppService",
               "summary": null,
               "remarks": null,
               "description": null,
@@ -4807,7 +4807,7 @@
               },
               "allowAnonymous": null,
               "authorizeDatas": [],
-              "implementFrom": "Dignite.Abp.NotificationCenter.INotificationAppService",
+              "implementFrom": "Dignite.Abp.NotificationCenter.IUserNotificationAppService",
               "summary": null,
               "remarks": null,
               "description": null,
@@ -4886,7 +4886,7 @@
               },
               "allowAnonymous": null,
               "authorizeDatas": [],
-              "implementFrom": "Dignite.Abp.NotificationCenter.INotificationAppService",
+              "implementFrom": "Dignite.Abp.NotificationCenter.IUserNotificationAppService",
               "summary": null,
               "remarks": null,
               "description": null,
@@ -7225,7 +7225,7 @@
           "displayName": null
         },
         {
-          "name": "IsEnabled",
+          "name": "IsDeliveryEnabled",
           "jsonName": null,
           "type": "System.Boolean",
           "typeSimple": "boolean",
@@ -7517,7 +7517,7 @@
           "displayName": null
         },
         {
-          "name": "IsEnabled",
+          "name": "IsDeliveryEnabled",
           "jsonName": null,
           "type": "System.Boolean",
           "typeSimple": "boolean",

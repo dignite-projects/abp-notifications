@@ -10,93 +10,93 @@ namespace Dignite.Abp.NotificationCenter;
 
 /// <summary>
 /// REST endpoints for the current user's notification inbox + subscriptions. A thin controller that delegates
-/// to <see cref="INotificationAppService"/> — the AppService owns all authorization (its class-level [Authorize])
+/// to <see cref="IUserNotificationAppService"/> — the AppService owns all authorization (its class-level [Authorize])
 /// and per-user scoping. Exposed under <c>/api/notifications</c>.
 /// </summary>
 [RemoteService(Name = "NotificationCenter")]
 [Area("notification-center")]
 [Route("api/notifications")]
-public class NotificationsController : AbpControllerBase, INotificationAppService
+public class NotificationsController : AbpControllerBase, IUserNotificationAppService
 {
-    protected INotificationAppService NotificationAppService { get; }
+    protected IUserNotificationAppService UserNotificationAppService { get; }
 
-    public NotificationsController(INotificationAppService notificationAppService)
+    public NotificationsController(IUserNotificationAppService userNotificationAppService)
     {
-        NotificationAppService = notificationAppService;
+        UserNotificationAppService = userNotificationAppService;
     }
 
     [HttpGet]
     public virtual Task<PagedResultDto<UserNotificationDto>> GetListAsync(GetUserNotificationListInput input)
     {
-        return NotificationAppService.GetListAsync(input);
+        return UserNotificationAppService.GetListAsync(input);
     }
 
     [HttpGet]
     [Route("count")]
-    public virtual Task<int> GetCountAsync(UserNotificationState? state = null)
+    public virtual Task<int> GetNotificationCountAsync(UserNotificationState? state = null)
     {
-        return NotificationAppService.GetCountAsync(state);
+        return UserNotificationAppService.GetNotificationCountAsync(state);
     }
 
     [HttpPost]
     [Route("{notificationId}/mark-as-read")]
     public virtual Task MarkAsReadAsync(Guid notificationId)
     {
-        return NotificationAppService.MarkAsReadAsync(notificationId);
+        return UserNotificationAppService.MarkAsReadAsync(notificationId);
     }
 
     [HttpPost]
     [Route("mark-all-as-read")]
     public virtual Task MarkAllAsReadAsync()
     {
-        return NotificationAppService.MarkAllAsReadAsync();
+        return UserNotificationAppService.MarkAllAsReadAsync();
     }
 
     [HttpDelete]
     [Route("{notificationId}")]
     public virtual Task DeleteAsync(Guid notificationId)
     {
-        return NotificationAppService.DeleteAsync(notificationId);
+        return UserNotificationAppService.DeleteAsync(notificationId);
     }
 
     [HttpDelete]
     public virtual Task DeleteAllAsync(UserNotificationState? state = null)
     {
-        return NotificationAppService.DeleteAllAsync(state);
+        return UserNotificationAppService.DeleteAllAsync(state);
     }
 
     [HttpGet]
     [Route("subscriptions")]
     public virtual Task<ListResultDto<NotificationSubscriptionDto>> GetSubscriptionsAsync()
     {
-        return NotificationAppService.GetSubscriptionsAsync();
+        return UserNotificationAppService.GetSubscriptionsAsync();
     }
 
     [HttpPost]
     [Route("subscriptions")]
     public virtual Task SubscribeAsync(string notificationName)
     {
-        return NotificationAppService.SubscribeAsync(notificationName);
+        return UserNotificationAppService.SubscribeAsync(notificationName);
     }
 
     [HttpDelete]
     [Route("subscriptions/{notificationName}")]
     public virtual Task UnsubscribeAsync(string notificationName)
     {
-        return NotificationAppService.UnsubscribeAsync(notificationName);
+        return UserNotificationAppService.UnsubscribeAsync(notificationName);
     }
 
     [HttpPost]
     [Route("subscription-scopes")]
     public virtual Task SubscribeScopedAsync([FromBody] NotificationSubscriptionScopeDto input)
     {
-        return NotificationAppService.SubscribeScopedAsync(input);
+        return UserNotificationAppService.SubscribeScopedAsync(input);
     }
 
     [HttpDelete]
     [Route("subscription-scopes")]
     public virtual Task UnsubscribeScopedAsync([FromQuery] NotificationSubscriptionScopeDto input)
     {
-        return NotificationAppService.UnsubscribeScopedAsync(input);
+        return UserNotificationAppService.UnsubscribeScopedAsync(input);
     }
 }

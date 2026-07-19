@@ -26,11 +26,11 @@ public abstract class NotificationDeliveryPreference_Tests<TStartupModule> : Not
         var userId = Guid.NewGuid();
         await WithUnitOfWorkAsync(async () =>
         {
-            var manager = GetRequiredService<INotificationDeliveryPreferenceManager>();
-            await manager.SetAsync(userId, null, null, false);
-            await manager.SetAsync(userId, null, "Email", true);
-            await manager.SetAsync(userId, "order.shipped", null, false);
-            await manager.SetAsync(userId, "order.shipped", "Email", true);
+            var manager = GetRequiredService<NotificationDeliveryPreferenceManager>();
+            await manager.SetPreferenceAsync(userId, null, null, false);
+            await manager.SetPreferenceAsync(userId, null, "Email", true);
+            await manager.SetPreferenceAsync(userId, "order.shipped", null, false);
+            await manager.SetPreferenceAsync(userId, "order.shipped", "Email", true);
         });
 
         await WithUnitOfWorkAsync(async () =>
@@ -83,9 +83,9 @@ public abstract class NotificationDeliveryPreference_Tests<TStartupModule> : Not
         var subscriber = Guid.NewGuid();
         await WithUnitOfWorkAsync(async () =>
         {
-            var manager = GetRequiredService<INotificationDeliveryPreferenceManager>();
-            await manager.SetAsync(explicitUser, null, "Email", false);
-            await manager.SetAsync(subscriber, null, "Email", false);
+            var manager = GetRequiredService<NotificationDeliveryPreferenceManager>();
+            await manager.SetPreferenceAsync(explicitUser, null, "Email", false);
+            await manager.SetPreferenceAsync(subscriber, null, "Email", false);
             await GetRequiredService<INotificationStore>().InsertSubscriptionAsync(new NotificationSubscriptionInfo
             {
                 UserId = subscriber,
@@ -131,7 +131,7 @@ public abstract class NotificationDeliveryPreference_Tests<TStartupModule> : Not
         var clock = GetRequiredService<IClock>();
         var now = clock.Now.ToUniversalTime();
         var minute = now.Hour * 60 + now.Minute;
-        await WithUnitOfWorkAsync(() => GetRequiredService<INotificationDeliveryPreferenceManager>()
+        await WithUnitOfWorkAsync(() => GetRequiredService<NotificationDeliveryPreferenceManager>()
             .SetQuietHoursAsync(userId, (minute + 1439) % 1440, (minute + 10) % 1440, "UTC"));
 
         await WithUnitOfWorkAsync(async () =>
@@ -166,8 +166,8 @@ public abstract class NotificationDeliveryPreference_Tests<TStartupModule> : Not
         var currentTenant = GetRequiredService<ICurrentTenant>();
         using (currentTenant.Change(tenantA))
         {
-            await WithUnitOfWorkAsync(() => GetRequiredService<INotificationDeliveryPreferenceManager>()
-                .SetAsync(userId, null, "Email", false));
+            await WithUnitOfWorkAsync(() => GetRequiredService<NotificationDeliveryPreferenceManager>()
+                .SetPreferenceAsync(userId, null, "Email", false));
         }
 
         using (currentTenant.Change(tenantA))
@@ -199,10 +199,10 @@ public abstract class NotificationDeliveryPreference_Tests<TStartupModule> : Not
             await WithUnitOfWorkAsync(async () =>
             {
                 var appService = GetRequiredService<INotificationDeliveryPreferenceAppService>();
-                await appService.SetAsync(new SetNotificationDeliveryPreferenceDto
+                await appService.SetPreferenceAsync(new SetNotificationDeliveryPreferenceDto
                 {
                     Channel = "Email",
-                    IsEnabled = false
+                    IsDeliveryEnabled = false
                 });
                 await appService.SetQuietHoursAsync(new SetNotificationQuietHoursDto
                 {
@@ -217,7 +217,7 @@ public abstract class NotificationDeliveryPreference_Tests<TStartupModule> : Not
                 var appService = GetRequiredService<INotificationDeliveryPreferenceAppService>();
                 var rule = (await appService.GetListAsync()).Items.Single();
                 rule.Channel.ShouldBe("EMAIL");
-                rule.IsEnabled.ShouldBeFalse();
+                rule.IsDeliveryEnabled.ShouldBeFalse();
                 var quietHours = await appService.GetQuietHoursAsync();
                 quietHours.ShouldNotBeNull().StartMinute.ShouldBe(1320);
             });
@@ -240,8 +240,8 @@ public abstract class NotificationDeliveryPreference_Tests<TStartupModule> : Not
         var userId = Guid.NewGuid();
         // Simulates a rule created while its definition still existed and orphaned by a later rename/removal:
         // the manager never consults the definition catalog, so this row is exactly what an upgrade leaves behind.
-        await WithUnitOfWorkAsync(() => GetRequiredService<INotificationDeliveryPreferenceManager>()
-            .SetAsync(userId, "removed.notification", "Email", false));
+        await WithUnitOfWorkAsync(() => GetRequiredService<NotificationDeliveryPreferenceManager>()
+            .SetPreferenceAsync(userId, "removed.notification", "Email", false));
 
         using (ChangeCurrentUser(userId))
         {

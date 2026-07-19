@@ -17,7 +17,7 @@ export class NotificationDeliveriesService {
       url: `/api/notifications/deliveries/${id}/force-deliver`,
     },
     { apiName: this.apiName,...config });
-  
+
 
   getList = (input: GetNotificationDeliveryListInput, config?: Partial<Rest.Config>) =>
     this.restService.request<any, PagedResultDto<NotificationDeliveryDto>>({
@@ -26,7 +26,7 @@ export class NotificationDeliveriesService {
       params: { notificationId: input.notificationId, userId: input.userId, channel: input.channel, state: input.state, startDate: input.startDate, endDate: input.endDate, skipCount: input.skipCount, maxResultCount: input.maxResultCount },
     },
     { apiName: this.apiName,...config });
-  
+
 
   retry = (id: string, config?: Partial<Rest.Config>) =>
     this.restService.request<any, void>({

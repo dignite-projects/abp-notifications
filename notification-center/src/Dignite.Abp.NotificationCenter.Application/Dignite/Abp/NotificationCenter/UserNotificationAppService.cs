@@ -11,20 +11,20 @@ using Volo.Abp.Users;
 namespace Dignite.Abp.NotificationCenter;
 
 [Authorize]
-public class NotificationAppService : ApplicationService, INotificationAppService
+public class UserNotificationAppService : ApplicationService, IUserNotificationAppService
 {
-    protected IUserNotificationManager UserNotificationManager { get; }
+    protected INotificationStore Store { get; }
 
-    protected INotificationSubscriptionManager SubscriptionManager { get; }
+    protected NotificationSubscriptionManager SubscriptionManager { get; }
 
     protected INotificationDefinitionManager DefinitionManager { get; }
 
-    public NotificationAppService(
-        IUserNotificationManager userNotificationManager,
-        INotificationSubscriptionManager subscriptionManager,
+    public UserNotificationAppService(
+        INotificationStore store,
+        NotificationSubscriptionManager subscriptionManager,
         INotificationDefinitionManager definitionManager)
     {
-        UserNotificationManager = userNotificationManager;
+        Store = store;
         SubscriptionManager = subscriptionManager;
         DefinitionManager = definitionManager;
     }
@@ -33,40 +33,40 @@ public class NotificationAppService : ApplicationService, INotificationAppServic
     {
         var userId = CurrentUser.GetId();
 
-        var totalCount = await UserNotificationManager.GetUserNotificationCountAsync(
+        var totalCount = await Store.GetUserNotificationCountAsync(
             userId, input.State, input.StartDate, input.EndDate);
 
-        var items = await UserNotificationManager.GetUserNotificationsAsync(
+        var items = await Store.GetUserNotificationsAsync(
             userId, input.State, input.SkipCount, input.MaxResultCount, input.StartDate, input.EndDate);
 
         return new PagedResultDto<UserNotificationDto>(totalCount, items.Select(MapToDto).ToList());
     }
 
-    public virtual Task<int> GetCountAsync(UserNotificationState? state = null)
+    public virtual Task<int> GetNotificationCountAsync(UserNotificationState? state = null)
     {
-        return UserNotificationManager.GetUserNotificationCountAsync(CurrentUser.GetId(), state);
+        return Store.GetUserNotificationCountAsync(CurrentUser.GetId(), state);
     }
 
     public virtual Task MarkAsReadAsync(Guid notificationId)
     {
-        return UserNotificationManager.UpdateUserNotificationStateAsync(
+        return Store.UpdateUserNotificationStateAsync(
             CurrentUser.GetId(), notificationId, UserNotificationState.Read);
     }
 
     public virtual Task MarkAllAsReadAsync()
     {
-        return UserNotificationManager.UpdateAllUserNotificationStatesAsync(
+        return Store.UpdateAllUserNotificationStatesAsync(
             CurrentUser.GetId(), UserNotificationState.Read);
     }
 
     public virtual Task DeleteAsync(Guid notificationId)
     {
-        return UserNotificationManager.DeleteUserNotificationAsync(CurrentUser.GetId(), notificationId);
+        return Store.DeleteUserNotificationAsync(CurrentUser.GetId(), notificationId);
     }
 
     public virtual Task DeleteAllAsync(UserNotificationState? state = null)
     {
-        return UserNotificationManager.DeleteAllUserNotificationsAsync(CurrentUser.GetId(), state);
+        return Store.DeleteAllUserNotificationsAsync(CurrentUser.GetId(), state);
     }
 
     public virtual async Task<ListResultDto<NotificationSubscriptionDto>> GetSubscriptionsAsync()
@@ -74,7 +74,7 @@ public class NotificationAppService : ApplicationService, INotificationAppServic
         var userId = CurrentUser.GetId();
 
         var available = await DefinitionManager.GetAllAvailableAsync(userId);
-        var subscribed = await SubscriptionManager.GetSubscribedNotificationsAsync(userId);
+        var subscribed = await Store.GetSubscriptionsAsync(userId);
         var availableByName = available.ToDictionary(definition => definition.Name, StringComparer.Ordinal);
         var definitionWideSubscriptions = subscribed
             .Where(subscription => subscription.EntityTypeName == null && subscription.EntityId == null)
