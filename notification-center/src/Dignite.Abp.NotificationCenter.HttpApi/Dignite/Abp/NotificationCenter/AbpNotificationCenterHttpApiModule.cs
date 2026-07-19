@@ -15,7 +15,7 @@ public class AbpNotificationCenterHttpApiModule : AbpModule
     public override void PreConfigureServices(ServiceConfigurationContext context)
     {
         // Make MVC discover the controllers defined in this HttpApi assembly (e.g. NotificationsController).
-        // These are explicit controllers that delegate to INotificationAppService — not conventional/auto API
+        // These are explicit controllers that delegate to IUserNotificationAppService — not conventional/auto API
         // controllers, so this application-part registration (not ConventionalControllers.Create) is what's needed.
         PreConfigure<IMvcBuilder>(mvcBuilder =>
         {

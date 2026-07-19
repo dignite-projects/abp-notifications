@@ -5,7 +5,7 @@ namespace Dignite.Abp.NotificationCenter;
 
 /// <summary>Runs the shared retention cleanup scenarios against the MongoDB provider.</summary>
 [Collection(MongoTestCollection.Name)]
-public class NotificationRetentionCleanup_Tests :
-    NotificationRetentionCleanup_Tests<AbpNotificationCenterMongoDbTestModule>
+public class NotificationRetentionManager_Tests :
+    NotificationRetentionManager_Tests<AbpNotificationCenterMongoDbTestModule>
 {
 }

@@ -314,7 +314,7 @@ public abstract class NotificationAudienceBroadcastProgressStore_Tests<TStartupM
         await store.RecordStartedAsync(recent, NotificationAudienceNames.AllActiveUsers, null, now.AddDays(-1));
         await store.RecordCompletedAsync(recent, NotificationAudienceNames.AllActiveUsers, null, now.AddDays(-1));
 
-        var result = await GetRequiredService<INotificationRetentionCleanupService>().CleanupAsync(
+        var result = await GetRequiredService<NotificationRetentionManager>().CleanupAsync(
             new NotificationRetentionCleanupRequest { Now = now });
 
         result.ScannedAudienceBroadcastStates.ShouldBe(1);

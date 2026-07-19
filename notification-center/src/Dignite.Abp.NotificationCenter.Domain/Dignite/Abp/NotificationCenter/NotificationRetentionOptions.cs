@@ -11,7 +11,7 @@ public class NotificationRetentionOptions
         "Dignite.Abp.NotificationCenter:RetentionCleanupWorker";
 
     /// <summary>
-    /// Enables the ABP periodic cleanup worker. Manual <see cref="INotificationRetentionCleanupService"/> calls are
+    /// Enables the ABP periodic cleanup worker. Manual <see cref="NotificationRetentionManager"/> calls are
     /// always explicit and do not require this flag.
     /// </summary>
     public bool IsCleanupEnabled { get; set; }

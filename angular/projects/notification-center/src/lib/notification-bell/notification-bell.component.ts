@@ -140,7 +140,7 @@ export class NotificationBellComponent implements OnInit, OnDestroy {
 
   /** Public: a host app can force a refresh after local actions. Realtime events come from the shared runtime. */
   refresh(): void {
-    this.notificationService.getCount(UserNotificationState.Unread).subscribe(c => {
+    this.notificationService.getNotificationCount(UserNotificationState.Unread).subscribe(c => {
       this.unreadCount = c;
       this.changeDetectorRef.markForCheck();
     });

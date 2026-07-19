@@ -10,57 +10,48 @@ using Dignite.Abp.Notifications;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Volo.Abp.Data;
-using Volo.Abp.DependencyInjection;
 using Volo.Abp.Domain.Repositories;
-using Volo.Abp.Linq;
+using Volo.Abp.Domain.Services;
 using Volo.Abp.MultiTenancy;
-using Volo.Abp.Timing;
 using Volo.Abp.Uow;
 
 namespace Dignite.Abp.NotificationCenter;
 
-public class NotificationRetentionCleanupService :
-    INotificationRetentionCleanupService,
-    ITransientDependency
+/// <summary>
+/// Orchestrates retention decisions and mutations across notification aggregates while honoring deletion
+/// contributors, tenant scope, concurrency stamps, and bounded cleanup cursors.
+/// </summary>
+public class NotificationRetentionManager : DomainService
 {
     protected IRepository<Notification, Guid> NotificationRepository { get; }
     protected IRepository<UserNotification, Guid> UserNotificationRepository { get; }
     protected IRepository<NotificationDeliveryRecord, Guid> DeliveryRepository { get; }
     protected IRepository<NotificationRetentionCleanupCursor, Guid> CleanupCursorRepository { get; }
-    protected IAsyncQueryableExecuter AsyncExecuter { get; }
     protected IDataFilter DataFilter { get; }
-    protected IClock Clock { get; }
     protected IUnitOfWorkManager UnitOfWorkManager { get; }
     protected IOptions<NotificationRetentionOptions> Options { get; }
     protected IReadOnlyList<INotificationRetentionDeletionContributor> DeletionContributors { get; }
-    protected ILogger<NotificationRetentionCleanupService> Logger { get; }
     protected NotificationAudienceBroadcastStateRetentionCleaner? BroadcastStateRetentionCleaner { get; }
 
-    public NotificationRetentionCleanupService(
+    public NotificationRetentionManager(
         IRepository<Notification, Guid> notificationRepository,
         IRepository<UserNotification, Guid> userNotificationRepository,
         IRepository<NotificationDeliveryRecord, Guid> deliveryRepository,
         IRepository<NotificationRetentionCleanupCursor, Guid> cleanupCursorRepository,
-        IAsyncQueryableExecuter asyncExecuter,
         IDataFilter dataFilter,
-        IClock clock,
         IUnitOfWorkManager unitOfWorkManager,
         IOptions<NotificationRetentionOptions> options,
         IEnumerable<INotificationRetentionDeletionContributor> deletionContributors,
-        ILogger<NotificationRetentionCleanupService> logger,
         NotificationAudienceBroadcastStateRetentionCleaner? broadcastStateRetentionCleaner = null)
     {
         NotificationRepository = notificationRepository;
         UserNotificationRepository = userNotificationRepository;
         DeliveryRepository = deliveryRepository;
         CleanupCursorRepository = cleanupCursorRepository;
-        AsyncExecuter = asyncExecuter;
         DataFilter = dataFilter;
-        Clock = clock;
         UnitOfWorkManager = unitOfWorkManager;
         Options = options;
         DeletionContributors = deletionContributors.ToArray();
-        Logger = logger;
         BroadcastStateRetentionCleaner = broadcastStateRetentionCleaner;
     }
 

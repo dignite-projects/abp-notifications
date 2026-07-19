@@ -6,5 +6,6 @@ public class NotificationDeliveryPreferenceDto
 
     public string? Channel { get; set; }
 
-    public bool IsEnabled { get; set; }
+    /// <summary>Whether matching delivery work is allowed.</summary>
+    public bool IsDeliveryEnabled { get; set; }
 }

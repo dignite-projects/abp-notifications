@@ -115,7 +115,8 @@ config/src/
 
 ## The proxy is generated — don't hand-edit
 
-Everything under `src/lib/proxy/` is produced by `abp generate-proxy -t ng -m notification-center`
+Everything under `src/lib/proxy/` is produced by
+`abp generate-proxy -t ng -m notification-center -s Host --target notification-center -a NotificationCenter`
 (run against a running backend). Hand-written code (components) lives **outside** `proxy/` so it
 survives regeneration.
 

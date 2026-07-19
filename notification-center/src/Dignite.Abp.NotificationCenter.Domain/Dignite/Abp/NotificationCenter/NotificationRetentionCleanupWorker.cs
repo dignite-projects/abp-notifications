@@ -11,7 +11,7 @@ using Volo.Abp.Threading;
 
 namespace Dignite.Abp.NotificationCenter;
 
-internal sealed class NotificationRetentionCleanupWorker : AsyncPeriodicBackgroundWorkerBase
+internal class NotificationRetentionCleanupWorker : AsyncPeriodicBackgroundWorkerBase
 {
     private readonly IOptions<NotificationRetentionOptions> _options;
     private readonly ILogger<NotificationRetentionCleanupWorker> _logger;
@@ -62,8 +62,7 @@ internal sealed class NotificationRetentionCleanupWorker : AsyncPeriodicBackgrou
                 return;
             }
 
-            var cleanupService = serviceProvider.GetRequiredService<INotificationRetentionCleanupService>();
-            var result = await cleanupService.CleanupAsync(cancellationToken: cancellationToken);
+            var result = await CleanupAsync(serviceProvider, cancellationToken);
 
             NotificationRetentionMetrics.RecordWorkerCycle("completed");
             if (result.ScannedCount > 0 || result.ErrorCount > 0)
@@ -85,5 +84,13 @@ internal sealed class NotificationRetentionCleanupWorker : AsyncPeriodicBackgrou
             NotificationRetentionMetrics.RecordWorkerCycle("failed");
             throw;
         }
+    }
+
+    protected virtual Task<NotificationRetentionCleanupResult> CleanupAsync(
+        IServiceProvider serviceProvider,
+        CancellationToken cancellationToken)
+    {
+        return serviceProvider.GetRequiredService<NotificationRetentionManager>()
+            .CleanupAsync(cancellationToken: cancellationToken);
     }
 }

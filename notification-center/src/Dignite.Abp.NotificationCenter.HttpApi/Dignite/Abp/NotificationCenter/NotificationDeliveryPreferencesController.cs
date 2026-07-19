@@ -27,10 +27,10 @@ public class NotificationDeliveryPreferencesController :
     }
 
     [HttpPut]
-    public virtual Task<NotificationDeliveryPreferenceDto> SetAsync(
+    public virtual Task<NotificationDeliveryPreferenceDto> SetPreferenceAsync(
         [FromBody] SetNotificationDeliveryPreferenceDto input)
     {
-        return AppService.SetAsync(input);
+        return AppService.SetPreferenceAsync(input);
     }
 
     [HttpDelete]

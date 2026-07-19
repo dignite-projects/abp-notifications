@@ -102,7 +102,7 @@ public class NotificationCenterDeliveryPreferenceEvaluator :
             var matchingRule = preferencesByUser.TryGetValue(candidate.UserId, out var userRules)
                 ? FindMatchingRule(userRules, notificationName, candidate.Channel)
                 : null;
-            if (matchingRule is { IsEnabled: false })
+            if (matchingRule is { IsDeliveryEnabled: false })
             {
                 result.Add(NotificationDeliveryPreferenceDecision.Suppress(
                     candidate.UserId,

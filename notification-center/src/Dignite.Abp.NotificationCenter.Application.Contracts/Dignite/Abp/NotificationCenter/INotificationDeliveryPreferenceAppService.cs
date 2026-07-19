@@ -9,7 +9,8 @@ public interface INotificationDeliveryPreferenceAppService : IApplicationService
 {
     Task<ListResultDto<NotificationDeliveryPreferenceDto>> GetListAsync();
 
-    Task<NotificationDeliveryPreferenceDto> SetAsync(SetNotificationDeliveryPreferenceDto input);
+    /// <summary>Creates or updates one delivery preference owned by the current user.</summary>
+    Task<NotificationDeliveryPreferenceDto> SetPreferenceAsync(SetNotificationDeliveryPreferenceDto input);
 
     Task DeleteAsync(DeleteNotificationDeliveryPreferenceDto input);
 

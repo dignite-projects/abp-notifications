@@ -2,26 +2,24 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Dignite.Abp.Notifications;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Shouldly;
 using Volo.Abp.Data;
+using Volo.Abp.DependencyInjection;
 using Volo.Abp.Domain.Entities;
 using Volo.Abp.Domain.Repositories;
-using Volo.Abp.Linq;
 using Volo.Abp.Modularity;
 using Volo.Abp.MultiTenancy;
-using Volo.Abp.Timing;
 using Volo.Abp.Uow;
 using Xunit;
 
 namespace Dignite.Abp.NotificationCenter;
 
 /// <summary>Provider-agnostic retention cleanup scenarios shared by EF Core and MongoDB.</summary>
-public abstract class NotificationRetentionCleanup_Tests<TStartupModule> : NotificationCenterTestBase<TStartupModule>
+public abstract class NotificationRetentionManager_Tests<TStartupModule> : NotificationCenterTestBase<TStartupModule>
     where TStartupModule : IAbpModule
 {
-    public NotificationRetentionCleanup_Tests()
+    public NotificationRetentionManager_Tests()
     {
         TestNotificationRetentionDeletionContributor.Reset();
     }
@@ -218,18 +216,15 @@ public abstract class NotificationRetentionCleanup_Tests<TStartupModule> : Notif
         var notificationId = Guid.NewGuid();
         var userNotificationId = Guid.NewGuid();
         await InsertNotificationAsync(notificationId, old, retentionDeletionTime: old.AddMinutes(1));
-        var service = new RaceAfterFinalCheckCleanupService(
+        var service = new RaceAfterFinalCheckRetentionManager(
             GetRequiredService<IRepository<Notification, Guid>>(),
             GetRequiredService<IRepository<UserNotification, Guid>>(),
             GetRequiredService<IRepository<NotificationDeliveryRecord, Guid>>(),
             GetRequiredService<IRepository<NotificationRetentionCleanupCursor, Guid>>(),
-            GetRequiredService<IAsyncQueryableExecuter>(),
             GetRequiredService<IDataFilter>(),
-            GetRequiredService<IClock>(),
             GetRequiredService<IUnitOfWorkManager>(),
             GetRequiredService<IOptions<NotificationRetentionOptions>>(),
             new[] { GetRequiredService<INotificationRetentionDeletionContributor>() },
-            GetRequiredService<ILogger<NotificationRetentionCleanupService>>(),
             cancellationToken => InsertUserNotificationThroughStoreAsync(
                 userNotificationId,
                 notificationId,
@@ -237,6 +232,7 @@ public abstract class NotificationRetentionCleanup_Tests<TStartupModule> : Notif
                 UserNotificationState.Unread,
                 old,
                 cancellationToken: cancellationToken));
+        service.LazyServiceProvider = GetRequiredService<IAbpLazyServiceProvider>();
 
         var result = await service.CleanupAsync(new NotificationRetentionCleanupRequest
         {
@@ -327,7 +323,7 @@ public abstract class NotificationRetentionCleanup_Tests<TStartupModule> : Notif
         bool isDryRun = false,
         int? batchSize = null)
     {
-        return await GetRequiredService<INotificationRetentionCleanupService>().CleanupAsync(
+        return await GetRequiredService<NotificationRetentionManager>().CleanupAsync(
             new NotificationRetentionCleanupRequest
             {
                 Now = now,
@@ -490,35 +486,29 @@ public abstract class NotificationRetentionCleanup_Tests<TStartupModule> : Notif
         }
     }
 
-    private sealed class RaceAfterFinalCheckCleanupService : NotificationRetentionCleanupService
+    private sealed class RaceAfterFinalCheckRetentionManager : NotificationRetentionManager
     {
         private readonly Func<CancellationToken, Task> _beforeDelete;
 
-        public RaceAfterFinalCheckCleanupService(
+        public RaceAfterFinalCheckRetentionManager(
             IRepository<Notification, Guid> notificationRepository,
             IRepository<UserNotification, Guid> userNotificationRepository,
             IRepository<NotificationDeliveryRecord, Guid> deliveryRepository,
             IRepository<NotificationRetentionCleanupCursor, Guid> cleanupCursorRepository,
-            IAsyncQueryableExecuter asyncExecuter,
             IDataFilter dataFilter,
-            IClock clock,
             IUnitOfWorkManager unitOfWorkManager,
             IOptions<NotificationRetentionOptions> options,
             System.Collections.Generic.IEnumerable<INotificationRetentionDeletionContributor> deletionContributors,
-            ILogger<NotificationRetentionCleanupService> logger,
             Func<CancellationToken, Task> beforeDelete)
             : base(
                 notificationRepository,
                 userNotificationRepository,
                 deliveryRepository,
                 cleanupCursorRepository,
-                asyncExecuter,
                 dataFilter,
-                clock,
                 unitOfWorkManager,
                 options,
-                deletionContributors,
-                logger)
+                deletionContributors)
         {
             _beforeDelete = beforeDelete;
         }

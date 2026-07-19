@@ -10,18 +10,18 @@ namespace Dignite.Abp.NotificationCenter.Web.Components.NotificationBell;
 
 public class NotificationBellViewComponent : ViewComponent
 {
-    protected INotificationAppService NotificationAppService { get; }
+    protected IUserNotificationAppService UserNotificationAppService { get; }
 
     protected INotificationDataTypeRegistry NotificationDataTypeRegistry { get; }
 
     protected NotificationCenterWebOptions WebOptions { get; }
 
     public NotificationBellViewComponent(
-        INotificationAppService notificationAppService,
+        IUserNotificationAppService userNotificationAppService,
         INotificationDataTypeRegistry notificationDataTypeRegistry,
         IOptions<NotificationCenterWebOptions> webOptions)
     {
-        NotificationAppService = notificationAppService;
+        UserNotificationAppService = userNotificationAppService;
         NotificationDataTypeRegistry = notificationDataTypeRegistry;
         WebOptions = webOptions.Value;
     }
@@ -44,8 +44,8 @@ public class NotificationBellViewComponent : ViewComponent
 
     protected virtual async Task<NotificationBellViewModel> CreateViewModelAsync()
     {
-        var unreadCount = await NotificationAppService.GetCountAsync(UserNotificationState.Unread);
-        var recent = await NotificationAppService.GetListAsync(new GetUserNotificationListInput
+        var unreadCount = await UserNotificationAppService.GetNotificationCountAsync(UserNotificationState.Unread);
+        var recent = await UserNotificationAppService.GetListAsync(new GetUserNotificationListInput
         {
             State = UserNotificationState.Unread,
             MaxResultCount = 10

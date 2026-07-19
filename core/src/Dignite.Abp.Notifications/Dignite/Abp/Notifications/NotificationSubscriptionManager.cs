@@ -1,12 +1,15 @@
 using System;
-using System.Collections.Generic;
 using System.Threading.Tasks;
 using Volo.Abp.DependencyInjection;
 using Volo.Abp.Timing;
 
 namespace Dignite.Abp.Notifications;
 
-public class NotificationSubscriptionManager : INotificationSubscriptionManager, ITransientDependency
+/// <summary>
+/// Applies notification-definition availability and exact-scope identity rules while mutating subscriptions.
+/// Subscription reads belong to the consuming application/query path through <see cref="INotificationStore"/>.
+/// </summary>
+public class NotificationSubscriptionManager : ITransientDependency
 {
     protected INotificationStore Store { get; }
 
@@ -72,25 +75,6 @@ public class NotificationSubscriptionManager : INotificationSubscriptionManager,
     {
         var (entityTypeName, entityId) = Deconstruct(entityIdentifier);
         return Store.DeleteSubscriptionAsync(userId, notificationName, entityTypeName, entityId);
-    }
-
-    public virtual Task<List<NotificationSubscriptionInfo>> GetSubscriptionsAsync(
-        string notificationName, NotificationEntityIdentifier? entityIdentifier = null)
-    {
-        var (entityTypeName, entityId) = Deconstruct(entityIdentifier);
-        return Store.GetSubscriptionsAsync(notificationName, entityTypeName, entityId);
-    }
-
-    public virtual Task<List<NotificationSubscriptionInfo>> GetSubscribedNotificationsAsync(Guid userId)
-    {
-        return Store.GetSubscriptionsAsync(userId);
-    }
-
-    public virtual Task<bool> IsSubscribedAsync(
-        Guid userId, string notificationName, NotificationEntityIdentifier? entityIdentifier = null)
-    {
-        var (entityTypeName, entityId) = Deconstruct(entityIdentifier);
-        return Store.IsSubscribedAsync(userId, notificationName, entityTypeName, entityId);
     }
 
     protected static (string? EntityTypeName, string? EntityId) Deconstruct(NotificationEntityIdentifier? identifier)

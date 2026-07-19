@@ -33,7 +33,7 @@ changes.
   scope. Multi-tenant broadcasts take an explicit tenant list, exclude host users, and enqueue each tenant inside
   an independent ABP unit of work so a tenant failure does not mix or block other tenant jobs.
 - Added opt-in Notification Center retention cleanup with `NotificationRetentionOptions`, a default-disabled
-  ABP periodic worker, manual dry-run/reporting through `INotificationRetentionCleanupService`, metrics, and
+  ABP periodic worker, manual dry-run/reporting through `NotificationRetentionManager`, metrics, and
   `INotificationRetentionDeletionContributor` hooks for archive/veto behavior. Cleanup deletes only expired read
   inbox rows, expired terminal delivery rows, and tenant-local orphan payload rows; base payload deletion is
   two-phase through `RetentionDeletionTime` so unread inbox rows, active delivery work, and concurrently
@@ -84,6 +84,15 @@ changes.
   explicit batches.
 
 ### Changed
+
+- **Breaking application/domain API alignment before 10.0.0 stable.** Current-user inbox services are now
+  `IUserNotificationAppService` / `UserNotificationAppService`, and `GetCountAsync` is
+  `GetNotificationCountAsync`. Preference mutation is `SetPreferenceAsync`, and `IsEnabled` is
+  `IsDeliveryEnabled` across the entity, DTO, request, JSON, and generated Angular proxy. Pass-through manager
+  interfaces and `UserNotificationManager` were removed; application reads now use stores/repositories while
+  concrete subscription/preference managers own validation and mutation only. Retention orchestration is the
+  concrete `NotificationRetentionManager`. REST routes are unchanged. Existing EF Core/MongoDB preference data
+  requires a consuming-host field rename as documented in the README.
 
 - Delivery retry and retention cleanup scanners now use ABP's periodic background-worker lifecycle and a stable,
   configurable `IAbpDistributedLock` per scanner. Competing instances skip a locked cycle without failure;
@@ -195,8 +204,8 @@ changes.
   configure both boxes against their custom context. MongoDB's `MessageId` inbox index is now unique; existing
   duplicate event records must be reconciled before model initialization creates the index. Notification business
   records require no backfill or collection rename.
-- **Breaking for implementers.** `INotificationAppService` gained scoped subscribe/unsubscribe members;
-  custom implementations and replacements must implement the new methods and be recompiled. Existing
+- **Breaking for implementers.** `IUserNotificationAppService` includes scoped subscribe/unsubscribe members;
+  custom implementations and replacements must implement these methods and be recompiled. Existing
   callers of the name-only members remain source-compatible.
 - Subscription-driven distribution now treats a definition-wide subscription as a fallback for every
   entity and combines it with an exact entity subscription without delivering twice to the same user.

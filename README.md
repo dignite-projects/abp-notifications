@@ -401,10 +401,11 @@ Configure<NotificationRetentionOptions>(options =>
 });
 ```
 
-The same service can be called manually for dry-run/reporting:
+The concrete domain manager can also be called manually for dry-run/reporting:
 
 ```csharp
-var report = await retentionCleanup.CleanupAsync(new NotificationRetentionCleanupRequest
+var retentionManager = serviceProvider.GetRequiredService<NotificationRetentionManager>();
+var report = await retentionManager.CleanupAsync(new NotificationRetentionCleanupRequest
 {
     IsDryRun = true,
     Now = clock.Now
@@ -503,7 +504,7 @@ Notification Center persists allow/deny rules at four nullable scopes. The first
 | 5 | no row | default allow |
 
 Entity-specific preferences are intentionally not supported: entity interest remains a subscription concern. A
-more-specific `IsEnabled = true` rule can override a broader opt-out. Quiet hours are a separate per-user daily
+more-specific `IsDeliveryEnabled = true` rule can override a broader opt-out. Quiet hours are a separate per-user daily
 window (`StartMinute` inclusive, `EndMinute` exclusive) and a system time-zone identifier; equal start/end values
 are rejected instead of meaning “all day.” Normal work created during the window is delayed, not dropped. The
 producer writes `Delay + DeliveryNotBefore` into the single-user/channel `NotificationDeliveryRequestedEto`; its owning
@@ -1037,6 +1038,38 @@ three-field scope rather than infer state from a flattened notification name.
 For subscription-driven distribution, a notification without an entity matches only definition-wide
 subscriptions. A notification for a concrete entity matches the union of definition-wide subscriptions
 and that exact entity scope; a user present in both receives one inbox row and one channel delivery.
+
+### Pre-stable application/domain API migration
+
+The REST routes above are unchanged. Recompile consuming code and regenerate ABP clients after applying these
+source-level changes:
+
+| Before | Now | Consumer action |
+|---|---|---|
+| `INotificationAppService` / `NotificationAppService` | `IUserNotificationAppService` / `UserNotificationAppService` | Rename injected service types and replacements. |
+| `GetCountAsync` | `GetNotificationCountAsync` | Rename C# calls; the route remains `GET /api/notifications/count`. |
+| `INotificationDeliveryPreferenceAppService.SetAsync` | `SetPreferenceAsync` | Rename C# calls; the route remains `PUT /api/notifications/preferences`. |
+| `NotificationDeliveryPreferenceManager.SetAsync` | `SetPreferenceAsync` | Rename domain mutation calls. |
+| Preference `IsEnabled` | `IsDeliveryEnabled` | Rename entity, DTO, request, JSON/TypeScript property, and custom mapping references. |
+| `NotificationDeliveryPreference.SetEnabled` | `SetDeliveryEnabled` | Rename aggregate behavior calls. |
+| `IUserNotificationManager` / `UserNotificationManager` | removed | Use `INotificationStore` for inbox queries and state mutations. |
+| `INotificationSubscriptionManager` | concrete `NotificationSubscriptionManager` | Use the manager only for validated subscription mutations; use `INotificationStore` for reads. |
+| Subscription-manager read methods | removed | Use `INotificationStore.GetSubscriptionsAsync` / `IsSubscribedAsync` directly in query paths. |
+| `INotificationDeliveryPreferenceManager` | concrete `NotificationDeliveryPreferenceManager` | Use the manager only for validated preference mutations; query repositories in the application/query layer. |
+| Preference-manager `GetListAsync` / `GetQuietHoursOrNullAsync` | removed | Query the generic preference/quiet-hours repositories in the application/query layer. |
+| `INotificationRetentionCleanupService` / `NotificationRetentionCleanupService` | `NotificationRetentionManager` | Inject the concrete domain manager for manual cleanup and dry runs. |
+
+`INotificationDefinitionManager` remains intentionally replaceable because consuming hosts can provide a custom
+definition registry and availability policy; startup resolves that replacement before definition initialization.
+Stores, evaluators, contributors/providers, and the retention-deletion veto contract likewise remain genuine
+extension boundaries.
+
+Because `NotificationDeliveryPreference.IsDeliveryEnabled` is also the conventional persistence member name,
+existing EF Core hosts must add a host-owned column rename from `IsEnabled` to `IsDeliveryEnabled`, and MongoDB
+hosts must rename/backfill the equivalent field before removing the old field. This repository does not ship
+application migrations. From `angular/`, regenerate the library proxy with
+`abp generate-proxy -t ng -m notification-center -s Host --target notification-center -a NotificationCenter`;
+its method/property names change while its URLs do not.
 
 ## UI libraries (optional)
 
