@@ -15,6 +15,7 @@ public static class NotificationRetentionMetrics
     public const string SkippedCountName = "dignite.notifications.retention.skipped";
     public const string ErrorCountName = "dignite.notifications.retention.errors";
     public const string OldestRetainedUnixTimeName = "dignite.notifications.retention.oldest_retained_unix_ms";
+    public const string WorkerCycleCountName = "dignite.notifications.retention.worker.cycles";
 
     internal static readonly Meter Meter = new(MeterName);
 
@@ -29,6 +30,8 @@ public static class NotificationRetentionMetrics
     internal static readonly Counter<long> SkippedCount = Meter.CreateCounter<long>(SkippedCountName);
 
     internal static readonly Counter<long> ErrorCount = Meter.CreateCounter<long>(ErrorCountName);
+
+    internal static readonly Counter<long> WorkerCycleCount = Meter.CreateCounter<long>(WorkerCycleCountName);
 
     private static readonly ObservableGauge<long> OldestRetainedUnixTime = Meter.CreateObservableGauge(
         OldestRetainedUnixTimeName,
@@ -73,6 +76,12 @@ public static class NotificationRetentionMetrics
         SetUnixTime(ref _oldestNotificationUnixTimeMs, oldestNotificationCreationTime);
         SetUnixTime(ref _oldestUserNotificationUnixTimeMs, oldestUserNotificationCreationTime);
         SetUnixTime(ref _oldestDeliveryUnixTimeMs, oldestDeliveryCreationTime);
+    }
+
+    internal static void RecordWorkerCycle(string outcome)
+    {
+        var tags = new TagList { { "outcome", outcome } };
+        WorkerCycleCount.Add(1, tags);
     }
 
     private static Measurement<long>[] ObserveOldestRetainedUnixTime()

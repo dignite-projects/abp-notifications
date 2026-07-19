@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Volo.Abp;
 using Volo.Abp.Autofac;
 using Volo.Abp.BackgroundJobs;
+using Volo.Abp.BackgroundWorkers;
 using Volo.Abp.Modularity;
 using Volo.Abp.EventBus.Distributed;
 
@@ -17,6 +18,8 @@ public class DigniteAbpNotificationsTestModule : AbpModule
 {
     public override void ConfigureServices(ServiceConfigurationContext context)
     {
+        Configure<AbpBackgroundWorkerOptions>(options => options.IsEnabled = false);
+
         // Collector for notification delivery ETOs delivered through the (local) distributed event bus.
         context.Services.AddSingleton<ReceivedNotificationDeliveries>();
         Configure<AbpDistributedEventBusOptions>(options =>

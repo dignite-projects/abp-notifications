@@ -1,8 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Volo.Abp;
+using Volo.Abp.BackgroundWorkers;
 using Volo.Abp.BackgroundJobs;
+using Volo.Abp.DistributedLocking;
 using Volo.Abp.EventBus;
 using Volo.Abp.EventBus.Distributed;
 using Volo.Abp.Features;
@@ -18,6 +23,8 @@ namespace Dignite.Abp.Notifications;
     typeof(AbpFeaturesModule),
     typeof(AbpTimingModule),
     typeof(AbpBackgroundJobsAbstractionsModule),
+    typeof(AbpBackgroundWorkersModule),
+    typeof(AbpDistributedLockingAbstractionsModule),
     typeof(AbpGuidsModule),
     typeof(AbpEventBusModule),
     typeof(AbpUnitOfWorkModule)
@@ -37,12 +44,17 @@ public class AbpNotificationsModule : AbpModule
         AddValidatedOptions<NotificationAudienceBroadcastOptions>(context.Services, options => options.Validate());
 
         context.Services.AddHostedService<NotificationDefinitionStartupService>();
-        context.Services.AddHostedService<NotificationDeliveryRetryWorker>();
+        context.Services.TryAddSingleton<NotificationDeliveryRetryWorker>();
 
         Configure<AbpDistributedEventBusOptions>(options =>
         {
             options.Handlers.Add<NotificationDeliveryRequestedHandler>();
         });
+    }
+
+    public override async Task OnApplicationInitializationAsync(ApplicationInitializationContext context)
+    {
+        await context.AddBackgroundWorkerAsync<NotificationDeliveryRetryWorker>();
     }
 
     private static void AutoAddDefinitionProviders(IServiceCollection services)

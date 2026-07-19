@@ -8,6 +8,10 @@ public class NotificationDeliveryOptions
     /// <summary>Hard safeguard for retry-worker batch sizes.</summary>
     public const int MaxBatchSize = 10_000;
 
+    /// <summary>Stable default lock name shared by delivery retry workers for the same application.</summary>
+    public const string DefaultDeliveryRetryWorkerLockName =
+        "Dignite.Abp.Notifications:DeliveryRetryWorker";
+
     /// <summary>Duration for which a claimed delivery attempt remains exclusively leased.</summary>
     public TimeSpan DeliveryLeaseDuration { get; set; } = TimeSpan.FromMinutes(2);
 
@@ -34,6 +38,15 @@ public class NotificationDeliveryOptions
 
     /// <summary>Whether the built-in delivery retry worker is enabled.</summary>
     public bool IsDeliveryRetryWorkerEnabled { get; set; } = true;
+
+    /// <summary>
+    /// Distributed lock name used to serialize retry scans. Configure
+    /// <c>AbpDistributedLockOptions.KeyPrefix</c> when applications share a lock provider but not notification data.
+    /// </summary>
+    public string DeliveryRetryWorkerLockName { get; set; } = DefaultDeliveryRetryWorkerLockName;
+
+    /// <summary>Maximum time one retry cycle waits for the distributed lock. The default skips immediately.</summary>
+    public TimeSpan DeliveryRetryWorkerLockTimeout { get; set; } = TimeSpan.Zero;
 
     internal void Validate()
     {
@@ -75,6 +88,21 @@ public class NotificationDeliveryOptions
         if (DeliveryRetryBatchSize < 1 || DeliveryRetryBatchSize > MaxBatchSize)
         {
             throw Invalid(nameof(DeliveryRetryBatchSize), $"must be between 1 and {MaxBatchSize}");
+        }
+
+        if (string.IsNullOrWhiteSpace(DeliveryRetryWorkerLockName))
+        {
+            throw Invalid(nameof(DeliveryRetryWorkerLockName), "must not be empty or whitespace");
+        }
+
+        if (DeliveryRetryWorkerLockTimeout < TimeSpan.Zero)
+        {
+            throw Invalid(nameof(DeliveryRetryWorkerLockTimeout), "must be greater than or equal to zero");
+        }
+
+        if (DeliveryRetryWorkerPeriod.TotalMilliseconds > int.MaxValue)
+        {
+            throw Invalid(nameof(DeliveryRetryWorkerPeriod), $"must not exceed {int.MaxValue} milliseconds");
         }
     }
 

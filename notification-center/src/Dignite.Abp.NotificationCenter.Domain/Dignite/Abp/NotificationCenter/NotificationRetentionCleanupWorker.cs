@@ -2,67 +2,88 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Volo.Abp.BackgroundWorkers;
+using Volo.Abp.DependencyInjection;
+using Volo.Abp.DistributedLocking;
+using Volo.Abp.Threading;
 
 namespace Dignite.Abp.NotificationCenter;
 
-internal sealed class NotificationRetentionCleanupWorker : BackgroundService
+internal sealed class NotificationRetentionCleanupWorker : AsyncPeriodicBackgroundWorkerBase
 {
-    private readonly IServiceScopeFactory _serviceScopeFactory;
     private readonly IOptions<NotificationRetentionOptions> _options;
     private readonly ILogger<NotificationRetentionCleanupWorker> _logger;
 
     public NotificationRetentionCleanupWorker(
+        AbpAsyncTimer timer,
         IServiceScopeFactory serviceScopeFactory,
+        IServiceProvider serviceProvider,
+        IAbpLazyServiceProvider lazyServiceProvider,
         IOptions<NotificationRetentionOptions> options,
         ILogger<NotificationRetentionCleanupWorker> logger)
+        : base(timer, serviceScopeFactory)
     {
-        _serviceScopeFactory = serviceScopeFactory;
         _options = options;
         _logger = logger;
+        ServiceProvider = serviceProvider;
+        LazyServiceProvider = lazyServiceProvider;
+        Timer.Period = checked((int)options.Value.CleanupWorkerPeriod.TotalMilliseconds);
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override Task DoWorkAsync(PeriodicBackgroundWorkerContext workerContext)
     {
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try
-            {
-                await Task.Delay(_options.Value.CleanupWorkerPeriod, stoppingToken);
-                if (!_options.Value.IsCleanupEnabled)
-                {
-                    continue;
-                }
+        return ExecuteCycleAsync(workerContext.ServiceProvider, workerContext.CancellationToken);
+    }
 
-                await CleanupAsync(stoppingToken);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+    internal async Task ExecuteCycleAsync(
+        IServiceProvider serviceProvider,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_options.Value.IsCleanupEnabled)
+        {
+            return;
+        }
+
+        try
+        {
+            var distributedLock = serviceProvider.GetRequiredService<IAbpDistributedLock>();
+            await using var handle = await distributedLock.TryAcquireAsync(
+                _options.Value.CleanupWorkerLockName,
+                _options.Value.CleanupWorkerLockTimeout,
+                cancellationToken);
+            if (handle == null)
             {
-                break;
+                NotificationRetentionMetrics.RecordWorkerCycle("lock_miss");
+                _logger.LogDebug(
+                    "Skipped the notification retention cleanup scan because lock {LockName} is held by another worker.",
+                    _options.Value.CleanupWorkerLockName);
+                return;
             }
-            catch (Exception exception)
+
+            var cleanupService = serviceProvider.GetRequiredService<INotificationRetentionCleanupService>();
+            var result = await cleanupService.CleanupAsync(cancellationToken: cancellationToken);
+
+            NotificationRetentionMetrics.RecordWorkerCycle("completed");
+            if (result.ScannedCount > 0 || result.ErrorCount > 0)
             {
-                _logger.LogError(exception, "The notification retention cleanup scan failed.");
+                _logger.LogInformation(
+                    "Notification retention cleanup scanned {ScannedCount}, deleted {DeletedCount}, skipped {SkippedCount}, errors {ErrorCount}.",
+                    result.ScannedCount,
+                    result.DeletedCount,
+                    result.SkippedCount,
+                    result.ErrorCount);
             }
         }
-    }
-
-    private async Task CleanupAsync(CancellationToken cancellationToken)
-    {
-        using var scope = _serviceScopeFactory.CreateScope();
-        var cleanupService = scope.ServiceProvider.GetRequiredService<INotificationRetentionCleanupService>();
-        var result = await cleanupService.CleanupAsync(cancellationToken: cancellationToken);
-
-        if (result.ScannedCount > 0 || result.ErrorCount > 0)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            _logger.LogInformation(
-                "Notification retention cleanup scanned {ScannedCount}, deleted {DeletedCount}, skipped {SkippedCount}, errors {ErrorCount}.",
-                result.ScannedCount,
-                result.DeletedCount,
-                result.SkippedCount,
-                result.ErrorCount);
+            _logger.LogDebug("The notification retention cleanup scan was canceled during shutdown.");
+        }
+        catch
+        {
+            NotificationRetentionMetrics.RecordWorkerCycle("failed");
+            throw;
         }
     }
 }

@@ -7,14 +7,26 @@ public class NotificationRetentionOptions
 {
     public const int MaxCleanupBatchSize = 10_000;
 
+    public const string DefaultCleanupWorkerLockName =
+        "Dignite.Abp.NotificationCenter:RetentionCleanupWorker";
+
     /// <summary>
-    /// Enables the hosted cleanup worker. Manual <see cref="INotificationRetentionCleanupService"/> calls are
+    /// Enables the ABP periodic cleanup worker. Manual <see cref="INotificationRetentionCleanupService"/> calls are
     /// always explicit and do not require this flag.
     /// </summary>
     public bool IsCleanupEnabled { get; set; }
 
-    /// <summary>Delay between hosted cleanup scans when <see cref="IsCleanupEnabled"/> is true.</summary>
+    /// <summary>Delay between periodic cleanup scans when <see cref="IsCleanupEnabled"/> is true.</summary>
     public TimeSpan CleanupWorkerPeriod { get; set; } = TimeSpan.FromHours(1);
+
+    /// <summary>
+    /// Distributed lock name used to serialize cleanup scans. Configure
+    /// <c>AbpDistributedLockOptions.KeyPrefix</c> when applications share a lock provider but not notification data.
+    /// </summary>
+    public string CleanupWorkerLockName { get; set; } = DefaultCleanupWorkerLockName;
+
+    /// <summary>Maximum time one cleanup cycle waits for the distributed lock. The default skips immediately.</summary>
+    public TimeSpan CleanupWorkerLockTimeout { get; set; } = TimeSpan.Zero;
 
     /// <summary>Maximum candidates scanned per retained record kind in one cleanup pass.</summary>
     public int CleanupBatchSize { get; set; } = 100;
@@ -61,6 +73,23 @@ public class NotificationRetentionOptions
         {
             throw new InvalidOperationException(
                 $"{nameof(CleanupBatchSize)} must be between 1 and {MaxCleanupBatchSize}.");
+        }
+
+        if (string.IsNullOrWhiteSpace(CleanupWorkerLockName))
+        {
+            throw new InvalidOperationException($"{nameof(CleanupWorkerLockName)} must not be empty or whitespace.");
+        }
+
+        if (CleanupWorkerLockTimeout < TimeSpan.Zero)
+        {
+            throw new InvalidOperationException(
+                $"{nameof(CleanupWorkerLockTimeout)} must be greater than or equal to zero.");
+        }
+
+        if (CleanupWorkerPeriod.TotalMilliseconds > int.MaxValue)
+        {
+            throw new InvalidOperationException(
+                $"{nameof(CleanupWorkerPeriod)} must not exceed {int.MaxValue} milliseconds.");
         }
 
         ValidateRetention(ReadUserNotificationRetention, nameof(ReadUserNotificationRetention));
