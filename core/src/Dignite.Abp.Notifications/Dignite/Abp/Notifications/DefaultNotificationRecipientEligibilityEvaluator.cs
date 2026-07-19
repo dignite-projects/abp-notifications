@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Volo.Abp.DependencyInjection;
@@ -37,9 +38,11 @@ public class DefaultNotificationRecipientEligibilityEvaluator :
         string notificationName,
         IReadOnlyCollection<Guid> candidateUserIds,
         Guid? tenantId,
-        NotificationRecipientEligibilityMode mode)
+        NotificationRecipientEligibilityMode mode,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(candidateUserIds);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var candidates = candidateUserIds.Distinct().ToList();
         if (mode == NotificationRecipientEligibilityMode.BypassDefinitionRequirements)
@@ -57,6 +60,7 @@ public class DefaultNotificationRecipientEligibilityEvaluator :
         var excluded = new List<Guid>();
         foreach (var userId in candidates)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (await DefinitionManager.IsAvailableAsync(notificationName, userId))
             {
                 eligible.Add(userId);
@@ -66,6 +70,7 @@ public class DefaultNotificationRecipientEligibilityEvaluator :
                 excluded.Add(userId);
             }
         }
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (excluded.Count > 0)
         {

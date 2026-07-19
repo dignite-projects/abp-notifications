@@ -82,7 +82,6 @@ public class DefaultNotificationAudienceBroadcaster : INotificationAudienceBroad
         cancellationToken.ThrowIfCancellationRequested();
         EnsureAmbientTenantCanTarget(request.TenantId);
         EnsureRecipientSource(request.AudienceName);
-        EnsurePreparedDistributor();
 
         var definition = DefinitionManager.Get(request.NotificationName);
         NotificationDefinitionContractValidator.ValidatePublish(
@@ -252,28 +251,10 @@ public class DefaultNotificationAudienceBroadcaster : INotificationAudienceBroad
         return source;
     }
 
-    protected virtual void EnsurePreparedDistributor()
-    {
-        if (Distributor is not IPreparedNotificationDistributor { SupportsPreparedDistribution: true })
-        {
-            throw new AbpException(
-                "The configured notification distributor cannot process prepared recipient batches required by " +
-                "audience broadcasts.");
-        }
-    }
-
     protected virtual async Task InsertNotificationAsync(
         NotificationInfo notification,
         CancellationToken cancellationToken)
     {
-        if (Store is IBatchedNotificationStore batchedStore)
-        {
-            await batchedStore.InsertNotificationAsync(notification, cancellationToken);
-            return;
-        }
-
-        cancellationToken.ThrowIfCancellationRequested();
-        await Store.InsertNotificationAsync(notification);
-        cancellationToken.ThrowIfCancellationRequested();
+        await Store.InsertNotificationAsync(notification, cancellationToken);
     }
 }

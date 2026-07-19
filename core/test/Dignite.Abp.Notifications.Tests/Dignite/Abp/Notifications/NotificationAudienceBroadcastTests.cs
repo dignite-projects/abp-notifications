@@ -56,16 +56,15 @@ public class NotificationAudienceBroadcastTests
         var backgroundJobManager = new FakeBackgroundJobManager();
         var unitOfWorks = new List<IUnitOfWork>();
         var unitOfWorkManager = CreateUnitOfWorkManager(unitOfWorks);
-        var store = Substitute.For<INotificationStore, IBatchedNotificationStore>();
-        var batchedStore = (IBatchedNotificationStore)store;
-        batchedStore.InsertNotificationAsync(
+        var store = Substitute.For<INotificationStore>();
+        store.InsertNotificationAsync(
                 Arg.Is<NotificationInfo>(notification => notification.TenantId == failingTenantId),
                 Arg.Any<CancellationToken>())
             .Returns<Task>(_ => throw new InvalidOperationException("tenant enqueue failed"));
         var broadcaster = CreateBroadcaster(
             currentTenant,
             backgroundJobManager,
-            store: (INotificationStore)store,
+            store: store,
             unitOfWorkManager: unitOfWorkManager);
 
         var result = await broadcaster.EnqueueHostBroadcastAsync(
@@ -364,7 +363,7 @@ public class NotificationAudienceBroadcastTests
     {
         currentTenant ??= new TestCurrentTenant();
         backgroundJobManager ??= new FakeBackgroundJobManager();
-        store ??= Substitute.For<INotificationStore, IBatchedNotificationStore>();
+        store ??= Substitute.For<INotificationStore>();
         distributor ??= CreatePreparedDistributorSubstitute();
         sources ??= new[] { new TestAudienceRecipientSource(null, Guid.NewGuid()) };
         progressStore ??= new InMemoryNotificationAudienceBroadcastProgressStore();
@@ -435,9 +434,7 @@ public class NotificationAudienceBroadcastTests
 
     private static INotificationDistributor CreatePreparedDistributorSubstitute()
     {
-        var distributor = Substitute.For<INotificationDistributor, IPreparedNotificationDistributor>();
-        ((IPreparedNotificationDistributor)distributor).SupportsPreparedDistribution.Returns(true);
-        return distributor;
+        return Substitute.For<INotificationDistributor>();
     }
 
     private static INotificationDataTypeRegistry CreateDataTypeRegistry()
@@ -498,18 +495,15 @@ public class NotificationAudienceBroadcastTests
         }
     }
 
-    private sealed class RecordingPreparedNotificationDistributor :
-        INotificationDistributor,
-        IPreparedNotificationDistributor
+    private sealed class RecordingPreparedNotificationDistributor : INotificationDistributor
     {
-        public bool SupportsPreparedDistribution => true;
-
         public List<PreparedCall> Calls { get; } = new();
 
         public Task DistributeAsync(
             NotificationInfo notification,
             Guid[]? userIds = null,
-            Guid[]? excludedUserIds = null)
+            Guid[]? excludedUserIds = null,
+            CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException();
         }
@@ -517,7 +511,8 @@ public class NotificationAudienceBroadcastTests
         public Task DistributeToExplicitRecipientsWithoutEligibilityChecksAsync(
             NotificationInfo notification,
             Guid[] userIds,
-            Guid[]? excludedUserIds = null)
+            Guid[]? excludedUserIds = null,
+            CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException();
         }
@@ -526,7 +521,7 @@ public class NotificationAudienceBroadcastTests
             NotificationInfo notification,
             Guid[] userIds,
             NotificationRecipientEligibilityMode recipientEligibilityMode,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
             recipientEligibilityMode.ShouldBe(NotificationRecipientEligibilityMode.EnforceDefinitionRequirements);

@@ -391,7 +391,7 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
                 null,
                 cancellation.Token)));
 
-        publishedBatches.ShouldBe(2);
+        publishedBatches.ShouldBe(1);
         await WithUnitOfWorkAsync(async () =>
         {
             // EF rolls the ambient transaction back, while the non-transactional Mongo test provider can retain

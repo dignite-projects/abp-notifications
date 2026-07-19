@@ -88,7 +88,10 @@ public class NotificationDeliveryPreferenceTests
             CreationTime = DateTime.UtcNow
         }, new[] { userId });
 
-        await store.Received(1).InsertUserNotificationAsync(Arg.Is<UserNotificationInfo>(row => row.UserId == userId));
+        await store.Received(1).InsertUserNotificationsAsync(
+            Arg.Is<IReadOnlyCollection<UserNotificationInfo>>(rows =>
+                rows.Count == 1 && rows.Single().UserId == userId),
+            Arg.Any<CancellationToken>());
         published.ShouldNotBeNull().Intent.ShouldBe(NotificationDeliveryIntent.Suppress);
         published.PreferenceReasonCode.ShouldBe(NotificationDeliveryPreferenceReasonCodes.UserOptOut);
     }

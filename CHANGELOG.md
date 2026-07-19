@@ -72,8 +72,9 @@ changes.
   validation, typed strict-read failures, and a safe `UnsupportedNotificationData` tolerant-read representation.
   MVC and Angular now render unsupported payloads with a localized fallback.
 - Added a configurable bounded recipient pipeline for candidate resolution, eligibility, inbox multi-inserts, and
-  delivery-event publication. `IBatchedNotificationStore`, `ICancellableNotificationDistributor`, and
-  `IPreparedNotificationDistributor` are additive capability contracts, and `NotificationDistributionMetrics`
+  delivery-event publication. Stable paging and batch persistence are canonical `INotificationStore` operations;
+  cancellation and prepared distribution are canonical `INotificationDistributor` operations.
+  `NotificationDistributionMetrics`
   publishes stable candidate/eligible/filtered/batch/duration/failure instruments. Shared EF Core/MongoDB tests
   cover 2,001 recipients, duplicate scopes, keyset changes, exact limits, cancellation, and independently scheduled
   explicit batches.
@@ -154,12 +155,21 @@ changes.
   permission and feature requirements: `PublishAsync` now filters explicit and subscription-derived
   recipients through the same policy in the notification's tenant or host context. Call the named
   `PublishToExplicitRecipientsWithoutEligibilityChecksAsync` API only for mandatory trusted-system delivery.
+- **Breaking contract consolidation before 10.0.0 stable.** `IBatchedNotificationStore`,
+  `ICancellableNotificationDistributor`, and `IPreparedNotificationDistributor` were removed. Custom stores must
+  implement stable `GetSubscriptionUserIdsAsync` paging, bounded `InsertUserNotificationsAsync`, and the
+  cancellation-aware canonical `INotificationStore` members. Custom distributors must implement the
+  cancellation-aware canonical methods plus `DistributePreparedAsync`. Recompile every implementation; there is
+  no runtime capability probe or materializing/per-row fallback. `NullNotificationStore` remains the Core-only,
+  non-persistent implementation.
+- **Breaking for `DefaultNotificationDistributor` subclasses.** The legacy protected
+  `GetTargetUserIdsAsync`, `SaveUserNotificationsAsync`, and `PublishNotificationDeliveryAsync` extension hooks
+  were removed. Move recipient persistence to `INotificationStore`, policy filtering to
+  `INotificationRecipientEligibilityEvaluator`, or implement the canonical distributor contract.
 - **Breaking for implementers.** `INotificationPublisher` and `INotificationDistributor` gained the named
   explicit-recipient bypass members. Custom implementations must add them and be recompiled. Existing
-  `DefaultNotificationDistributor` subclasses overriding its legacy protected selection/persistence/publication
-  hooks remain active through a compatibility pipeline, after which the shared eligibility policy is applied.
-  That compatibility path is intentionally materializing; migrate the customization to
-  `IBatchedNotificationStore` and `INotificationRecipientEligibilityEvaluator` for bounded fan-outs.
+  `DefaultNotificationDistributor` subclasses should use `INotificationStore` and
+  `INotificationRecipientEligibilityEvaluator` extension points.
 - **Breaking for manual construction.** The three-argument `DefaultNotificationDistributor` constructor was
   removed because it could neither establish the notification's tenant/host context nor guarantee bypass audit
   logging. Manual callers must now supply `INotificationRecipientEligibilityEvaluator`, `ICurrentTenant`, and

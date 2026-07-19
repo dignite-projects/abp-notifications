@@ -29,7 +29,7 @@ public class DefaultNotificationPublisher : INotificationPublisher, ITransientDe
 
     protected INotificationDataTypeRegistry DataTypeRegistry { get; }
 
-    protected INotificationStore? Store { get; }
+    protected INotificationStore Store { get; }
 
     public DefaultNotificationPublisher(
         IOptions<NotificationOptions> options,
@@ -72,7 +72,7 @@ public class DefaultNotificationPublisher : INotificationPublisher, ITransientDe
         CurrentTenant = currentTenant;
         DefinitionManager = definitionManager;
         DataTypeRegistry = dataTypeRegistry;
-        Store = store;
+        Store = store ?? new NullNotificationStore();
     }
 
     public virtual Task PublishAsync(
@@ -166,16 +166,11 @@ public class DefaultNotificationPublisher : INotificationPublisher, ITransientDe
                 await Distributor.DistributeAsync(notification, normalizedUserIds, excludedUserIds);
             }
         }
-        else if (userIds != null &&
-                 Store is IBatchedNotificationStore batchedStore &&
-                 Distributor is IPreparedNotificationDistributor
-                 {
-                     SupportsPreparedDistribution: true
-                 })
+        else if (userIds != null)
         {
             var notificationPrepared = false;
             foreach (var normalizedBatch in BoundedRecipientBatcher.GetDistinctBatches(
-                         userIds,
+                         userIds!,
                          Options.RecipientBatchSize))
             {
                 var recipientBatch = BoundedRecipientBatcher.RemoveExcludedRecipients(
@@ -188,7 +183,7 @@ public class DefaultNotificationPublisher : INotificationPublisher, ITransientDe
 
                 if (!notificationPrepared)
                 {
-                    await batchedStore.InsertNotificationAsync(notification, CancellationToken.None);
+                    await Store.InsertNotificationAsync(notification, CancellationToken.None);
                     notificationPrepared = true;
                 }
 
@@ -203,13 +198,10 @@ public class DefaultNotificationPublisher : INotificationPublisher, ITransientDe
         }
         else
         {
-            // A custom store/distributor that has not opted into prepared batching keeps the historical one-job
-            // contract. Its compatibility path is intentionally documented as notification-wide and unbounded.
-            normalizedUserIds = userIds?.Distinct().ToArray();
             await BackgroundJobManager.EnqueueAsync(
                 new NotificationDistributionJobArgs(
                     notification,
-                    normalizedUserIds,
+                    userIds: null,
                     excludedUserIds,
                     recipientEligibilityMode));
         }

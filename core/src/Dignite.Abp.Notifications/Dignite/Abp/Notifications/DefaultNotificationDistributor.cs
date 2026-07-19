@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -16,8 +15,6 @@ namespace Dignite.Abp.Notifications;
 
 public class DefaultNotificationDistributor :
     INotificationDistributor,
-    ICancellableNotificationDistributor,
-    IPreparedNotificationDistributor,
     ITransientDependency
 {
     protected INotificationStore Store { get; }
@@ -37,8 +34,6 @@ public class DefaultNotificationDistributor :
     protected INotificationDataTypeRegistry DataTypeRegistry { get; }
 
     protected NotificationOptions Options { get; }
-
-    public virtual bool SupportsPreparedDistribution => !UsesLegacyExtensionPointOverrides();
 
     /// <summary>
     /// Source-compatible constructor for applications/tests that instantiate the default distributor directly.
@@ -123,16 +118,8 @@ public class DefaultNotificationDistributor :
     public virtual Task DistributeAsync(
         NotificationInfo notification,
         Guid[]? userIds = null,
-        Guid[]? excludedUserIds = null)
-    {
-        return DistributeAsync(notification, userIds, excludedUserIds, CancellationToken.None);
-    }
-
-    public virtual Task DistributeAsync(
-        NotificationInfo notification,
-        Guid[]? userIds,
-        Guid[]? excludedUserIds,
-        CancellationToken cancellationToken)
+        Guid[]? excludedUserIds = null,
+        CancellationToken cancellationToken = default)
     {
         return DistributeAsyncInternal(
             notification,
@@ -146,20 +133,8 @@ public class DefaultNotificationDistributor :
     public virtual Task DistributeToExplicitRecipientsWithoutEligibilityChecksAsync(
         NotificationInfo notification,
         Guid[] userIds,
-        Guid[]? excludedUserIds = null)
-    {
-        return DistributeToExplicitRecipientsWithoutEligibilityChecksAsync(
-            notification,
-            userIds,
-            excludedUserIds,
-            CancellationToken.None);
-    }
-
-    public virtual Task DistributeToExplicitRecipientsWithoutEligibilityChecksAsync(
-        NotificationInfo notification,
-        Guid[] userIds,
-        Guid[]? excludedUserIds,
-        CancellationToken cancellationToken)
+        Guid[]? excludedUserIds = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(userIds);
 
@@ -176,15 +151,9 @@ public class DefaultNotificationDistributor :
         NotificationInfo notification,
         Guid[] userIds,
         NotificationRecipientEligibilityMode recipientEligibilityMode,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(userIds);
-        if (!SupportsPreparedDistribution)
-        {
-            throw new InvalidOperationException(
-                "A distributor with legacy protected overrides cannot process prepared notification batches.");
-        }
-
         return DistributeAsyncInternal(
             notification,
             userIds,
@@ -257,21 +226,6 @@ public class DefaultNotificationDistributor :
                 }
 
                 var channels = ResolveExternalChannelsOrNull(notification.NotificationName);
-                if (UsesLegacyExtensionPointOverrides())
-                {
-                    await DistributeUsingLegacyExtensionPointsAsync(
-                        notification,
-                        userIds,
-                        excludedUserIds,
-                        channels,
-                        source,
-                        recipientEligibilityMode,
-                        state,
-                        cancellationToken,
-                        currentStage => stage = currentStage);
-                    return;
-                }
-
                 stage = "candidate_resolution";
                 if (userIds != null)
                 {
@@ -449,8 +403,8 @@ public class DefaultNotificationDistributor :
             notification.NotificationName,
             candidates,
             notification.TenantId,
-            recipientEligibilityMode);
-        cancellationToken.ThrowIfCancellationRequested();
+            recipientEligibilityMode,
+            cancellationToken);
 
         // Do not let a replaceable evaluator inject users that were not in this bounded candidate batch.
         var candidateSet = new HashSet<Guid>(candidates);
@@ -542,149 +496,10 @@ public class DefaultNotificationDistributor :
         await PublishNotificationDeliveryBatchAsync(
             notification,
             state.DeliveryBuffer,
-            channels);
+            channels,
+            cancellationToken);
         state.DeliveryBuffer.Clear();
         cancellationToken.ThrowIfCancellationRequested();
-    }
-
-    private async Task DistributeUsingLegacyExtensionPointsAsync(
-        NotificationInfo notification,
-        Guid[]? userIds,
-        Guid[]? excludedUserIds,
-        string[]? channels,
-        string source,
-        NotificationRecipientEligibilityMode recipientEligibilityMode,
-        DistributionState state,
-        CancellationToken cancellationToken,
-        Action<string> setStage)
-    {
-        Logger.LogWarning(
-            "Notification distributor type {DistributorType} overrides a legacy materializing extension point. " +
-            "Distribution for '{NotificationName}' ({NotificationId}) retains compatibility semantics and does not " +
-            "have bounded " +
-            "candidate, persistence, or delivery guarantees.",
-            GetNonProxyImplementationType().FullName,
-            notification.NotificationName,
-            notification.Id);
-
-        setStage("candidate_resolution");
-        cancellationToken.ThrowIfCancellationRequested();
-#pragma warning disable CS0618 // Compatibility path intentionally invokes the obsolete protected hooks.
-        var candidates = (await GetTargetUserIdsAsync(notification, userIds, excludedUserIds))
-            .Distinct()
-            .ToList();
-#pragma warning restore CS0618
-        cancellationToken.ThrowIfCancellationRequested();
-        state.CandidateBatchCount++;
-        state.CandidateCount = candidates.Count;
-        NotificationDistributionMetrics.CandidateCount.Add(
-            candidates.Count,
-            CreateTags(notification, source));
-        NotificationDistributionMetrics.BatchCount.Add(
-            1,
-            CreateTags(notification, source, stage: "candidate"));
-        if (candidates.Count == 0)
-        {
-            return;
-        }
-
-        setStage("eligibility");
-        var evaluation = await RecipientEligibilityEvaluator.EvaluateAsync(
-            notification.NotificationName,
-            candidates,
-            notification.TenantId,
-            recipientEligibilityMode);
-        cancellationToken.ThrowIfCancellationRequested();
-        var candidateSet = new HashSet<Guid>(candidates);
-        var eligible = evaluation.EligibleUserIds
-            .Where(candidateSet.Contains)
-            .Distinct()
-            .ToList();
-        state.EligibleCount = eligible.Count;
-        state.FilteredCount = candidates.Count - eligible.Count;
-        NotificationDistributionMetrics.EligibleCount.Add(
-            eligible.Count,
-            CreateTags(notification, source));
-        NotificationDistributionMetrics.FilteredCount.Add(
-            state.FilteredCount,
-            CreateTags(notification, source, stage: "eligibility"));
-        if (eligible.Count == 0)
-        {
-            return;
-        }
-
-        setStage("persistence");
-        state.PersistenceBatchCount++;
-        NotificationDistributionMetrics.BatchCount.Add(
-            1,
-            CreateTags(notification, source, stage: "persistence"));
-#pragma warning disable CS0618 // Compatibility path intentionally invokes the obsolete protected hooks.
-        await SaveUserNotificationsAsync(notification, eligible);
-#pragma warning restore CS0618
-        cancellationToken.ThrowIfCancellationRequested();
-        state.NotificationInserted = true;
-
-        if (channels == null)
-        {
-            return;
-        }
-
-        setStage("delivery");
-        state.DeliveryBatchCount++;
-        NotificationDistributionMetrics.BatchCount.Add(
-            1,
-            CreateTags(notification, source, stage: "delivery"));
-#pragma warning disable CS0618 // Compatibility path intentionally invokes the obsolete protected hooks.
-        await PublishNotificationDeliveryAsync(notification, eligible, channels);
-#pragma warning restore CS0618
-        cancellationToken.ThrowIfCancellationRequested();
-    }
-
-    private bool UsesLegacyExtensionPointOverrides()
-    {
-        var implementationType = GetNonProxyImplementationType();
-        return IsLegacyOverride(
-                   implementationType,
-                   nameof(GetTargetUserIdsAsync),
-                   typeof(NotificationInfo),
-                   typeof(Guid[]),
-                   typeof(Guid[])) ||
-               IsLegacyOverride(
-                   implementationType,
-                   nameof(SaveUserNotificationsAsync),
-                   typeof(NotificationInfo),
-                   typeof(List<Guid>)) ||
-               IsLegacyOverride(
-                   implementationType,
-                   nameof(PublishNotificationDeliveryAsync),
-                   typeof(NotificationInfo),
-                   typeof(List<Guid>),
-                   typeof(string[]));
-    }
-
-    private Type GetNonProxyImplementationType()
-    {
-        var implementationType = GetType();
-        while (implementationType.Assembly.IsDynamic && implementationType.BaseType != null)
-        {
-            implementationType = implementationType.BaseType;
-        }
-
-        return implementationType;
-    }
-
-    private static bool IsLegacyOverride(
-        Type implementationType,
-        string methodName,
-        params Type[] parameterTypes)
-    {
-        var method = implementationType.GetMethod(
-            methodName,
-            BindingFlags.Instance | BindingFlags.NonPublic,
-            binder: null,
-            parameterTypes,
-            modifiers: null);
-        return method != null && method.DeclaringType != typeof(DefaultNotificationDistributor);
     }
 
     protected virtual string[]? ResolveExternalChannelsOrNull(string notificationName)
@@ -718,113 +533,27 @@ public class DefaultNotificationDistributor :
         int maxResultCount,
         CancellationToken cancellationToken)
     {
-        if (Store is IBatchedNotificationStore batchedStore)
-        {
-            return await batchedStore.GetSubscriptionUserIdsAsync(
-                notification.NotificationName,
-                notification.EntityTypeName,
-                notification.EntityId,
-                afterUserId,
-                maxResultCount,
-                cancellationToken);
-        }
-
-        // Compatibility path for stores compiled against the original interface. It is intentionally kept out of
-        // IBatchedNotificationStore's contract: large custom-store fan-outs must implement that capability.
-        cancellationToken.ThrowIfCancellationRequested();
-        var subscriptions = await Store.GetSubscriptionsAsync(
+        return await Store.GetSubscriptionUserIdsAsync(
             notification.NotificationName,
             notification.EntityTypeName,
-            notification.EntityId);
-        cancellationToken.ThrowIfCancellationRequested();
-        return subscriptions
-            .Select(subscription => subscription.UserId)
-            .Distinct()
-            .OrderBy(userId => userId)
-            .Where(userId => !afterUserId.HasValue || userId.CompareTo(afterUserId.Value) > 0)
-            .Take(maxResultCount)
-            .ToList();
+            notification.EntityId,
+            afterUserId,
+            maxResultCount,
+            cancellationToken);
     }
 
     private async Task InsertNotificationAsync(
         NotificationInfo notification,
         CancellationToken cancellationToken)
     {
-        if (Store is IBatchedNotificationStore batchedStore)
-        {
-            await batchedStore.InsertNotificationAsync(notification, cancellationToken);
-            return;
-        }
-
-        cancellationToken.ThrowIfCancellationRequested();
-        await Store.InsertNotificationAsync(notification);
-        cancellationToken.ThrowIfCancellationRequested();
+        await Store.InsertNotificationAsync(notification, cancellationToken);
     }
 
     private async Task InsertUserNotificationsAsync(
         IReadOnlyCollection<UserNotificationInfo> userNotifications,
         CancellationToken cancellationToken)
     {
-        if (Store is IBatchedNotificationStore batchedStore)
-        {
-            await batchedStore.InsertUserNotificationsAsync(userNotifications, cancellationToken);
-            return;
-        }
-
-        foreach (var userNotification in userNotifications)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            await Store.InsertUserNotificationAsync(userNotification);
-        }
-    }
-
-    /// <summary>
-    /// Compatibility extension point retained for subclasses. Overriding any legacy extension point selects the
-    /// legacy materializing pipeline; migrate to the bounded store/evaluator abstractions for large fan-outs.
-    /// </summary>
-    [Obsolete("The bounded pipeline pages candidates through IBatchedNotificationStore.GetSubscriptionUserIdsAsync.")]
-    protected virtual async Task<List<Guid>> GetTargetUserIdsAsync(
-        NotificationInfo notification,
-        Guid[]? userIds,
-        Guid[]? excludedUserIds)
-    {
-        List<Guid> candidates;
-
-        if (userIds != null)
-        {
-            candidates = userIds.Distinct().ToList();
-        }
-        else
-        {
-            var subscriptions = await Store.GetSubscriptionsAsync(
-                notification.NotificationName,
-                notification.EntityTypeName,
-                notification.EntityId);
-            candidates = subscriptions.Select(subscription => subscription.UserId).Distinct().ToList();
-        }
-
-        if (excludedUserIds != null && excludedUserIds.Length > 0)
-        {
-            var excluded = new HashSet<Guid>(excludedUserIds);
-            candidates = candidates.Where(userId => !excluded.Contains(userId)).ToList();
-        }
-
-        return candidates;
-    }
-
-    /// <summary>Compatibility extension point retained for subclasses; the default pipeline uses bounded writes.</summary>
-    [Obsolete("The bounded pipeline calls IBatchedNotificationStore.InsertUserNotificationsAsync per configured batch.")]
-    protected virtual async Task SaveUserNotificationsAsync(NotificationInfo notification, List<Guid> userIds)
-    {
-        await Store.InsertNotificationAsync(notification);
-        await InsertUserNotificationsAsync(userIds.Select(userId => new UserNotificationInfo
-        {
-            UserId = userId,
-            NotificationId = notification.Id,
-            State = UserNotificationState.Unread,
-            CreationTime = notification.CreationTime,
-            TenantId = notification.TenantId
-        }).ToList(), CancellationToken.None);
+        await Store.InsertUserNotificationsAsync(userNotifications, cancellationToken);
     }
 
     /// <summary>
@@ -833,8 +562,10 @@ public class DefaultNotificationDistributor :
     protected virtual async Task PublishNotificationDeliveryBatchAsync(
         NotificationInfo notification,
         IReadOnlyCollection<Guid> userIds,
-        string[] channels)
+        string[] channels,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var candidates = userIds
             .Distinct()
             .SelectMany(userId => channels
@@ -846,7 +577,8 @@ public class DefaultNotificationDistributor :
             notification.NotificationName,
             notification.TenantId,
             candidates,
-            definition.DeliveryPreferenceBehavior);
+            definition.DeliveryPreferenceBehavior,
+            cancellationToken);
         var decisionMap = new Dictionary<(Guid UserId, string Channel), NotificationDeliveryPreferenceDecision>();
         foreach (var decision in decisions)
         {
@@ -887,8 +619,10 @@ public class DefaultNotificationDistributor :
 
         foreach (var workItem in workItems)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             await DistributedEventBus.PublishAsync(workItem);
         }
+        cancellationToken.ThrowIfCancellationRequested();
     }
 
     protected virtual NotificationDeliveryRequestedEto CreateDeliveryWorkItem(
@@ -919,16 +653,6 @@ public class DefaultNotificationDistributor :
             EntityTypeName = notification.EntityTypeName,
             EntityId = notification.EntityId
         };
-    }
-
-    /// <summary>Compatibility extension point retained for subclasses.</summary>
-    [Obsolete("Use PublishNotificationDeliveryBatchAsync; every event must respect DeliveryEventRecipientLimit.")]
-    protected virtual Task PublishNotificationDeliveryAsync(
-        NotificationInfo notification,
-        List<Guid> userIds,
-        string[] channels)
-    {
-        return PublishNotificationDeliveryBatchAsync(notification, userIds, channels);
     }
 
     private void LogBatchProgress(NotificationInfo notification, DistributionState state)

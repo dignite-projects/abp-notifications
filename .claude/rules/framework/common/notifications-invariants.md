@@ -166,6 +166,6 @@ the same bounded candidate → eligibility → persistence → delivery pipeline
   EF/outbox, EF without outbox, MongoDB, and null-store forwarding have different partial-progress semantics.
 - Keep candidates, eligible recipients, filtered recipients, batches, duration, and failures observable without
   logging recipient IDs. Preserve tenant scope on every query, write, metric tag, job, and event.
-- `IBatchedNotificationStore`, `ICancellableNotificationDistributor`, and `IPreparedNotificationDistributor` are
-  additive compatibility capabilities. Legacy custom implementations may use the compatibility fallback, but large
-  fan-outs require those capabilities.
+- Stable keyset paging and bounded multi-insert belong to canonical `INotificationStore`; cancellation and prepared
+  distribution belong to canonical `INotificationDistributor`. Do not add runtime capability probes or a
+  materializing/per-row fallback. `NullNotificationStore` must implement the complete contract without persistence.

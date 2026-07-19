@@ -132,7 +132,7 @@ public abstract class NotificationStore_Tests<TStartupModule> : NotificationCent
         await WithUnitOfWorkAsync(async () =>
         {
             var store = GetRequiredService<INotificationStore>();
-            await ((IBatchedNotificationStore)store).InsertUserNotificationsAsync(new[]
+            await store.InsertUserNotificationsAsync(new[]
             {
                 new UserNotificationInfo
                 {
@@ -343,7 +343,7 @@ public abstract class NotificationStore_Tests<TStartupModule> : NotificationCent
 
         await WithUnitOfWorkAsync(async () =>
         {
-            var store = (IBatchedNotificationStore)GetRequiredService<INotificationStore>();
+            var store = GetRequiredService<INotificationStore>();
             var firstPage = await store.GetSubscriptionUserIdsAsync(
                 "order.shipped", "Demo.Order", "42", null, 2);
             var secondPage = await store.GetSubscriptionUserIdsAsync(
@@ -380,7 +380,7 @@ public abstract class NotificationStore_Tests<TStartupModule> : NotificationCent
         List<Guid>? firstPage = null;
         await WithUnitOfWorkAsync(async () =>
         {
-            firstPage = await ((IBatchedNotificationStore)GetRequiredService<INotificationStore>())
+            firstPage = await GetRequiredService<INotificationStore>()
                 .GetSubscriptionUserIdsAsync("order.shipped", null, null, null, 2);
         });
         firstPage.ShouldBe(new[] { a, b });
@@ -395,7 +395,7 @@ public abstract class NotificationStore_Tests<TStartupModule> : NotificationCent
 
         await WithUnitOfWorkAsync(async () =>
         {
-            var secondPage = await ((IBatchedNotificationStore)GetRequiredService<INotificationStore>())
+            var secondPage = await GetRequiredService<INotificationStore>()
                 .GetSubscriptionUserIdsAsync("order.shipped", null, null, firstPage![^1], 10);
 
             secondPage.ShouldBe(new[] { c, insertedAfterCursor, d });
