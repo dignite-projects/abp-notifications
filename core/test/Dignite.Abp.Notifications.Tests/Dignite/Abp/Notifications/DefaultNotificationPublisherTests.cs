@@ -173,13 +173,10 @@ public class DefaultNotificationPublisherTests
     }
 
     [Fact]
-    public async Task Built_in_capabilities_prepare_once_and_enqueue_only_bounded_explicit_recipient_jobs()
+    public async Task Canonical_contracts_prepare_once_and_enqueue_only_bounded_explicit_recipient_jobs()
     {
-        var distributor = Substitute.For<INotificationDistributor, IPreparedNotificationDistributor>();
-        var preparedDistributor = (IPreparedNotificationDistributor)distributor;
-        preparedDistributor.SupportsPreparedDistribution.Returns(true);
-        var store = Substitute.For<INotificationStore, IBatchedNotificationStore>();
-        var batchedStore = (IBatchedNotificationStore)store;
+        var distributor = Substitute.For<INotificationDistributor>();
+        var store = Substitute.For<INotificationStore>();
         var options = Options.Create(new NotificationOptions
         {
             DirectDistributionUserThreshold = 1,
@@ -207,7 +204,7 @@ public class DefaultNotificationPublisherTests
             userIds: users,
             excludedUserIds: new[] { users[^1] });
 
-        await batchedStore.Received(1).InsertNotificationAsync(
+        await store.Received(1).InsertNotificationAsync(
             Arg.Any<NotificationInfo>(),
             CancellationToken.None);
         var jobs = _backgroundJobManager.ReceivedCalls()
@@ -593,15 +590,13 @@ public class DefaultNotificationPublisherTests
         tenantSeen.ShouldBe(tenantId);
         await distributor.Received(1).DistributeToExplicitRecipientsWithoutEligibilityChecksAsync(
             Arg.Any<NotificationInfo>(), userIds, null);
-        await distributor.DidNotReceiveWithAnyArgs().DistributeAsync(default!, default, default);
         currentTenant.Id.ShouldBeNull();
     }
 
     [Fact]
-    public async Task Distribution_job_forwards_cancellation_to_a_capable_distributor()
+    public async Task Distribution_job_forwards_cancellation_to_the_canonical_distributor()
     {
-        var distributor = Substitute.For<INotificationDistributor, ICancellableNotificationDistributor>();
-        var cancellableDistributor = (ICancellableNotificationDistributor)distributor;
+        var distributor = Substitute.For<INotificationDistributor>();
         var currentTenant = new TestCurrentTenant();
         using var cancellation = new CancellationTokenSource();
         var notification = new NotificationInfo
@@ -617,12 +612,11 @@ public class DefaultNotificationPublisherTests
             new NotificationDistributionJobArgs(notification, userIds, null),
             cancellation.Token);
 
-        await cancellableDistributor.Received(1).DistributeAsync(
+        await distributor.Received(1).DistributeAsync(
             notification,
             userIds,
             null,
             cancellation.Token);
-        await distributor.DidNotReceiveWithAnyArgs().DistributeAsync(default!, default, default);
         currentTenant.Id.ShouldBeNull();
     }
 
@@ -641,9 +635,7 @@ public class DefaultNotificationPublisherTests
     [Fact]
     public async Task Distribution_job_routes_a_prepared_batch_without_reinserting_the_notification()
     {
-        var distributor = Substitute.For<INotificationDistributor, IPreparedNotificationDistributor>();
-        var preparedDistributor = (IPreparedNotificationDistributor)distributor;
-        preparedDistributor.SupportsPreparedDistribution.Returns(true);
+        var distributor = Substitute.For<INotificationDistributor>();
         var currentTenant = new TestCurrentTenant();
         var notification = new NotificationInfo
         {
@@ -661,7 +653,7 @@ public class DefaultNotificationPublisherTests
             NotificationRecipientEligibilityMode.EnforceDefinitionRequirements,
             notificationAlreadyPersisted: true));
 
-        await preparedDistributor.Received(1).DistributePreparedAsync(
+        await distributor.Received(1).DistributePreparedAsync(
             notification,
             userIds,
             NotificationRecipientEligibilityMode.EnforceDefinitionRequirements,

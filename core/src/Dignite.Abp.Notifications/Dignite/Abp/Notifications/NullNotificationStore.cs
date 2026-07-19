@@ -10,19 +10,47 @@ namespace Dignite.Abp.Notifications;
 /// No-op store used in stateless forwarding mode (no NotificationCenter installed). Notifications are still
 /// published as delivery events; nothing is persisted, and there are no subscriptions or inbox.
 /// </summary>
-public class NullNotificationStore : INotificationStore, IBatchedNotificationStore, ISingletonDependency
+public class NullNotificationStore : INotificationStore, ISingletonDependency
 {
-    public Task InsertSubscriptionAsync(NotificationSubscriptionInfo subscription) => Task.CompletedTask;
+    public Task InsertSubscriptionAsync(
+        NotificationSubscriptionInfo subscription,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.CompletedTask;
+    }
 
-    public Task DeleteSubscriptionAsync(Guid userId, string notificationName, string? entityTypeName, string? entityId)
-        => Task.CompletedTask;
+    public Task DeleteSubscriptionAsync(
+        Guid userId,
+        string notificationName,
+        string? entityTypeName,
+        string? entityId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.CompletedTask;
+    }
 
-    public Task<bool> IsSubscribedAsync(Guid userId, string notificationName, string? entityTypeName, string? entityId)
-        => Task.FromResult(false);
+    public Task<bool> IsSubscribedAsync(
+        Guid userId,
+        string notificationName,
+        string? entityTypeName,
+        string? entityId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(false);
+    }
 
     public Task<List<NotificationSubscriptionInfo>> GetSubscriptionsAsync(
-        string notificationName, string? entityTypeName, string? entityId)
-        => Task.FromResult(new List<NotificationSubscriptionInfo>());
+        string notificationName,
+        string? entityTypeName,
+        string? entityId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(new List<NotificationSubscriptionInfo>());
+    }
 
     public Task<List<Guid>> GetSubscriptionUserIdsAsync(
         string notificationName,
@@ -36,20 +64,29 @@ public class NullNotificationStore : INotificationStore, IBatchedNotificationSto
         return Task.FromResult(new List<Guid>());
     }
 
-    public Task<List<NotificationSubscriptionInfo>> GetSubscriptionsAsync(Guid userId)
-        => Task.FromResult(new List<NotificationSubscriptionInfo>());
-
-    public Task InsertNotificationAsync(NotificationInfo notification) => Task.CompletedTask;
+    public Task<List<NotificationSubscriptionInfo>> GetSubscriptionsAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(new List<NotificationSubscriptionInfo>());
+    }
 
     public Task InsertNotificationAsync(
         NotificationInfo notification,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         return Task.CompletedTask;
     }
 
-    public Task InsertUserNotificationAsync(UserNotificationInfo userNotification) => Task.CompletedTask;
+    public Task InsertUserNotificationAsync(
+        UserNotificationInfo userNotification,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.CompletedTask;
+    }
 
     public Task InsertUserNotificationsAsync(
         IReadOnlyCollection<UserNotificationInfo> userNotifications,
@@ -59,16 +96,44 @@ public class NullNotificationStore : INotificationStore, IBatchedNotificationSto
         return Task.CompletedTask;
     }
 
-    public Task UpdateUserNotificationStateAsync(Guid userId, Guid notificationId, UserNotificationState state)
-        => Task.CompletedTask;
+    public Task UpdateUserNotificationStateAsync(
+        Guid userId,
+        Guid notificationId,
+        UserNotificationState state,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.CompletedTask;
+    }
 
-    public Task UpdateAllUserNotificationStatesAsync(Guid userId, UserNotificationState state) => Task.CompletedTask;
+    public Task UpdateAllUserNotificationStatesAsync(
+        Guid userId,
+        UserNotificationState state,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.CompletedTask;
+    }
 
-    public Task DeleteUserNotificationAsync(Guid userId, Guid notificationId) => Task.CompletedTask;
+    public Task DeleteUserNotificationAsync(
+        Guid userId,
+        Guid notificationId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.CompletedTask;
+    }
 
     public Task DeleteAllUserNotificationsAsync(
-        Guid userId, UserNotificationState? state = null, DateTime? startDate = null, DateTime? endDate = null)
-        => Task.CompletedTask;
+        Guid userId,
+        UserNotificationState? state = null,
+        DateTime? startDate = null,
+        DateTime? endDate = null,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.CompletedTask;
+    }
 
     public Task<List<UserNotificationWithNotification>> GetUserNotificationsAsync(
         Guid userId,
@@ -76,10 +141,21 @@ public class NullNotificationStore : INotificationStore, IBatchedNotificationSto
         int skipCount = 0,
         int maxResultCount = int.MaxValue,
         DateTime? startDate = null,
-        DateTime? endDate = null)
-        => Task.FromResult(new List<UserNotificationWithNotification>());
+        DateTime? endDate = null,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(new List<UserNotificationWithNotification>());
+    }
 
     public Task<int> GetUserNotificationCountAsync(
-        Guid userId, UserNotificationState? state = null, DateTime? startDate = null, DateTime? endDate = null)
-        => Task.FromResult(0);
+        Guid userId,
+        UserNotificationState? state = null,
+        DateTime? startDate = null,
+        DateTime? endDate = null,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(0);
+    }
 }

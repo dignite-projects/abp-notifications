@@ -106,16 +106,6 @@ public class NotificationAudienceBroadcastJob :
                 $"No notification audience recipient source is registered for '{args.AudienceName}'.");
         }
 
-        if (Distributor is not IPreparedNotificationDistributor
-            {
-                SupportsPreparedDistribution: true
-            } preparedDistributor)
-        {
-            throw new AbpException(
-                "The configured notification distributor cannot process prepared recipient batches required by " +
-                "audience broadcasts.");
-        }
-
         var tags = CreateTags(args);
         try
         {
@@ -172,7 +162,7 @@ public class NotificationAudienceBroadcastJob :
 
                 if (recipients.Length > 0)
                 {
-                    await preparedDistributor.DistributePreparedAsync(
+                    await Distributor.DistributePreparedAsync(
                         args.Notification,
                         recipients,
                         NotificationRecipientEligibilityMode.EnforceDefinitionRequirements,

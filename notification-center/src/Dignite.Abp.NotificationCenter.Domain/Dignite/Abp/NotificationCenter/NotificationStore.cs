@@ -22,7 +22,7 @@ namespace Dignite.Abp.NotificationCenter;
 /// </summary>
 [Dependency(ReplaceServices = true)]
 [ExposeServices(typeof(INotificationStore))]
-public class NotificationStore : INotificationStore, IBatchedNotificationStore, ITransientDependency
+public class NotificationStore : INotificationStore, ITransientDependency
 {
     protected IRepository<Notification, Guid> NotificationRepository { get; }
 
@@ -86,14 +86,9 @@ public class NotificationStore : INotificationStore, IBatchedNotificationStore, 
         BatchPersistence = batchPersistence;
     }
 
-    public virtual async Task InsertNotificationAsync(NotificationInfo notification)
-    {
-        await InsertNotificationAsync(notification, CancellationToken.None);
-    }
-
     public virtual async Task InsertNotificationAsync(
         NotificationInfo notification,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken = default)
     {
         var entity = new Notification(
             notification.Id,
@@ -108,9 +103,11 @@ public class NotificationStore : INotificationStore, IBatchedNotificationStore, 
         await NotificationRepository.InsertAsync(entity, cancellationToken: cancellationToken);
     }
 
-    public virtual async Task InsertUserNotificationAsync(UserNotificationInfo userNotification)
+    public virtual async Task InsertUserNotificationAsync(
+        UserNotificationInfo userNotification,
+        CancellationToken cancellationToken = default)
     {
-        await InsertUserNotificationsAsync(new[] { userNotification }, CancellationToken.None);
+        await InsertUserNotificationsAsync(new[] { userNotification }, cancellationToken);
     }
 
     public virtual async Task InsertUserNotificationsAsync(
@@ -223,42 +220,62 @@ public class NotificationStore : INotificationStore, IBatchedNotificationStore, 
             .ToHashSet();
     }
 
-    public virtual async Task UpdateUserNotificationStateAsync(Guid userId, Guid notificationId, UserNotificationState state)
+    public virtual async Task UpdateUserNotificationStateAsync(
+        Guid userId,
+        Guid notificationId,
+        UserNotificationState state,
+        CancellationToken cancellationToken = default)
     {
         var entity = await UserNotificationRepository.FirstOrDefaultAsync(
-            x => x.UserId == userId && x.NotificationId == notificationId);
+            x => x.UserId == userId && x.NotificationId == notificationId,
+            cancellationToken: cancellationToken);
 
         if (entity != null)
         {
             entity.SetState(state);
-            await UserNotificationRepository.UpdateAsync(entity);
+            await UserNotificationRepository.UpdateAsync(entity, cancellationToken: cancellationToken);
         }
     }
 
-    public virtual async Task UpdateAllUserNotificationStatesAsync(Guid userId, UserNotificationState state)
+    public virtual async Task UpdateAllUserNotificationStatesAsync(
+        Guid userId,
+        UserNotificationState state,
+        CancellationToken cancellationToken = default)
     {
-        var entities = await UserNotificationRepository.GetListAsync(x => x.UserId == userId);
+        var entities = await UserNotificationRepository.GetListAsync(
+            x => x.UserId == userId,
+            cancellationToken: cancellationToken);
         foreach (var entity in entities)
         {
             entity.SetState(state);
         }
 
-        await UserNotificationRepository.UpdateManyAsync(entities);
+        await UserNotificationRepository.UpdateManyAsync(entities, cancellationToken: cancellationToken);
     }
 
-    public virtual async Task DeleteUserNotificationAsync(Guid userId, Guid notificationId)
+    public virtual async Task DeleteUserNotificationAsync(
+        Guid userId,
+        Guid notificationId,
+        CancellationToken cancellationToken = default)
     {
-        await UserNotificationRepository.DeleteAsync(x => x.UserId == userId && x.NotificationId == notificationId);
+        await UserNotificationRepository.DeleteAsync(
+            x => x.UserId == userId && x.NotificationId == notificationId,
+            cancellationToken: cancellationToken);
     }
 
     public virtual async Task DeleteAllUserNotificationsAsync(
-        Guid userId, UserNotificationState? state = null, DateTime? startDate = null, DateTime? endDate = null)
+        Guid userId,
+        UserNotificationState? state = null,
+        DateTime? startDate = null,
+        DateTime? endDate = null,
+        CancellationToken cancellationToken = default)
     {
         await UserNotificationRepository.DeleteAsync(x =>
             x.UserId == userId
             && (state == null || x.State == state)
             && (startDate == null || x.CreationTime >= startDate)
-            && (endDate == null || x.CreationTime <= endDate));
+            && (endDate == null || x.CreationTime <= endDate),
+            cancellationToken: cancellationToken);
     }
 
     public virtual async Task<List<UserNotificationWithNotification>> GetUserNotificationsAsync(
@@ -267,7 +284,8 @@ public class NotificationStore : INotificationStore, IBatchedNotificationStore, 
         int skipCount = 0,
         int maxResultCount = int.MaxValue,
         DateTime? startDate = null,
-        DateTime? endDate = null)
+        DateTime? endDate = null,
+        CancellationToken cancellationToken = default)
     {
         // Two indexed queries + an in-memory join, rather than a cross-collection join, so the SAME store works on
         // both EF Core and MongoDB. The (UserId, State, CreationTime) index serves the first query; the second is a
@@ -284,7 +302,8 @@ public class NotificationStore : INotificationStore, IBatchedNotificationStore, 
             userNotificationQuery
                 .OrderByDescending(un => un.CreationTime)
                 .Skip(skipCount)
-                .Take(maxResultCount));
+                .Take(maxResultCount),
+            cancellationToken);
 
         if (pagedUserNotifications.Count == 0)
         {
@@ -292,7 +311,9 @@ public class NotificationStore : INotificationStore, IBatchedNotificationStore, 
         }
 
         var notificationIds = pagedUserNotifications.Select(un => un.NotificationId).Distinct().ToList();
-        var notifications = await NotificationRepository.GetListAsync(n => notificationIds.Contains(n.Id));
+        var notifications = await NotificationRepository.GetListAsync(
+            n => notificationIds.Contains(n.Id),
+            cancellationToken: cancellationToken);
         var notificationsById = notifications.ToDictionary(n => n.Id);
 
         var result = new List<UserNotificationWithNotification>();
@@ -312,7 +333,11 @@ public class NotificationStore : INotificationStore, IBatchedNotificationStore, 
     }
 
     public virtual async Task<int> GetUserNotificationCountAsync(
-        Guid userId, UserNotificationState? state = null, DateTime? startDate = null, DateTime? endDate = null)
+        Guid userId,
+        UserNotificationState? state = null,
+        DateTime? startDate = null,
+        DateTime? endDate = null,
+        CancellationToken cancellationToken = default)
     {
         var query = await UserNotificationRepository.GetQueryableAsync();
         query = query.Where(un =>
@@ -321,10 +346,12 @@ public class NotificationStore : INotificationStore, IBatchedNotificationStore, 
             && (startDate == null || un.CreationTime >= startDate)
             && (endDate == null || un.CreationTime <= endDate));
 
-        return await AsyncExecuter.CountAsync(query);
+        return await AsyncExecuter.CountAsync(query, cancellationToken);
     }
 
-    public virtual async Task InsertSubscriptionAsync(NotificationSubscriptionInfo subscription)
+    public virtual async Task InsertSubscriptionAsync(
+        NotificationSubscriptionInfo subscription,
+        CancellationToken cancellationToken = default)
     {
         var entity = new NotificationSubscription(
             GuidGenerator.Create(),
@@ -335,11 +362,15 @@ public class NotificationStore : INotificationStore, IBatchedNotificationStore, 
             subscription.CreationTime == default ? Clock.Now : subscription.CreationTime,
             subscription.TenantId ?? CurrentTenant.Id);
 
-        await SubscriptionRepository.InsertAsync(entity);
+        await SubscriptionRepository.InsertAsync(entity, cancellationToken: cancellationToken);
     }
 
     public virtual async Task DeleteSubscriptionAsync(
-        Guid userId, string notificationName, string? entityTypeName, string? entityId)
+        Guid userId,
+        string notificationName,
+        string? entityTypeName,
+        string? entityId,
+        CancellationToken cancellationToken = default)
     {
         var tenantKey = NotificationSubscriptionIdentity.GetTenantKey(CurrentTenant.Id);
         var notificationNameKey = NotificationSubscriptionIdentity.GetNotificationNameKey(notificationName);
@@ -347,11 +378,16 @@ public class NotificationStore : INotificationStore, IBatchedNotificationStore, 
 
         await SubscriptionRepository.DeleteAsync(x =>
             x.TenantKey == tenantKey && x.UserId == userId
-            && x.NotificationNameKey == notificationNameKey && x.ScopeKey == scopeKey);
+            && x.NotificationNameKey == notificationNameKey && x.ScopeKey == scopeKey,
+            cancellationToken: cancellationToken);
     }
 
     public virtual async Task<bool> IsSubscribedAsync(
-        Guid userId, string notificationName, string? entityTypeName, string? entityId)
+        Guid userId,
+        string notificationName,
+        string? entityTypeName,
+        string? entityId,
+        CancellationToken cancellationToken = default)
     {
         var tenantKey = NotificationSubscriptionIdentity.GetTenantKey(CurrentTenant.Id);
         var notificationNameKey = NotificationSubscriptionIdentity.GetNotificationNameKey(notificationName);
@@ -359,11 +395,14 @@ public class NotificationStore : INotificationStore, IBatchedNotificationStore, 
         var query = await SubscriptionRepository.GetQueryableAsync();
         return await AsyncExecuter.AnyAsync(query.Where(x =>
             x.TenantKey == tenantKey && x.UserId == userId
-            && x.NotificationNameKey == notificationNameKey && x.ScopeKey == scopeKey));
+            && x.NotificationNameKey == notificationNameKey && x.ScopeKey == scopeKey), cancellationToken);
     }
 
     public virtual async Task<List<NotificationSubscriptionInfo>> GetSubscriptionsAsync(
-        string notificationName, string? entityTypeName, string? entityId)
+        string notificationName,
+        string? entityTypeName,
+        string? entityId,
+        CancellationToken cancellationToken = default)
     {
         var tenantKey = NotificationSubscriptionIdentity.GetTenantKey(CurrentTenant.Id);
         var notificationNameKey = NotificationSubscriptionIdentity.GetNotificationNameKey(notificationName);
@@ -373,10 +412,12 @@ public class NotificationStore : INotificationStore, IBatchedNotificationStore, 
         var entities = entityTypeName == null
             ? await SubscriptionRepository.GetListAsync(x =>
                 x.TenantKey == tenantKey && x.NotificationNameKey == notificationNameKey
-                && x.ScopeKey == definitionWideScopeKey)
+                && x.ScopeKey == definitionWideScopeKey,
+                cancellationToken: cancellationToken)
             : await SubscriptionRepository.GetListAsync(x =>
                 x.TenantKey == tenantKey && x.NotificationNameKey == notificationNameKey
-                && (x.ScopeKey == definitionWideScopeKey || x.ScopeKey == requestedScopeKey));
+                && (x.ScopeKey == definitionWideScopeKey || x.ScopeKey == requestedScopeKey),
+                cancellationToken: cancellationToken);
 
         return entities.Select(MapToSubscriptionInfo).ToList();
     }
@@ -421,11 +462,14 @@ public class NotificationStore : INotificationStore, IBatchedNotificationStore, 
         return await AsyncExecuter.ToListAsync(recipientPage, cancellationToken);
     }
 
-    public virtual async Task<List<NotificationSubscriptionInfo>> GetSubscriptionsAsync(Guid userId)
+    public virtual async Task<List<NotificationSubscriptionInfo>> GetSubscriptionsAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
     {
         var tenantKey = NotificationSubscriptionIdentity.GetTenantKey(CurrentTenant.Id);
         var entities = await SubscriptionRepository.GetListAsync(x =>
-            x.TenantKey == tenantKey && x.UserId == userId);
+            x.TenantKey == tenantKey && x.UserId == userId,
+            cancellationToken: cancellationToken);
         return entities.Select(MapToSubscriptionInfo).ToList();
     }
 

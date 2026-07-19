@@ -71,14 +71,7 @@ public class NotificationDistributionJob : AsyncBackgroundJob<NotificationDistri
                         nameof(args));
                 }
 
-                if (Distributor is not IPreparedNotificationDistributor preparedDistributor ||
-                    !preparedDistributor.SupportsPreparedDistribution)
-                {
-                    throw new InvalidOperationException(
-                        "The configured notification distributor cannot process prepared recipient batches.");
-                }
-
-                await preparedDistributor.DistributePreparedAsync(
+                await Distributor.DistributePreparedAsync(
                     args.Notification,
                     args.UserIds,
                     args.RecipientEligibilityMode,
@@ -95,41 +88,19 @@ public class NotificationDistributionJob : AsyncBackgroundJob<NotificationDistri
                         nameof(args));
                 }
 
-                if (Distributor is ICancellableNotificationDistributor cancellableDistributor)
-                {
-                    await cancellableDistributor.DistributeToExplicitRecipientsWithoutEligibilityChecksAsync(
-                        args.Notification,
-                        args.UserIds,
-                        args.ExcludedUserIds,
-                        cancellationToken);
-                }
-                else
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    await Distributor.DistributeToExplicitRecipientsWithoutEligibilityChecksAsync(
-                        args.Notification,
-                        args.UserIds,
-                        args.ExcludedUserIds);
-                }
+                await Distributor.DistributeToExplicitRecipientsWithoutEligibilityChecksAsync(
+                    args.Notification,
+                    args.UserIds,
+                    args.ExcludedUserIds,
+                    cancellationToken);
             }
             else if (args.RecipientEligibilityMode == NotificationRecipientEligibilityMode.EnforceDefinitionRequirements)
             {
-                if (Distributor is ICancellableNotificationDistributor cancellableDistributor)
-                {
-                    await cancellableDistributor.DistributeAsync(
-                        args.Notification,
-                        args.UserIds,
-                        args.ExcludedUserIds,
-                        cancellationToken);
-                }
-                else
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    await Distributor.DistributeAsync(
-                        args.Notification,
-                        args.UserIds,
-                        args.ExcludedUserIds);
-                }
+                await Distributor.DistributeAsync(
+                    args.Notification,
+                    args.UserIds,
+                    args.ExcludedUserIds,
+                    cancellationToken);
             }
             else
             {

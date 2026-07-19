@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Dignite.Abp.Notifications;
@@ -18,9 +19,11 @@ public interface INotificationRecipientEligibilityEvaluator
     /// The notification's tenant. Evaluation must run in exactly this tenant or host context.
     /// </param>
     /// <param name="mode">Whether definition requirements are enforced or deliberately bypassed.</param>
+    /// <param name="cancellationToken">Cancellation observed throughout recipient evaluation.</param>
     Task<NotificationRecipientEligibilityResult> EvaluateAsync(
         string notificationName,
         IReadOnlyCollection<Guid> candidateUserIds,
         Guid? tenantId,
-        NotificationRecipientEligibilityMode mode);
+        NotificationRecipientEligibilityMode mode,
+        CancellationToken cancellationToken = default);
 }

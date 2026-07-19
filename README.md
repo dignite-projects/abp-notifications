@@ -716,32 +716,23 @@ configuration fails host startup. `DeliveryEventRecipientLimit` retains its exis
 compatibility, but `NotificationDeliveryRequestedEto` always carries one recipient and channel. Notification data still
 has to fit the chosen transport's message-size limit.
 
-The built-in `NotificationStore` (shared by the EF Core and MongoDB packages) implements
-`IBatchedNotificationStore`; `NullNotificationStore` implements it without persistence. The capability is
-separate from `INotificationStore` so existing custom stores remain binary/source compatible. A legacy custom
-store still works through a materializing/per-row fallback, but it does **not** gain the large-fan-out memory or
-write guarantees. Implement `IBatchedNotificationStore` before enabling large broadcasts in a custom store.
-For the same compatibility reason, a `DefaultNotificationDistributor` subclass that overrides any legacy
-`GetTargetUserIdsAsync`, `SaveUserNotificationsAsync`, or `PublishNotificationDeliveryAsync` hook continues
-through its original materializing path and emits a warning; migrate those customizations to the new capability
-and evaluator contracts to obtain bounded guarantees.
-Likewise, the default distributor implements the additive `ICancellableNotificationDistributor`; the background
-job passes the host shutdown token, and manual job/distributor runners can pass their own token. Cancellation is
-observed while scanning explicit normalization windows and between candidate, persistence, and delivery batches,
-not during a provider operation already in flight.
+Stable keyset paging and bounded inbox multi-inserts are canonical `INotificationStore` members. The built-in
+`NotificationStore` supplies equivalent EF Core and MongoDB behavior; `NullNotificationStore` implements the same
+contract without persistence. All store operations accept a cancellation token. Cancellation is observed while
+scanning explicit normalization windows and between candidate, persistence, and delivery batches, not during a
+provider operation already in flight.
 
 For explicit arrays above `DirectDistributionUserThreshold`, the built-in publisher removes exclusions, prepares
-the notification once, and enqueues `RecipientBatchSize` recipients per job through
-`IPreparedNotificationDistributor`; no job payload contains the complete fan-out. The existing public `Guid[]`
+the notification once, and enqueues `RecipientBatchSize` recipients per job through the canonical
+`INotificationDistributor.DistributePreparedAsync` boundary; no job payload contains the complete fan-out. The public `Guid[]`
 boundary still means the caller supplies the explicit input in memory. The built-in path repeatedly scans that
 caller-owned array with an exclusive GUID cursor and retains at most one `RecipientBatchSize` sorted window, so
 exact cross-batch duplicate removal creates no notification-wide collection. This intentionally trades additional
 CPU scans and GUID-ordered large batches for a hard memory bound; recipient order is not a delivery contract. Prefer
 subscription-driven resolution for very large audiences already modeled as subscriptions.
 `DirectDistributionUserThreshold` is capped by the same 10,000 hard safeguard as batch sizes so inline normalization
-is also bounded. Custom publishers/distributors keep their previous single-job behavior until they opt into the
-prepared-distribution capability. Subscription scans use an exclusive user-ID keyset cursor rather than offset
-paging, so inserts/deletes before the cursor cannot repeat or skip later recipients.
+is also bounded. Subscription scans use an exclusive user-ID keyset cursor rather than offset paging, so
+inserts/deletes before the cursor cannot repeat or skip later recipients.
 
 For tenant-wide audiences that should be resolved by infrastructure rather than by loading a `Guid[]` in the
 publisher, use `INotificationAudienceBroadcaster`. A tenant broadcast is always created with an explicit
@@ -761,8 +752,9 @@ The built-in audience name is `NotificationAudienceNames.AllActiveUsers`. Core d
 continues to work with `NullNotificationStore`; it has no dependency on ABP Identity or Notification Center.
 Installing `Dignite.Abp.Notifications.Identity` registers an Identity-backed source for that audience. It pages
 ABP Identity users by an exclusive user-id keyset cursor and includes only users in the requested tenant that are
-`IsActive`, not `Leaved`, and not soft-deleted. Every page is then passed to `IPreparedNotificationDistributor`,
-so the normal feature/permission eligibility evaluator, Notification Center inbox persistence, delivery
+`IsActive`, not `Leaved`, and not soft-deleted. Every page is then passed to
+`INotificationDistributor.DistributePreparedAsync`, so the normal feature/permission eligibility evaluator,
+Notification Center inbox persistence, delivery
 preferences/quiet hours, and work-event scheduling still run. Progress is represented by the stable notification
 id, tenant id, page index, and cursor in job args/logs, and low-cardinality page/candidate/failure counters are
 emitted from the `Dignite.Abp.Notifications.AudienceBroadcast` meter. Retried pages are idempotent against the
@@ -1073,7 +1065,7 @@ Notifiers                 NotificationCenter (optional)
 1. Business code calls `INotificationPublisher.PublishAsync(...)`.
 2. Small explicit fan-outs distribute inline; larger ones enqueue a `NotificationDistributionJob`.
 3. The distributor resolves bounded recipient pages (explicit `userIds`, or subscribers from
-   `IBatchedNotificationStore`), checks the definition's feature/permission availability, persists bounded
+   `INotificationStore`), checks the definition's feature/permission availability, persists bounded
    inbox groups (a no-op under `NullNotificationStore`), creates one delivery identity per recipient/channel,
    then publishes `NotificationDeliveryRequestedEto` when external channels are configured.
 4. Only a process hosting the selected channel handles the work. In one independently committed store operation it
