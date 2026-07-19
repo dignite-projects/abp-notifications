@@ -104,4 +104,4 @@ export class NotificationsService {
       params: { notificationName: input.notificationName, entityTypeName: input.entityTypeName, entityId: input.entityId },
     },
     { apiName: this.apiName,...config });
-}\n
+}

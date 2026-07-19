@@ -34,4 +34,4 @@ export class NotificationDeliveriesService {
       url: `/api/notifications/deliveries/${id}/retry`,
     },
     { apiName: this.apiName,...config });
-}\n
+}
