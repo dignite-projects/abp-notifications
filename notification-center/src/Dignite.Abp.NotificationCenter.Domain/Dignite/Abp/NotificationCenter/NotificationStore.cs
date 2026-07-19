@@ -503,33 +503,7 @@ public class NotificationStore : INotificationStore, ITransientDependency
 
     protected virtual NotificationData? DeserializeDurableData(string? json)
     {
-        if (DataSerializer is INotificationDataTolerantReader tolerantReader)
-        {
-            return tolerantReader.DeserializeTolerantly(json);
-        }
-
-        try
-        {
-            return DataSerializer.Deserialize(json);
-        }
-        catch (NotificationDataReadException exception)
-        {
-            return new UnsupportedNotificationData
-            {
-                OriginalDiscriminator = exception.Discriminator,
-                OriginalSchemaVersion = exception.SchemaVersion,
-                Reason = exception.Reason,
-                RawJson = json ?? string.Empty
-            };
-        }
-        catch (Exception exception) when (IsRecoverableReadException(exception))
-        {
-            return new UnsupportedNotificationData
-            {
-                Reason = UnsupportedNotificationDataReason.MalformedPayload,
-                RawJson = json ?? string.Empty
-            };
-        }
+        return DataSerializer.Deserialize(json, NotificationDataReadMode.Tolerant);
     }
 
     protected virtual async Task CancelRetentionDeletionAsync(
@@ -547,18 +521,6 @@ public class NotificationStore : INotificationStore, ITransientDependency
 
         notification.CancelRetentionDeletion();
         await NotificationRepository.UpdateAsync(notification, autoSave: true, cancellationToken: cancellationToken);
-    }
-
-    private static bool IsRecoverableReadException(Exception exception)
-    {
-        return exception is not OperationCanceledException &&
-               exception is not OutOfMemoryException &&
-               exception is not StackOverflowException &&
-               exception is not AccessViolationException &&
-               exception is not AppDomainUnloadedException &&
-               exception is not BadImageFormatException &&
-               exception is not CannotUnloadAppDomainException &&
-               exception is not InvalidProgramException;
     }
 
     protected virtual NotificationSubscriptionInfo MapToSubscriptionInfo(NotificationSubscription s)

@@ -20,7 +20,8 @@ public class NotificationDataSerializationTests
         });
 
         json.ShouldNotBeNull();
-        var back = client.Deserialize(json).ShouldBeOfType<OrderShippedNotificationData>();
+        var back = client.Deserialize(json, NotificationDataReadMode.Strict)
+            .ShouldBeOfType<OrderShippedNotificationData>();
         back.OrderNumber.ShouldBe("SO-1001");
         back.ItemCount.ShouldBe(3);
         back.SchemaVersion.ShouldBe(1);
@@ -51,7 +52,8 @@ public class NotificationDataSerializationTests
             "{\"type\":\"Test.EvolvingOrder\",\"orderNumber\":\"SO-42\",\"itemCount\":7}";
         var serializer = NotificationTestObjects.CreateSerializer(NotificationTestObjects.AddEvolvingOrder);
 
-        var data = serializer.Deserialize(json).ShouldBeOfType<EvolvingOrderNotificationData>();
+        var data = serializer.Deserialize(json, NotificationDataReadMode.Strict)
+            .ShouldBeOfType<EvolvingOrderNotificationData>();
 
         data.SchemaVersion.ShouldBe(3);
         data.OrderId.ShouldBe("SO-42");
@@ -65,8 +67,10 @@ public class NotificationDataSerializationTests
             "{\"type\":\"Test.EvolvingOrder\",\"schemaVersion\":1,\"orderNumber\":\"SO-9\",\"itemCount\":2}";
         var serializer = NotificationTestObjects.CreateSerializer(NotificationTestObjects.AddEvolvingOrder);
 
-        var first = serializer.Deserialize(json).ShouldBeOfType<EvolvingOrderNotificationData>();
-        var second = serializer.Deserialize(json).ShouldBeOfType<EvolvingOrderNotificationData>();
+        var first = serializer.Deserialize(json, NotificationDataReadMode.Strict)
+            .ShouldBeOfType<EvolvingOrderNotificationData>();
+        var second = serializer.Deserialize(json, NotificationDataReadMode.Strict)
+            .ShouldBeOfType<EvolvingOrderNotificationData>();
 
         first.OrderId.ShouldBe("SO-9");
         first.Quantity.ShouldBe(2);
@@ -97,7 +101,8 @@ public class NotificationDataSerializationTests
             });
         });
 
-        var data = serializer.Deserialize(json).ShouldBeOfType<EvolvingOrderNotificationData>();
+        var data = serializer.Deserialize(json, NotificationDataReadMode.Strict)
+            .ShouldBeOfType<EvolvingOrderNotificationData>();
 
         data.OrderId.ShouldBe("SO-ORDER");
         data.Quantity.ShouldBe(4);
@@ -109,7 +114,8 @@ public class NotificationDataSerializationTests
         const string json = "{\"type\":\"Vendor.Removed\",\"schemaVersion\":2,\"secret\":\"x\"}";
         var serializer = NotificationTestObjects.CreateSerializer();
 
-        var exception = Should.Throw<NotificationDataReadException>(() => serializer.Deserialize(json));
+        var exception = Should.Throw<NotificationDataReadException>(() =>
+            serializer.Deserialize(json, NotificationDataReadMode.Strict));
         exception.Reason.ShouldBe(UnsupportedNotificationDataReason.UnknownDiscriminator);
         exception.Discriminator.ShouldBe("Vendor.Removed");
         exception.SchemaVersion.ShouldBe(2);
@@ -128,7 +134,8 @@ public class NotificationDataSerializationTests
             "{\"type\":\"Test.OrderShipped\",\"schemaVersion\":99,\"orderNumber\":\"future\",\"itemCount\":1}";
         var serializer = NotificationTestObjects.CreateSerializer(typeof(OrderShippedNotificationData));
 
-        var exception = Should.Throw<NotificationDataReadException>(() => serializer.Deserialize(json));
+        var exception = Should.Throw<NotificationDataReadException>(() =>
+            serializer.Deserialize(json, NotificationDataReadMode.Strict));
         exception.Reason.ShouldBe(UnsupportedNotificationDataReason.UnsupportedFutureVersion);
         exception.Discriminator.ShouldBe("Test.OrderShipped");
         exception.SchemaVersion.ShouldBe(99);
@@ -145,7 +152,8 @@ public class NotificationDataSerializationTests
             "{\"type\":\"Test.OrderShipped\",\"schemaVersion\":1,\"orderNumber\":\"SO-1\",\"itemCount\":\"bad\"}";
         var serializer = NotificationTestObjects.CreateSerializer(typeof(OrderShippedNotificationData));
 
-        var exception = Should.Throw<NotificationDataReadException>(() => serializer.Deserialize(json));
+        var exception = Should.Throw<NotificationDataReadException>(() =>
+            serializer.Deserialize(json, NotificationDataReadMode.Strict));
         exception.Reason.ShouldBe(UnsupportedNotificationDataReason.MalformedPayload);
         exception.Discriminator.ShouldBe("Test.OrderShipped");
 
@@ -162,7 +170,8 @@ public class NotificationDataSerializationTests
             "{\"type\":\"Test.ThrowingSetter\",\"schemaVersion\":1,\"value\":\"bad\"}";
         var serializer = NotificationTestObjects.CreateSerializer(typeof(ThrowingSetterNotificationData));
 
-        var exception = Should.Throw<NotificationDataReadException>(() => serializer.Deserialize(json));
+        var exception = Should.Throw<NotificationDataReadException>(() =>
+            serializer.Deserialize(json, NotificationDataReadMode.Strict));
         exception.Reason.ShouldBe(UnsupportedNotificationDataReason.MalformedPayload);
         exception.InnerException.ShouldBeOfType<FormatException>();
 
@@ -184,7 +193,8 @@ public class NotificationDataSerializationTests
                 throw new InvalidOperationException("simulated upcast failure"));
         });
 
-        var exception = Should.Throw<NotificationDataReadException>(() => serializer.Deserialize(json));
+        var exception = Should.Throw<NotificationDataReadException>(() =>
+            serializer.Deserialize(json, NotificationDataReadMode.Strict));
         exception.Reason.ShouldBe(UnsupportedNotificationDataReason.UpcastFailed);
 
         var unsupported = Tolerant(serializer, json).ShouldBeOfType<UnsupportedNotificationData>();
@@ -202,7 +212,8 @@ public class NotificationDataSerializationTests
         var unsupported = Tolerant(serializer, original).ShouldBeOfType<UnsupportedNotificationData>();
 
         var json = serializer.Serialize(unsupported)!;
-        var roundTrip = serializer.Deserialize(json).ShouldBeOfType<UnsupportedNotificationData>();
+        var roundTrip = serializer.Deserialize(json, NotificationDataReadMode.Strict)
+            .ShouldBeOfType<UnsupportedNotificationData>();
 
         json.ShouldContain("\"type\":\"Dignite.Unsupported\"");
         json.ShouldContain("\"originalDiscriminator\":\"Unknown.ArbitraryClrLookingName\"");
@@ -219,7 +230,8 @@ public class NotificationDataSerializationTests
             "{\"type\":\"Test.OrderShipped\",\"schemaVersion\":1,\"orderNumber\":\"SO-9\",\"itemCount\":1," +
             "\"trackingUrl\":\"http://x\"}";
 
-        var data = serializer.Deserialize(json).ShouldBeOfType<OrderShippedNotificationData>();
+        var data = serializer.Deserialize(json, NotificationDataReadMode.Strict)
+            .ShouldBeOfType<OrderShippedNotificationData>();
 
         data.SchemaVersion.ShouldBe(1);
         data.ExtensionData.ShouldNotBeNull();
@@ -235,7 +247,8 @@ public class NotificationDataSerializationTests
 
         json.ShouldContain("\"type\":\"Dignite.Message\"");
         json.ShouldContain("\"schemaVersion\":1");
-        serializer.Deserialize(json).ShouldBeOfType<MessageNotificationData>().Message.ShouldBe("hello");
+        serializer.Deserialize(json, NotificationDataReadMode.Strict)
+            .ShouldBeOfType<MessageNotificationData>().Message.ShouldBe("hello");
     }
 
     [Fact]
@@ -299,7 +312,8 @@ public class NotificationDataSerializationTests
         const string json = "{\"message\":\"x\"}";
         var serializer = NotificationTestObjects.CreateSerializer();
 
-        Should.Throw<NotificationDataReadException>(() => serializer.Deserialize(json))
+        Should.Throw<NotificationDataReadException>(() =>
+                serializer.Deserialize(json, NotificationDataReadMode.Strict))
             .Reason.ShouldBe(UnsupportedNotificationDataReason.MalformedPayload);
         Tolerant(serializer, json).ShouldBeOfType<UnsupportedNotificationData>()
             .Reason.ShouldBe(UnsupportedNotificationDataReason.MalformedPayload);
@@ -311,15 +325,24 @@ public class NotificationDataSerializationTests
         var serializer = NotificationTestObjects.CreateSerializer();
 
         serializer.Serialize(null).ShouldBeNull();
-        serializer.Deserialize(null).ShouldBeNull();
-        serializer.Deserialize("").ShouldBeNull();
+        serializer.Deserialize(null, NotificationDataReadMode.Strict).ShouldBeNull();
+        serializer.Deserialize("", NotificationDataReadMode.Strict).ShouldBeNull();
         Tolerant(serializer, null).ShouldBeNull();
         Tolerant(serializer, string.Empty).ShouldBeNull();
     }
 
+    [Fact]
+    public void Unknown_read_mode_is_rejected_even_for_an_empty_payload()
+    {
+        var serializer = NotificationTestObjects.CreateSerializer();
+
+        Should.Throw<ArgumentOutOfRangeException>(() =>
+            serializer.Deserialize(null, (NotificationDataReadMode)99));
+    }
+
     private static NotificationData? Tolerant(NotificationDataSerializer serializer, string? json)
     {
-        return ((INotificationDataTolerantReader)serializer).DeserializeTolerantly(json);
+        return serializer.Deserialize(json, NotificationDataReadMode.Tolerant);
     }
 
     private static JsonSerializerOptions CreateJsonOptions(

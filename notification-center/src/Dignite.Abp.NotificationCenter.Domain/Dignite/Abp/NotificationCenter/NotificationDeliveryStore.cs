@@ -339,9 +339,7 @@ public class NotificationDeliveryStore :
 
     protected virtual NotificationData? DeserializeDurableData(string? json)
     {
-        return DataSerializer is INotificationDataTolerantReader tolerantReader
-            ? tolerantReader.DeserializeTolerantly(json)
-            : DataSerializer.Deserialize(json);
+        return DataSerializer.Deserialize(json, NotificationDataReadMode.Tolerant);
     }
 
     private async Task<bool> UpdateTerminalAsync(

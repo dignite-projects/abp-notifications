@@ -1,4 +1,5 @@
 using System;
+using System.Text.Json.Nodes;
 
 namespace Dignite.Abp.Notifications;
 
@@ -12,4 +13,10 @@ public interface INotificationDataTypeRegistry
     string? GetDiscriminatorOrNull(Type dataType);
 
     Type? GetTypeOrNull(string discriminator);
+
+    /// <summary>Gets the registered current schema version for a stable discriminator.</summary>
+    int GetCurrentSchemaVersion(string discriminator);
+
+    /// <summary>Runs every registered consecutive step from <paramref name="fromVersion"/> to current.</summary>
+    JsonObject Upcast(string discriminator, int fromVersion, JsonObject payload);
 }

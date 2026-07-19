@@ -9,7 +9,6 @@ namespace Dignite.Abp.Notifications;
 
 public class NotificationDataTypeRegistry :
     INotificationDataTypeRegistry,
-    INotificationDataEvolutionRegistry,
     ISingletonDependency
 {
     private readonly Dictionary<string, Type> _byDiscriminator;
