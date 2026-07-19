@@ -46,7 +46,7 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
 
     private DefaultNotificationDistributor CreateDistributor(
         IDistributedEventBus eventBus,
-        NotificationOptions? options = null)
+        NotificationDistributionOptions? options = null)
     {
         return new DefaultNotificationDistributor(
             GetRequiredService<INotificationStore>(),
@@ -57,7 +57,7 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
             GetRequiredService<ILogger<DefaultNotificationDistributor>>(),
             GetRequiredService<INotificationDataTypeRegistry>(),
             GetRequiredService<INotificationDeliveryPreferenceEvaluator>(),
-            Options.Create(options ?? new NotificationOptions()));
+            Options.Create(options ?? new NotificationDistributionOptions()));
     }
 
     private Task DistributeAsync(
@@ -337,11 +337,11 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
         eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryRequestedEto>()))
             .Do(call => deliveryWorkItems.Add(call.Arg<NotificationDeliveryRequestedEto>()));
         var notificationId = Guid.NewGuid();
-        var distributor = CreateDistributor(eventBus, new NotificationOptions
+        var distributor = CreateDistributor(eventBus, new NotificationDistributionOptions
         {
             RecipientBatchSize = 256,
             UserNotificationWriteBatchSize = 256,
-            DeliveryEventRecipientLimit = 100
+            DeliveryWorkItemBatchSize = 100
         });
 
         await DistributeAsync(
@@ -377,11 +377,11 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
                 cancellation.Cancel();
             });
         var notificationId = Guid.NewGuid();
-        var distributor = CreateDistributor(eventBus, new NotificationOptions
+        var distributor = CreateDistributor(eventBus, new NotificationDistributionOptions
         {
             RecipientBatchSize = 2,
             UserNotificationWriteBatchSize = 2,
-            DeliveryEventRecipientLimit = 2
+            DeliveryWorkItemBatchSize = 2
         });
 
         await Should.ThrowAsync<OperationCanceledException>(() => WithUnitOfWorkAsync(() =>
@@ -405,12 +405,12 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
     [Fact]
     public async Task Large_explicit_publish_prepares_once_and_completed_bounded_jobs_can_run_out_of_order()
     {
-        var options = new NotificationOptions
+        var options = new NotificationDistributionOptions
         {
             DirectDistributionUserThreshold = 1,
             RecipientBatchSize = 256,
             UserNotificationWriteBatchSize = 256,
-            DeliveryEventRecipientLimit = 100
+            DeliveryWorkItemBatchSize = 100
         };
         var eventBus = Substitute.For<IDistributedEventBus>();
         var deliveries = new List<NotificationDeliveryRequestedEto>();

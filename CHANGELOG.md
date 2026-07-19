@@ -81,6 +81,16 @@ changes.
 
 ### Changed
 
+- **Breaking options split before 10.0.0 stable.** The catch-all `NotificationOptions` type was replaced by
+  `NotificationDefinitionOptions`, `NotificationDistributionOptions`, `NotificationDeliveryOptions`, and
+  `NotificationAudienceBroadcastOptions`. Move each existing configuration assignment to the matching group;
+  provider registration is now independent from runtime tuning. `DeliveryEventRecipientLimit` is renamed to
+  `NotificationDistributionOptions.DeliveryWorkItemBatchSize`, which limits single-recipient/channel work items
+  scheduled by one operation rather than recipients inside an event. Existing defaults and behavior are unchanged.
+  Distribution, delivery-retry, and audience batch sizes retain a 10,000 hard maximum exposed as `MaxBatchSize` on
+  their owning option type, and every group is validated on startup. Custom constructors and `IOptions<T>` consumers
+  must adopt the responsible option type and be recompiled; no data or consuming-host database migration is needed.
+
 - **Breaking notification metadata and data-read cleanup before 10.0.0 stable.** The unused
   `NotificationDefinition.EntityType` property and constructor `Type` parameter were removed; declare entity
   requirements with `WithEntityContract(..., stableEntityTypeName)`. Definition names now reject empty or

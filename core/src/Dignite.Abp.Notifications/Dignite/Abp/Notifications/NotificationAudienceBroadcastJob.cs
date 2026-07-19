@@ -22,7 +22,7 @@ public class NotificationAudienceBroadcastJob :
     AsyncBackgroundJob<NotificationAudienceBroadcastJobArgs>,
     ITransientDependency
 {
-    protected NotificationOptions Options { get; }
+    protected NotificationAudienceBroadcastOptions Options { get; }
 
     protected IReadOnlyCollection<INotificationAudienceRecipientSource> RecipientSources { get; }
 
@@ -41,7 +41,7 @@ public class NotificationAudienceBroadcastJob :
     protected IHostApplicationLifetime? HostApplicationLifetime { get; }
 
     public NotificationAudienceBroadcastJob(
-        IOptions<NotificationOptions> options,
+        IOptions<NotificationAudienceBroadcastOptions> options,
         IEnumerable<INotificationAudienceRecipientSource> recipientSources,
         INotificationDistributor distributor,
         IBackgroundJobManager backgroundJobManager,
@@ -54,7 +54,7 @@ public class NotificationAudienceBroadcastJob :
     }
 
     public NotificationAudienceBroadcastJob(
-        IOptions<NotificationOptions> options,
+        IOptions<NotificationAudienceBroadcastOptions> options,
         IEnumerable<INotificationAudienceRecipientSource> recipientSources,
         INotificationDistributor distributor,
         IBackgroundJobManager backgroundJobManager,
@@ -65,7 +65,7 @@ public class NotificationAudienceBroadcastJob :
         IHostApplicationLifetime? hostApplicationLifetime)
     {
         Options = options.Value;
-        Options.ValidateDistributionBatching();
+        Options.Validate();
         RecipientSources = recipientSources.ToArray();
         Distributor = distributor;
         BackgroundJobManager = backgroundJobManager;

@@ -21,7 +21,7 @@ public class NotificationDeliveryProcessor : ITransientDependency
     protected INotificationDeliveryRetryPolicy RetryPolicy { get; }
     protected IClock Clock { get; }
     protected ICurrentTenant CurrentTenant { get; }
-    protected NotificationOptions Options { get; }
+    protected NotificationDeliveryOptions Options { get; }
     protected ILogger<NotificationDeliveryProcessor> Logger { get; }
 
     public NotificationDeliveryProcessor(
@@ -30,7 +30,7 @@ public class NotificationDeliveryProcessor : ITransientDependency
         INotificationDeliveryRetryPolicy retryPolicy,
         IClock clock,
         ICurrentTenant currentTenant,
-        IOptions<NotificationOptions> options,
+        IOptions<NotificationDeliveryOptions> options,
         ILogger<NotificationDeliveryProcessor> logger)
     {
         Store = store;

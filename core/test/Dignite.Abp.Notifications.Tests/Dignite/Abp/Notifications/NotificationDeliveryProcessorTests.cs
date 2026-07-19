@@ -298,7 +298,7 @@ public class NotificationDeliveryProcessorTests
     private static (NotificationDeliveryProcessor Processor, InMemoryNotificationDeliveryStore Store) CreateProcessor(
         DateTime now,
         INotificationNotifier[] notifiers,
-        NotificationOptions? options = null)
+        NotificationDeliveryOptions? options = null)
     {
         options ??= DeliveryOptions();
         var optionWrapper = Options.Create(options);
@@ -315,9 +315,9 @@ public class NotificationDeliveryProcessorTests
             NullLogger<NotificationDeliveryProcessor>.Instance), store);
     }
 
-    private static NotificationOptions DeliveryOptions(int maxAttempts = 3)
+    private static NotificationDeliveryOptions DeliveryOptions(int maxAttempts = 3)
     {
-        return new NotificationOptions
+        return new NotificationDeliveryOptions
         {
             MaxDeliveryAttempts = maxAttempts,
             DeliveryLeaseDuration = TimeSpan.FromMinutes(2),

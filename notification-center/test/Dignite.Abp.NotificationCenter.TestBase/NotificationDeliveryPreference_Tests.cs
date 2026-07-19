@@ -278,7 +278,7 @@ public abstract class NotificationDeliveryPreference_Tests<TStartupModule> : Not
             GetRequiredService<ILogger<DefaultNotificationDistributor>>(),
             GetRequiredService<INotificationDataTypeRegistry>(),
             GetRequiredService<INotificationDeliveryPreferenceEvaluator>(),
-            Options.Create(new NotificationOptions()));
+            Options.Create(new NotificationDistributionOptions()));
     }
 
     private static NotificationInfo NewPreferenceNotification(Guid id)

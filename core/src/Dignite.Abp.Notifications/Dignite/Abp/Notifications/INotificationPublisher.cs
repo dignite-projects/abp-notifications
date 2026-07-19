@@ -5,7 +5,7 @@ namespace Dignite.Abp.Notifications;
 
 /// <summary>
 /// Entry point business code calls to publish a notification. Small explicit fan-outs distribute inline;
-/// larger ones go to a background job (threshold configurable via <see cref="NotificationOptions"/>).
+/// larger ones go to a background job (threshold configurable via <see cref="NotificationDistributionOptions"/>).
 /// </summary>
 public interface INotificationPublisher
 {

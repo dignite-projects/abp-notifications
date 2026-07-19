@@ -151,11 +151,11 @@ public class DefaultNotificationDistributorTests
         });
         listener.Start();
 
-        var options = new NotificationOptions
+        var options = new NotificationDistributionOptions
         {
             RecipientBatchSize = 128,
             UserNotificationWriteBatchSize = 64,
-            DeliveryEventRecipientLimit = 50
+            DeliveryWorkItemBatchSize = 50
         };
         var distributor = CreateDistributor(
             store,
@@ -235,11 +235,11 @@ public class DefaultNotificationDistributorTests
             definitionManager,
             eventBus,
             evaluator,
-            options: new NotificationOptions
+            options: new NotificationDistributionOptions
             {
                 RecipientBatchSize = 2,
                 UserNotificationWriteBatchSize = 2,
-                DeliveryEventRecipientLimit = 2
+                DeliveryWorkItemBatchSize = 2
             });
 
         await Should.ThrowAsync<OperationCanceledException>(() => distributor.DistributeAsync(
@@ -355,10 +355,10 @@ public class DefaultNotificationDistributorTests
 
     [Theory]
     [InlineData(0)]
-    [InlineData(NotificationOptions.MaxDistributionBatchSize + 1)]
+    [InlineData(NotificationDistributionOptions.MaxBatchSize + 1)]
     public void Invalid_distribution_batch_size_fails_before_distribution(int batchSize)
     {
-        var options = new NotificationOptions { RecipientBatchSize = batchSize };
+        var options = new NotificationDistributionOptions { RecipientBatchSize = batchSize };
 
         var exception = Should.Throw<InvalidOperationException>(() => CreateDistributor(
             Substitute.For<INotificationStore>(),
@@ -366,15 +366,15 @@ public class DefaultNotificationDistributorTests
             Substitute.For<IDistributedEventBus>(),
             options: options));
 
-        exception.Message.ShouldContain(nameof(NotificationOptions.RecipientBatchSize));
+        exception.Message.ShouldContain(nameof(NotificationDistributionOptions.RecipientBatchSize));
     }
 
     [Fact]
     public void Inline_threshold_cannot_create_an_unbounded_normalization_window()
     {
-        var options = new NotificationOptions
+        var options = new NotificationDistributionOptions
         {
-            DirectDistributionUserThreshold = NotificationOptions.MaxDistributionBatchSize + 1
+            DirectDistributionUserThreshold = NotificationDistributionOptions.MaxBatchSize + 1
         };
 
         var exception = Should.Throw<InvalidOperationException>(() => CreateDistributor(
@@ -383,27 +383,7 @@ public class DefaultNotificationDistributorTests
             Substitute.For<IDistributedEventBus>(),
             options: options));
 
-        exception.Message.ShouldContain(nameof(NotificationOptions.DirectDistributionUserThreshold));
-    }
-
-    [Fact]
-    public void Non_finite_retry_factors_are_rejected_at_startup_validation()
-    {
-        var invalidBackoff = new NotificationOptions { DeliveryRetryBackoffFactor = double.NaN };
-        var invalidJitter = new NotificationOptions { DeliveryRetryJitterFactor = double.PositiveInfinity };
-
-        Should.Throw<InvalidOperationException>(() => CreateDistributor(
-                Substitute.For<INotificationStore>(),
-                Substitute.For<INotificationDefinitionManager>(),
-                Substitute.For<IDistributedEventBus>(),
-                options: invalidBackoff))
-            .Message.ShouldContain(nameof(NotificationOptions.DeliveryRetryBackoffFactor));
-        Should.Throw<InvalidOperationException>(() => CreateDistributor(
-                Substitute.For<INotificationStore>(),
-                Substitute.For<INotificationDefinitionManager>(),
-                Substitute.For<IDistributedEventBus>(),
-                options: invalidJitter))
-            .Message.ShouldContain(nameof(NotificationOptions.DeliveryRetryJitterFactor));
+        exception.Message.ShouldContain(nameof(NotificationDistributionOptions.DirectDistributionUserThreshold));
     }
 
     [Fact]
@@ -804,7 +784,7 @@ public class DefaultNotificationDistributorTests
         ICurrentTenant? currentTenant = null,
         ILogger<DefaultNotificationDistributor>? logger = null,
         INotificationDataTypeRegistry? dataTypeRegistry = null,
-        NotificationOptions? options = null)
+        NotificationDistributionOptions? options = null)
     {
         currentTenant ??= new TestCurrentTenant();
         evaluator ??= new DefaultNotificationRecipientEligibilityEvaluator(
@@ -821,7 +801,7 @@ public class DefaultNotificationDistributorTests
             logger ?? NullLogger<DefaultNotificationDistributor>.Instance,
             dataTypeRegistry ?? new NotificationDataTypeRegistry(
                 Options.Create(new NotificationDataOptions())),
-            Options.Create(options ?? new NotificationOptions()));
+            Options.Create(options ?? new NotificationDistributionOptions()));
     }
 
     private static bool HasTag(

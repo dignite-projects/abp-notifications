@@ -41,7 +41,7 @@ public class DefaultNotificationPublisherTests
 
     private DefaultNotificationPublisher CreatePublisher(int threshold, Guid? tenantId = null)
     {
-        var options = Options.Create(new NotificationOptions
+        var options = Options.Create(new NotificationDistributionOptions
         {
             DirectDistributionUserThreshold = threshold
         });
@@ -177,7 +177,7 @@ public class DefaultNotificationPublisherTests
     {
         var distributor = Substitute.For<INotificationDistributor>();
         var store = Substitute.For<INotificationStore>();
-        var options = Options.Create(new NotificationOptions
+        var options = Options.Create(new NotificationDistributionOptions
         {
             DirectDistributionUserThreshold = 1,
             RecipientBatchSize = 2

@@ -79,7 +79,7 @@ public class NotificationDeliveryPreferenceTests
             NullLogger<DefaultNotificationDistributor>.Instance,
             new NotificationDataTypeRegistry(Options.Create(new NotificationDataOptions())),
             preference,
-            Options.Create(new NotificationOptions()));
+            Options.Create(new NotificationDistributionOptions()));
 
         await distributor.DistributeAsync(new NotificationInfo
         {
@@ -159,7 +159,7 @@ public class NotificationDeliveryPreferenceTests
     private static (NotificationDeliveryProcessor Processor, InMemoryNotificationDeliveryStore Store, IClock Clock)
         CreateProcessor(DateTime now, INotificationNotifier notifier)
     {
-        var options = Options.Create(new NotificationOptions
+        var options = Options.Create(new NotificationDeliveryOptions
         {
             DeliveryRetryJitterFactor = 0,
             InitialDeliveryRetryDelay = TimeSpan.Zero,

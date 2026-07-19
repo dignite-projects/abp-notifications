@@ -17,14 +17,14 @@ namespace Dignite.Abp.Notifications;
 /// </summary>
 public class NotificationDefinitionManager : INotificationDefinitionManager, ISingletonDependency
 {
-    protected NotificationOptions Options { get; }
+    protected NotificationDefinitionOptions Options { get; }
 
     protected IServiceScopeFactory ServiceScopeFactory { get; }
 
     private readonly Lazy<IDictionary<string, NotificationDefinition>> _definitions;
 
     public NotificationDefinitionManager(
-        IOptions<NotificationOptions> options,
+        IOptions<NotificationDefinitionOptions> options,
         IServiceScopeFactory serviceScopeFactory)
     {
         Options = options.Value;
