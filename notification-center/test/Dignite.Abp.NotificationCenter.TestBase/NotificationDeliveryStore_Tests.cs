@@ -45,6 +45,42 @@ public abstract class NotificationDeliveryStore_Tests<TStartupModule> : Notifica
     }
 
     [Fact]
+    public async Task Due_delivery_snapshot_tolerates_an_unknown_historical_payload()
+    {
+        var notificationId = Guid.NewGuid();
+        var deliveryId = Guid.NewGuid();
+        const string rawJson =
+            "{\"type\":\"Removed.Product.Payload\",\"schemaVersion\":4,\"value\":\"opaque\"}";
+
+        await WithTenantUnitOfWorkAsync(null, () =>
+            GetRequiredService<IRepository<NotificationDeliveryRecord, Guid>>().InsertAsync(
+                new NotificationDeliveryRecord(
+                    deliveryId,
+                    notificationId,
+                    Guid.NewGuid(),
+                    "Email",
+                    Guid.NewGuid().ToString("N"),
+                    "historical.delivery",
+                    rawJson,
+                    entityTypeName: null,
+                    entityId: null,
+                    NotificationSeverity.Info,
+                    DateTime.UtcNow,
+                    tenantId: null),
+                autoSave: true));
+
+        var workItems = await GetRequiredService<INotificationDeliveryStore>()
+            .GetDueWorkItemsAsync(DateTime.UtcNow.AddMinutes(1), 100);
+        var unsupported = workItems.Single(item => item.DeliveryId == deliveryId)
+            .Data.ShouldBeOfType<UnsupportedNotificationData>();
+
+        unsupported.Reason.ShouldBe(UnsupportedNotificationDataReason.UnknownDiscriminator);
+        unsupported.OriginalDiscriminator.ShouldBe("Removed.Product.Payload");
+        unsupported.OriginalSchemaVersion.ShouldBe(4);
+        unsupported.RawJson.ShouldBe(rawJson);
+    }
+
+    [Fact]
     public async Task Stable_identity_and_unique_index_prevent_duplicate_recipient_channel_rows()
     {
         var work = await CreateWorkAsync(channel: "Email");

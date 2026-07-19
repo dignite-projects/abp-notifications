@@ -14,8 +14,6 @@ public class NotificationDefinition
 {
     public string Name { get; }
 
-    public Type? EntityType { get; }
-
     public ILocalizableString DisplayName { get; set; }
 
     public ILocalizableString? Description { get; set; }
@@ -55,11 +53,10 @@ public class NotificationDefinition
     /// <summary>Free-form extension bag — e.g. explicit external channel routing.</summary>
     public IDictionary<string, object?> Attributes { get; }
 
-    public NotificationDefinition(string name, ILocalizableString displayName, Type? entityType = null)
+    public NotificationDefinition(string name, ILocalizableString displayName)
     {
-        Name = Check.NotNull(name, nameof(name));
+        Name = Check.NotNullOrWhiteSpace(name, nameof(name));
         DisplayName = Check.NotNull(displayName, nameof(displayName));
-        EntityType = entityType;
         Attributes = new Dictionary<string, object?>();
     }
 

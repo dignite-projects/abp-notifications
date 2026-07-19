@@ -126,6 +126,16 @@ public class NotificationRegistration_Tests
         exception.Message.ShouldContain("<direct registration>");
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("\t")]
+    public void Definition_name_rejects_empty_or_whitespace_values_immediately(string name)
+    {
+        Should.Throw<ArgumentException>(() =>
+            new NotificationDefinition(name, new FixedLocalizableString("Invalid")));
+    }
+
     [Fact]
     public void Definition_contract_records_stable_payload_and_entity_metadata()
     {

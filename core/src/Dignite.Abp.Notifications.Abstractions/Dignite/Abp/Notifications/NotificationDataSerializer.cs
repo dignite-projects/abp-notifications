@@ -7,11 +7,9 @@ namespace Dignite.Abp.Notifications;
 
 [ExposeServices(
     typeof(INotificationDataSerializer),
-    typeof(INotificationDataTolerantReader),
     typeof(NotificationDataSerializer))]
 public class NotificationDataSerializer :
     INotificationDataSerializer,
-    INotificationDataTolerantReader,
     ISingletonDependency
 {
     private readonly JsonSerializerOptions _strictOptions;
@@ -41,18 +39,21 @@ public class NotificationDataSerializer :
         return data is null ? null : JsonSerializer.Serialize(data, _strictOptions);
     }
 
-    public NotificationData? Deserialize(string? json)
+    public NotificationData? Deserialize(string? json, NotificationDataReadMode readMode)
     {
-        return string.IsNullOrEmpty(json)
-            ? null
-            : JsonSerializer.Deserialize<NotificationData>(json!, _strictOptions);
-    }
+        if (!Enum.IsDefined(typeof(NotificationDataReadMode), readMode))
+        {
+            throw new ArgumentOutOfRangeException(nameof(readMode), readMode, "Specify Strict or Tolerant.");
+        }
 
-    public NotificationData? DeserializeTolerantly(string? json)
-    {
         if (string.IsNullOrEmpty(json))
         {
             return null;
+        }
+
+        if (readMode == NotificationDataReadMode.Strict)
+        {
+            return JsonSerializer.Deserialize<NotificationData>(json!, _strictOptions);
         }
 
         try

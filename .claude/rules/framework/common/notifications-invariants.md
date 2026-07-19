@@ -31,6 +31,8 @@ Newtonsoft.Json anywhere in this pipeline.
   are tolerant: unknown discriminators, future versions, malformed known data, and failed upcasts become
   `UnsupportedNotificationData`. Preserve raw JSON only as escaped diagnostic data; never interpret it as a CLR
   name or show it in the fallback UI.
+- Use the canonical `INotificationDataSerializer.Deserialize(json, readMode)` and canonical
+  `INotificationDataTypeRegistry` evolution members. Do not reintroduce optional reader/evolution capability probes.
 - **Why**: the legacy implementation wrote with System.Text.Json + `AssemblyQualifiedName`, read
   back with Newtonsoft + `Type.GetType()`, and had a separate hardcoded switch (only 2 types) in
   the HTTP client converter. Result: an assembly version bump could make historical notifications
@@ -142,6 +144,8 @@ identity. Treat these as publish-time contracts, not hints for a downstream Noti
   before background enqueue, store writes, or distributed event publication.
 - Entity requirements use the complete `NotificationEntityIdentifier`. If a definition constrains an entity type,
   compare its stable caller-chosen name ordinally. Never translate it back to a CLR `Type`.
+- `NotificationDefinition` accepts only a non-empty stable definition name and never exposes a CLR entity `Type`;
+  use `WithEntityContract` and its stable entity type name.
 - The trusted-recipient eligibility bypass does not bypass payload/entity validation; the policies answer different
   questions.
 - `Unspecified` is the compatibility state. A definition that has not opted into a dimension remains permissive for

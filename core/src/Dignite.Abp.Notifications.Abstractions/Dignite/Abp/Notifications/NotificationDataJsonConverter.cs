@@ -17,7 +17,6 @@ public sealed class NotificationDataJsonConverter : JsonConverter<NotificationDa
     public const string SchemaVersionPropertyName = "schemaVersion";
 
     private readonly INotificationDataTypeRegistry _registry;
-    private readonly INotificationDataEvolutionRegistry? _evolutionRegistry;
     private readonly NotificationDataReadMode _readMode;
     private JsonSerializerOptions? _innerOptions;
 
@@ -30,8 +29,12 @@ public sealed class NotificationDataJsonConverter : JsonConverter<NotificationDa
         INotificationDataTypeRegistry registry,
         NotificationDataReadMode readMode)
     {
+        if (!Enum.IsDefined(typeof(NotificationDataReadMode), readMode))
+        {
+            throw new ArgumentOutOfRangeException(nameof(readMode), readMode, "Specify Strict or Tolerant.");
+        }
+
         _registry = registry;
-        _evolutionRegistry = registry as INotificationDataEvolutionRegistry;
         _readMode = readMode;
     }
 
@@ -111,8 +114,7 @@ public sealed class NotificationDataJsonConverter : JsonConverter<NotificationDa
                     schemaVersion);
             }
 
-            var currentVersion = _evolutionRegistry?.GetCurrentSchemaVersion(discriminator)
-                ?? NotificationDataTypeAttribute.GetSchemaVersionOrDefault(clrType);
+            var currentVersion = _registry.GetCurrentSchemaVersion(discriminator);
             if (schemaVersion > currentVersion)
             {
                 return HandleFailure(
@@ -145,20 +147,9 @@ public sealed class NotificationDataJsonConverter : JsonConverter<NotificationDa
 
             if (schemaVersion < currentVersion)
             {
-                if (_evolutionRegistry == null)
-                {
-                    return HandleFailure(
-                        UnsupportedNotificationDataReason.UpcastFailed,
-                        $"Notification data '{discriminator}' schema v{schemaVersion} requires upcasting to " +
-                        $"v{currentVersion}, but the configured registry has no evolution support.",
-                        rawJson,
-                        discriminator,
-                        schemaVersion);
-                }
-
                 try
                 {
-                    payload = _evolutionRegistry.Upcast(discriminator, schemaVersion, payload);
+                    payload = _registry.Upcast(discriminator, schemaVersion, payload);
                     EnsureNoReservedEnvelopeMembers(payload);
                 }
                 catch (Exception exception) when (IsRecoverableReadException(exception))
@@ -213,8 +204,7 @@ public sealed class NotificationDataJsonConverter : JsonConverter<NotificationDa
             ?? throw new JsonException(
                 $"Notification data type '{clrType.FullName}' is not registered. " +
                 "Annotate it with [NotificationDataType(\"...\")] and register it via NotificationDataOptions.");
-        var currentVersion = _evolutionRegistry?.GetCurrentSchemaVersion(discriminator)
-            ?? NotificationDataTypeAttribute.GetSchemaVersionOrDefault(clrType);
+        var currentVersion = _registry.GetCurrentSchemaVersion(discriminator);
 
         using var document = JsonSerializer.SerializeToDocument(value, clrType, GetInnerOptions(options));
         if (document.RootElement.ValueKind != JsonValueKind.Object)

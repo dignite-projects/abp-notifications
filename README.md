@@ -592,10 +592,11 @@ An upcaster transforms payload members from N to N+1; the framework owns the res
 beyond the declared current version, or any missing v1→current link fails at application startup. Upcasting
 is lazy: persisted rows are not rewritten and no EF Core/MongoDB migration is required.
 
-`INotificationDataSerializer.Deserialize` remains strict for trusted boundaries and throws a typed
-`NotificationDataReadException`. Its `Reason` distinguishes an unknown discriminator, unsupported future
-version, malformed known payload, and failed upcast. Notification Center inbox reads, distributed-event
-deserialization, and HTTP server/client converters use tolerant mode: they return
+`INotificationDataSerializer.Deserialize(json, readMode)` is the single programmatic read boundary. Callers select
+`NotificationDataReadMode.Strict` for trusted/corruption-sensitive reads or `Tolerant` for durable and batch reads.
+Strict mode throws a typed `NotificationDataReadException`; its `Reason` distinguishes an unknown discriminator,
+unsupported future version, malformed known payload, and failed upcast. Notification Center inbox and delivery
+snapshot reads, distributed-event deserialization, and HTTP server/client converters use tolerant mode: they return
 `UnsupportedNotificationData`, preserving the original discriminator, version, and escaped raw JSON without
 activating an arbitrary CLR type. One bad historical row therefore cannot fail the rest of an inbox page.
 The MVC and Angular libraries render this known placeholder as a generic unsupported-notification message and
@@ -635,6 +636,7 @@ Definition names also use ordinal, case-sensitive comparison. Every duplicate na
 and the error identifies both provider types; an equivalent-looking second definition is not treated as
 idempotent because definitions are mutable after construction. Provider types are convention-discovered
 across modules; registering the same provider type more than once is idempotent and the provider executes once.
+Empty and whitespace-only definition names are rejected by the constructor.
 
 Definitions can opt into publish-time contracts independently for payload and entity identity:
 
@@ -654,6 +656,10 @@ only the stable discriminator. Entity type constraints such as `"Demo.Order"` ar
 names and compare ordinally/case-sensitively—they are never converted to or from a CLR `Type`. Repeating the
 same contract is idempotent; conflicting repetitions fail immediately, and a same-discriminator string call
 cannot erase the CLR registration check established by `WithPayload<TData>()`.
+
+Before 10.0.0 stable, the unused `NotificationDefinition` constructor `entityType: Type` parameter and `EntityType`
+property were removed. Replace them with `WithEntityContract(requirement, "Your.StableName")`; no data migration is
+required because the removed CLR value was never used by persistence or distribution.
 
 The publisher validates opted-in contracts before creating durable notification work or enqueueing a background
 job, and the distributor validates again before writing an inbox row or publishing an external event. This

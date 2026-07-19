@@ -81,6 +81,15 @@ changes.
 
 ### Changed
 
+- **Breaking notification metadata and data-read cleanup before 10.0.0 stable.** The unused
+  `NotificationDefinition.EntityType` property and constructor `Type` parameter were removed; declare entity
+  requirements with `WithEntityContract(..., stableEntityTypeName)`. Definition names now reject empty or
+  whitespace values immediately. `INotificationDataTolerantReader` was removed: all reads now call
+  `INotificationDataSerializer.Deserialize(json, NotificationDataReadMode.Strict|Tolerant)` explicitly.
+  `INotificationDataEvolutionRegistry` was also folded into canonical `INotificationDataTypeRegistry`; custom
+  registries must implement current-version lookup and upcasting, and custom serializers/registries must be
+  recompiled. Persisted payloads, stable discriminators, entity type names, and JSON envelopes require no migration.
+
 - **Breaking notifier contract cleanup before 10.0.0 stable.** `INotificationNotifier` is now the sole channel
   execution contract: it exposes `Name` plus cancellation-aware single-recipient `DeliverAsync`. The temporary
   `INotificationDeliveryNotifier`, generic `INotificationNotifier<TEvent>`, aggregate `NotificationDeliveryEto`, and
@@ -185,7 +194,7 @@ changes.
 - Newly serialized notification payloads always include `schemaVersion`; versionless historical JSON is read as
   schema v1 and upgraded lazily without a database migration or eager row rewrite. Notification Center store
   queries and distributed-event/HTTP converters now tolerate unknown, future, malformed, and failed-upcast payloads
-  by returning safe placeholder data, while `INotificationDataSerializer.Deserialize` retains strict behavior.
+  by returning safe placeholder data through the canonical explicit tolerant read mode.
 - Distribution can now schedule delivery work in multiple bounded groups for one notification. Built-in EF Core,
   MongoDB, and null stores use keyset pages and bounded writes; large explicit fan-outs prepare the notification once
   and enqueue bounded recipient jobs. Explicit normalization uses bounded keyset windows rather than a
