@@ -52,8 +52,8 @@ changes.
 - Added a per-tenant/notification/user/channel delivery state machine with deterministic identities, atomic leases,
   exponential retry with jitter, lease recovery, suppression, dead-lettering, metrics, and operator query/retry
   permissions and REST endpoints. Notification Center persists the ledger with equivalent EF Core and MongoDB
-  indexes and behavior; Core-only applications retain a process-local null implementation.
-- Added `INotificationDeliveryNotifier` and single-recipient/channel `NotificationDeliveryWorkEto` contracts.
+  indexes and behavior; Core-only applications retain a process-local in-memory implementation.
+- Added `INotificationDeliveryNotifier` and single-recipient/channel `NotificationDeliveryRequestedEto` contracts.
   Work items carry a stable idempotency key for providers that support downstream deduplication, while legacy
   `INotificationNotifier<NotificationDeliveryEto>` implementations remain callable through a singleton adapter.
 - Added MongoDB integration with ABP's distributed event outbox and inbox through
@@ -80,6 +80,17 @@ changes.
   explicit batches.
 
 ### Changed
+
+- **Breaking public terminology cleanup before 10.0.0 stable.** `NullNotificationDeliveryStore` is now
+  `InMemoryNotificationDeliveryStore`, `NullNotificationDeliveryPreferenceEvaluator` is now
+  `AllowAllNotificationDeliveryPreferenceEvaluator`, and `NotificationDeliveryWorkEto` is now
+  `NotificationDeliveryRequestedEto`. Delivery states are renamed to `Processing`, `RetryScheduled`, and
+  `DeadLettered` while retaining numeric values 1, 3, and 5, so existing EF Core and MongoDB state values need no
+  migration. The CLR ETO rename intentionally keeps the distributed event name
+  `Dignite.Abp.Notifications.NotificationDeliveryWork`; mixed-version producers and consumers therefore use the
+  same wire name and require no drain solely for this terminology change. Custom source code must adopt the new
+  CLR names before recompiling. Delivery metrics now report the matching `retry_scheduled` and `dead_lettered`
+  outcome tags, so dashboards filtering the former `failed` or `dead_letter` values must be updated.
 
 - **Breaking for delivery-store implementers.** The broad `INotificationDeliveryStore.RequeueAsync` operation is
   replaced by preference-preserving `RetryAsync` and explicitly audited `ForceDeliverAsync`. Notification Center
@@ -109,7 +120,7 @@ changes.
   allow); DI and preference-aware callers use the new `INotificationDeliveryPreferenceEvaluator` overload.
 
 - **Breaking wire behavior for independently deployed event consumers.** The default distributor now publishes
-  `NotificationDeliveryWorkEto` instead of batched `NotificationDeliveryEto`. Mixed versions cannot provide the new
+  `NotificationDeliveryRequestedEto` instead of batched `NotificationDeliveryEto`. Mixed versions cannot provide the new
   reliability guarantee: quiesce publication, drain old aggregate events, upgrade consumer schemas/code, then
   upgrade producers and resume. Existing notifier source contracts remain supported through a singleton adapter,
   but old wire-event handlers retain their legacy partial-progress behavior.

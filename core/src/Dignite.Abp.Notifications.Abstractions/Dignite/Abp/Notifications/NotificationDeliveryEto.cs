@@ -5,7 +5,7 @@ namespace Dignite.Abp.Notifications;
 
 /// <summary>
 /// Legacy aggregate delivery event retained for source and wire compatibility. New producers publish
-/// <see cref="NotificationDeliveryWorkEto"/>; the reliable processor adapts one work item back to a singleton instance
+/// <see cref="NotificationDeliveryRequestedEto"/>; the reliable processor adapts one work item back to a singleton instance
 /// of this type for existing notifier implementations. An aggregate event from an old producer does not gain
 /// per-recipient state or partial-progress reliability merely because a newer consumer can deserialize it.
 /// </summary>

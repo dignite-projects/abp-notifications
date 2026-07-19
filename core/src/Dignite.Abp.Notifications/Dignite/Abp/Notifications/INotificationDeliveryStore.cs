@@ -18,14 +18,14 @@ public interface INotificationDeliveryStore
     /// inbox transaction never has to expose an uncommitted pending row to a nested claim operation.
     /// </summary>
     Task<NotificationDeliveryClaim?> EnsureCreatedAndTryClaimAsync(
-        NotificationDeliveryWorkEto workItem,
+        NotificationDeliveryRequestedEto workItem,
         DateTime now,
         TimeSpan leaseDuration,
         int maxAttempts,
         CancellationToken cancellationToken = default);
 
     Task EnsureCreatedAsync(
-        NotificationDeliveryWorkEto workItem,
+        NotificationDeliveryRequestedEto workItem,
         CancellationToken cancellationToken = default);
 
     Task<NotificationDeliveryClaim?> TryClaimAsync(
@@ -64,7 +64,7 @@ public interface INotificationDeliveryStore
     /// Gets due work across all tenants for infrastructure retry processing. Implementations must preserve each
     /// returned item's TenantId and must not expose this cross-tenant operation through an end-user API.
     /// </summary>
-    Task<IReadOnlyList<NotificationDeliveryWorkEto>> GetDueWorkItemsAsync(
+    Task<IReadOnlyList<NotificationDeliveryRequestedEto>> GetDueWorkItemsAsync(
         DateTime now,
         int maxResultCount,
         CancellationToken cancellationToken = default);

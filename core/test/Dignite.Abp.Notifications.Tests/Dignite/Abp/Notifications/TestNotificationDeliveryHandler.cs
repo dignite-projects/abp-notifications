@@ -8,10 +8,10 @@ namespace Dignite.Abp.Notifications;
 /// Records channel-specific work emitted through the local distributed event bus.
 /// </summary>
 [ExposeServices(
-    typeof(IDistributedEventHandler<NotificationDeliveryWorkEto>),
+    typeof(IDistributedEventHandler<NotificationDeliveryRequestedEto>),
     typeof(TestNotificationDeliveryHandler))]
 public class TestNotificationDeliveryHandler :
-    IDistributedEventHandler<NotificationDeliveryWorkEto>,
+    IDistributedEventHandler<NotificationDeliveryRequestedEto>,
     ITransientDependency
 {
     private readonly ReceivedNotificationDeliveries _received;
@@ -21,7 +21,7 @@ public class TestNotificationDeliveryHandler :
         _received = received;
     }
 
-    public Task HandleEventAsync(NotificationDeliveryWorkEto eventData)
+    public Task HandleEventAsync(NotificationDeliveryRequestedEto eventData)
     {
         _received.Items.Enqueue(eventData);
         return Task.CompletedTask;

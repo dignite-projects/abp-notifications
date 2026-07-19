@@ -54,7 +54,7 @@ public class NotificationDeliveryProcessor : ITransientDependency
     }
 
     public virtual async Task ProcessAsync(
-        NotificationDeliveryWorkEto workItem,
+        NotificationDeliveryRequestedEto workItem,
         CancellationToken cancellationToken = default)
     {
         var notifier = ResolveNotifierOrNull(workItem.Channel);
@@ -186,7 +186,7 @@ public class NotificationDeliveryProcessor : ITransientDependency
                     throw;
                 }
 
-                var outcome = nextAttemptTime.HasValue ? "failed" : "dead_letter";
+                var outcome = nextAttemptTime.HasValue ? "retry_scheduled" : "dead_lettered";
                 NotificationDeliveryMetrics.OutcomeCount.Add(
                     1,
                     CreateTags(workItem, claim.AttemptCount, outcome));
@@ -228,7 +228,7 @@ public class NotificationDeliveryProcessor : ITransientDependency
     }
 
     private static TagList CreateTags(
-        NotificationDeliveryWorkEto workItem,
+        NotificationDeliveryRequestedEto workItem,
         int attemptCount,
         string? outcome = null)
     {

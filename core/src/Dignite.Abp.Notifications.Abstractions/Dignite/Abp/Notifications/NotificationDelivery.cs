@@ -45,7 +45,7 @@ public class NotificationDelivery
         };
     }
 
-    public static NotificationDelivery FromWorkItem(NotificationDeliveryWorkEto workItem)
+    public static NotificationDelivery FromWorkItem(NotificationDeliveryRequestedEto workItem)
     {
         return new NotificationDelivery
         {

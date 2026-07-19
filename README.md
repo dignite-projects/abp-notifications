@@ -5,7 +5,7 @@ an optional **Notification Center** (persistent inbox, subscriptions, read/unrea
 with **MVC** and **Angular** UI libraries.
 
 - **Event-driven, pluggable notifiers.** The core publishes one stable, independently claimable
-  `NotificationDeliveryWorkEto` per recipient and channel. Channels can be added, removed, or deployed
+  `NotificationDeliveryRequestedEto` per recipient and channel. Channels can be added, removed, or deployed
   independently without touching the core.
 - **Two operation modes, one framework.** Run Core-only with process-local delivery state and no inbox,
   or install Notification Center for durable delivery state, persistent inbox, subscriptions,
@@ -39,7 +39,7 @@ the first stable version exists the initial pre-release is necessarily also expo
 
 | Package | Purpose |
 |---|---|
-| `Dignite.Abp.Notifications.Abstractions` | Shared contracts: `NotificationData`, `NotificationDeliveryWorkEto`, `[NotificationDataType]`, `INotificationDefinitionProvider`, `INotificationDeliveryNotifier`. Notifiers and remote clients depend on **only** this. |
+| `Dignite.Abp.Notifications.Abstractions` | Shared contracts: `NotificationData`, `NotificationDeliveryRequestedEto`, `[NotificationDataType]`, `INotificationDefinitionProvider`, `INotificationDeliveryNotifier`. Notifiers and remote clients depend on **only** this. |
 | `Dignite.Abp.Notifications` | The core: definitions, the publish/distribute pipeline, the `INotificationStore` abstraction + `NullNotificationStore`. |
 | `Dignite.Abp.Notifications.SignalR` | Real-time push notifier (SignalR hub at `/signalr-hubs/notifications`). |
 | `Dignite.Abp.Notifications.Emailing` | Email notifier (ABP `IEmailSender`). |
@@ -221,7 +221,7 @@ backfill before deploying the new unique index.
 
 #### Delivery guarantees, batches, and partial progress
 
-Distributing a notification writes the per-user inbox rows and publishes one `NotificationDeliveryWorkEto` per
+Distributing a notification writes the per-user inbox rows and publishes one `NotificationDeliveryRequestedEto` per
 tenant/notification/user/channel. Those writes and outgoing event records commit together only when the host
 enables ABP's transactional outbox. The process that actually hosts the selected channel consumes the work event,
 atomically materializes its self-contained payload snapshot directly in a claimed lease state through an
@@ -351,12 +351,12 @@ channel delivery. Cancellation remains a boundary for stopping new work, not com
 
 #### Delivery reliability, retries, and external side effects
 
-`NotificationDeliveryWorkEto` contains exactly one recipient and one channel. Its `DeliveryId` and
+`NotificationDeliveryRequestedEto` contains exactly one recipient and one channel. Its `DeliveryId` and
 `IdempotencyKey` are deterministic from the tenant/host boundary, notification, user, and normalized channel.
 Workers atomically claim a time-limited lease before invoking a notifier; a competing event or worker cannot claim
 the same work concurrently. Expired leases are recoverable, failures use bounded exponential backoff with jitter,
-and exhausted work becomes `DeadLetter`. Intentional channel decisions such as a missing email address return
-`Suppressed` and are not retried automatically. Ordinary operator retry is limited to `Failed` and `DeadLetter`
+and exhausted work becomes `DeadLettered`. Intentional channel decisions such as a missing email address return
+`Suppressed` and are not retried automatically. Ordinary operator retry is limited to `RetryScheduled` and `DeadLettered`
 work and preserves the producer-resolved intent, delay, and preference reason. A suppressed delivery can only be
 requeued through the separately authorized force-delivery operation, which explicitly changes the intent to
 `Deliver` and records the actor, time, previous state, and stable `operator-force-delivery` audit reason without
@@ -373,7 +373,7 @@ or deduplication key; without provider support, a retry may repeat that external
 fixed reason codes and sanitized messages and never contain exception text, addresses, recipient IDs, or payloads;
 the separate payload snapshot follows the normal stable-discriminator/System.Text.Json persistence rules.
 
-Core-only applications continue to work without Notification Center. `NullNotificationDeliveryStore` keeps the
+Core-only applications continue to work without Notification Center. `InMemoryNotificationDeliveryStore` keeps the
 same state machine and concurrent-claim behavior in process, but restart loses pending work, leases, retry history,
 and operator visibility. Install either Notification Center persistence provider when retries must survive a crash
 or deployment.
@@ -420,7 +420,7 @@ Retention ownership and deletion rules:
 |---|---|---|
 | `UserNotification` inbox row | Notification Center / current user | User actions can delete any of their own rows. Retention cleanup only deletes `Read` rows older than `ReadUserNotificationRetention`; `Unread` rows are always retained. |
 | `Notification` base payload | Notification Center retention cleanup | First marked with `RetentionDeletionTime` after `OrphanNotificationRetention` and only when no same-tenant inbox row and no same-tenant delivery record still references it. Physical deletion happens after `NotificationDeletionQuarantineDuration` and a second reference check. New same-tenant inbox/delivery materialization cancels the marker; a cross-tenant row never retains or deletes another tenant's payload. |
-| `NotificationDeliveryRecord` | Channel consumer / Notification Center | Cleanup deletes only terminal `Succeeded`, `Suppressed`, or `DeadLetter` rows older than `TerminalDeliveryRetention`. `Pending`, retryable `Failed`, and leased `Claimed` rows are active work and are never time-deleted. |
+| `NotificationDeliveryRecord` | Channel consumer / Notification Center | Cleanup deletes only terminal `Succeeded`, `Suppressed`, or `DeadLettered` rows older than `TerminalDeliveryRetention`. `Pending`, retryable `RetryScheduled`, and leased `Processing` rows are active work and are never time-deleted. |
 | `NotificationSubscription` | User subscription settings | Not time-based. Delete only by the exact subscription identity through the subscription APIs. |
 | `NotificationDeliveryPreference` / `NotificationQuietHours` | User delivery settings | Not time-based. Delete only by user/settings APIs; absence means default allow/no quiet hours. |
 | `NotificationRetentionCleanupCursor` | Notification Center retention cleanup | Internal scan state. One cursor per cleanup scope and record kind records the last keyset position so bounded runs can resume after retained, vetoed, or failing prefixes. |
@@ -454,7 +454,7 @@ Delivery consent is independent from subscriptions and address resolution. Subsc
 only when `userIds` is omitted; explicit and subscription-derived candidates then pass through the same
 `INotificationDeliveryPreferenceEvaluator`. An email opt-out therefore does not remove the Notification Center inbox
 row, suppress SignalR, or claim that an email address is missing. Core-only applications use
-`NullNotificationDeliveryPreferenceEvaluator`, whose deterministic default is immediate delivery.
+`AllowAllNotificationDeliveryPreferenceEvaluator`, whose deterministic default is immediate delivery.
 
 Notification Center persists allow/deny rules at four nullable scopes. The first matching rule wins:
 
@@ -470,7 +470,7 @@ Entity-specific preferences are intentionally not supported: entity interest rem
 more-specific `IsEnabled = true` rule can override a broader opt-out. Quiet hours are a separate per-user daily
 window (`StartMinute` inclusive, `EndMinute` exclusive) and a system time-zone identifier; equal start/end values
 are rejected instead of meaning “all day.” Normal work created during the window is delayed, not dropped. The
-producer writes `Delay + DeliveryNotBefore` into the single-user/channel `NotificationDeliveryWorkEto`; its owning
+producer writes `Delay + DeliveryNotBefore` into the single-user/channel `NotificationDeliveryRequestedEto`; its owning
 remote consumer persists the work as pending, and the delivery retry worker republishes it when due. Keep
 `IsDeliveryRetryWorkerEnabled` enabled when using quiet hours. DST-invalid local end times advance to the first
 valid minute according to the configured system time-zone rules.
@@ -511,7 +511,7 @@ the separately audited `ForceDeliverAsync` operation.
 
 This wire change does **not** support a zero-downtime mixed-version rollout. The old aggregate
 `NotificationDeliveryEto` handler retains its old partial-progress semantics, while old consumers cannot understand
-`NotificationDeliveryWorkEto`. Quiesce notification publication, drain old aggregate events, apply the consumer
+`NotificationDeliveryRequestedEto`. Quiesce notification publication, drain old aggregate events, apply the consumer
 schema and code upgrade, then upgrade producers and resume publication. Legacy notifier *implementations* remain
 source-compatible through the new processor's singleton aggregate-event adapter; that adapter does not make an old
 producer event reliable. The ledger begins with newly consumed work events, so historical notifications require no
@@ -715,7 +715,7 @@ bounded stages:
 The defaults are 256 candidates, 256 inbox rows, and 100 recipients converted to work records per scheduling
 operation. Each value must be between 1 and `NotificationOptions.MaxDistributionBatchSize` (10,000), and invalid
 configuration fails host startup. `DeliveryEventRecipientLimit` retains its existing name for configuration
-compatibility, but `NotificationDeliveryWorkEto` always carries one recipient and channel. Notification data still
+compatibility, but `NotificationDeliveryRequestedEto` always carries one recipient and channel. Notification data still
 has to fit the chosen transport's message-size limit.
 
 The built-in `NotificationStore` (shared by the EF Core and MongoDB packages) implements
@@ -823,7 +823,7 @@ recipient.
 ## Notifiers
 
 A reliable notifier implements `INotificationDeliveryNotifier` and relays one claimed
-`NotificationDeliveryWorkEto` to a single channel. The contract returns `Succeeded` or an intentional
+`NotificationDeliveryRequestedEto` to a single channel. The contract returns `Succeeded` or an intentional
 `Suppressed(reasonCode)` result; throwing reports a retryable channel failure. The non-generic
 `INotificationNotifier` keeps stable channel metadata (`Name`) available for channel enumeration and routing.
 Existing `INotificationNotifier<NotificationDeliveryEto>` implementations remain source-compatible: the processor
@@ -906,7 +906,7 @@ public class WebPushNotifier
     public const string ChannelName = "WebPush";
     public string Name => ChannelName;
 
-    public async Task<NotificationDeliveryResult> DeliverAsync(NotificationDeliveryWorkEto workItem)
+    public async Task<NotificationDeliveryResult> DeliverAsync(NotificationDeliveryRequestedEto workItem)
     {
         var payload = NotificationDelivery.FromWorkItem(workItem);
         // Forward workItem.IdempotencyKey if the provider supports idempotent requests.
@@ -1030,7 +1030,7 @@ Configure<NotificationEmailOptions>(options =>
 });
 
 // EF Core Notification Center hosts can opt in to ABP's transactional outbox so the persisted
-// inbox rows and NotificationDeliveryWorkEto outbox records commit together. The channel consumer
+// inbox rows and NotificationDeliveryRequestedEto outbox records commit together. The channel consumer
 // persists its delivery ledger before claiming the work.
 Configure<AbpDistributedEventBusOptions>(options =>
 {
@@ -1048,7 +1048,7 @@ Configure<AbpDistributedEventBusOptions>(options =>
 ## Architecture
 
 ```
-Notifications.Abstractions   ── data model + NotificationDeliveryWorkEto + reliable notifier contract
+Notifications.Abstractions   ── data model + NotificationDeliveryRequestedEto + reliable notifier contract
         │
 Notifications (Core)         ── define → distribute → publish work; channel consumers claim/retry
         │
@@ -1065,13 +1065,13 @@ Notifiers                 NotificationCenter (optional)
 3. The distributor resolves bounded recipient pages (explicit `userIds`, or subscribers from
    `IBatchedNotificationStore`), checks the definition's feature/permission availability, persists bounded
    inbox groups (a no-op under `NullNotificationStore`), creates one delivery identity per recipient/channel,
-   then publishes `NotificationDeliveryWorkEto` when external channels are configured.
+   then publishes `NotificationDeliveryRequestedEto` when external channels are configured.
 4. Only a process hosting the selected channel handles the work. In one independently committed store operation it
    inserts a new self-contained delivery snapshot directly as a claimed lease, or atomically claims an existing due
    row; it then invokes the notifier and records success, suppression, retry timing, or dead-letter state. Its retry
    worker republishes due or lease-expired work.
 
-`NotificationDeliveryWorkEto` is the load-bearing boundary between scheduling and delivery and the extension
+`NotificationDeliveryRequestedEto` is the load-bearing boundary between scheduling and delivery and the extension
 point for any new channel. Under either Notification Center persistence provider, hosts should opt in to ABP's
 transactional outbox (see [Configuration](#configuration)) so notification, inbox, and outgoing work records
 commit together. The delivery ledger belongs to the consuming channel application; initial materialization and

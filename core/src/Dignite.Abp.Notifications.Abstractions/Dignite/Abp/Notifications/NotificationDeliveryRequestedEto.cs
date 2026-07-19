@@ -4,12 +4,14 @@ using Volo.Abp.EventBus;
 namespace Dignite.Abp.Notifications;
 
 /// <summary>
-/// A bounded delivery work item for exactly one tenant, notification, recipient and channel. Redelivery is safe
+/// A delivery request for exactly one tenant, notification, recipient and channel. Redelivery is safe
 /// because <see cref="DeliveryId"/> and <see cref="IdempotencyKey"/> are stable for that identity.
+/// The event name intentionally retains its pre-stable wire value so mixed-version consumers continue to resolve
+/// the same distributed event while the CLR contract name is normalized.
 /// </summary>
 [EventName("Dignite.Abp.Notifications.NotificationDeliveryWork")]
 [Serializable]
-public class NotificationDeliveryWorkEto : IEventDataMayHaveTenantId
+public class NotificationDeliveryRequestedEto : IEventDataMayHaveTenantId
 {
     public Guid DeliveryId { get; set; }
 
@@ -69,7 +71,7 @@ public class NotificationDeliveryWorkEto : IEventDataMayHaveTenantId
     }
 
     /// <summary>
-    /// Adapts this work item to the original aggregate event contract. Existing custom notifiers therefore keep
+    /// Adapts this request to the original aggregate event contract. Existing custom notifiers therefore keep
     /// working, but receive a singleton recipient/channel event and are executed inside the reliable state machine.
     /// </summary>
     public NotificationDeliveryEto ToLegacyEto()

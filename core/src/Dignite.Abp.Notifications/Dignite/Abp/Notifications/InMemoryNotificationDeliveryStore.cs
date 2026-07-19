@@ -11,8 +11,8 @@ namespace Dignite.Abp.Notifications;
 /// Default delivery store when NotificationCenter is absent. It keeps state only for this process lifetime so core
 /// delivery, duplicate suppression and retries remain functional, but restarts lose progress and operator history.
 /// </summary>
-[ExposeServices(typeof(INotificationDeliveryStore), typeof(NullNotificationDeliveryStore))]
-public class NullNotificationDeliveryStore :
+[ExposeServices(typeof(INotificationDeliveryStore), typeof(InMemoryNotificationDeliveryStore))]
+public class InMemoryNotificationDeliveryStore :
     INotificationDeliveryStore,
     ISingletonDependency
 {
@@ -20,7 +20,7 @@ public class NullNotificationDeliveryStore :
     private readonly Dictionary<Guid, VolatileDelivery> _deliveries = new Dictionary<Guid, VolatileDelivery>();
 
     public Task<NotificationDeliveryClaim?> EnsureCreatedAndTryClaimAsync(
-        NotificationDeliveryWorkEto workItem,
+        NotificationDeliveryRequestedEto workItem,
         DateTime now,
         TimeSpan leaseDuration,
         int maxAttempts,
@@ -46,7 +46,7 @@ public class NullNotificationDeliveryStore :
     }
 
     public Task EnsureCreatedAsync(
-        NotificationDeliveryWorkEto workItem,
+        NotificationDeliveryRequestedEto workItem,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -140,14 +140,14 @@ public class NullNotificationDeliveryStore :
             deliveryId,
             tenantId,
             leaseId,
-            nextAttemptTime.HasValue ? NotificationDeliveryState.Failed : NotificationDeliveryState.DeadLetter,
+            nextAttemptTime.HasValue ? NotificationDeliveryState.RetryScheduled : NotificationDeliveryState.DeadLettered,
             failureCode,
             "The channel failed to deliver this notification.",
             nextAttemptTime,
             cancellationToken);
     }
 
-    public Task<IReadOnlyList<NotificationDeliveryWorkEto>> GetDueWorkItemsAsync(
+    public Task<IReadOnlyList<NotificationDeliveryRequestedEto>> GetDueWorkItemsAsync(
         DateTime now,
         int maxResultCount,
         CancellationToken cancellationToken = default)
@@ -158,15 +158,15 @@ public class NullNotificationDeliveryStore :
             var items = _deliveries.Values
                 .Where(delivery => delivery.State == NotificationDeliveryState.Pending
                                    && (!delivery.NextAttemptTime.HasValue || delivery.NextAttemptTime <= now)
-                                   || delivery.State == NotificationDeliveryState.Failed
+                                   || delivery.State == NotificationDeliveryState.RetryScheduled
                                    && (!delivery.NextAttemptTime.HasValue || delivery.NextAttemptTime <= now)
-                                   || delivery.State == NotificationDeliveryState.Claimed
+                                   || delivery.State == NotificationDeliveryState.Processing
                                    && delivery.LeaseExpirationTime <= now)
                 .OrderBy(delivery => delivery.NextAttemptTime ?? delivery.LeaseExpirationTime ?? DateTime.MinValue)
                 .Take(maxResultCount)
                 .Select(delivery => Clone(delivery.WorkItem))
                 .ToList();
-            return Task.FromResult<IReadOnlyList<NotificationDeliveryWorkEto>>(items);
+            return Task.FromResult<IReadOnlyList<NotificationDeliveryRequestedEto>>(items);
         }
     }
 
@@ -181,8 +181,8 @@ public class NullNotificationDeliveryStore :
         {
             if (!_deliveries.TryGetValue(deliveryId, out var delivery)
                 || delivery.WorkItem.TenantId != tenantId
-                || delivery.State != NotificationDeliveryState.Failed
-                && delivery.State != NotificationDeliveryState.DeadLetter)
+                || delivery.State != NotificationDeliveryState.RetryScheduled
+                && delivery.State != NotificationDeliveryState.DeadLettered)
             {
                 return Task.FromResult(false);
             }
@@ -259,7 +259,7 @@ public class NullNotificationDeliveryStore :
         {
             if (!_deliveries.TryGetValue(deliveryId, out var delivery)
                 || delivery.WorkItem.TenantId != tenantId
-                || delivery.State != NotificationDeliveryState.Claimed
+                || delivery.State != NotificationDeliveryState.Processing
                 || delivery.LeaseId != leaseId)
             {
                 return Task.FromResult(false);
@@ -283,9 +283,9 @@ public class NullNotificationDeliveryStore :
     {
         var isDue = delivery.State == NotificationDeliveryState.Pending
                     && (!delivery.NextAttemptTime.HasValue || delivery.NextAttemptTime <= now)
-                    || delivery.State == NotificationDeliveryState.Failed
+                    || delivery.State == NotificationDeliveryState.RetryScheduled
                     && (!delivery.NextAttemptTime.HasValue || delivery.NextAttemptTime <= now)
-                    || delivery.State == NotificationDeliveryState.Claimed
+                    || delivery.State == NotificationDeliveryState.Processing
                     && delivery.LeaseExpirationTime <= now;
         if (!isDue)
         {
@@ -294,7 +294,7 @@ public class NullNotificationDeliveryStore :
 
         if (delivery.AttemptCount >= maxAttempts)
         {
-            delivery.State = NotificationDeliveryState.DeadLetter;
+            delivery.State = NotificationDeliveryState.DeadLettered;
             delivery.LeaseId = null;
             delivery.LeaseExpirationTime = null;
             delivery.NextAttemptTime = null;
@@ -303,7 +303,7 @@ public class NullNotificationDeliveryStore :
             return null;
         }
 
-        delivery.State = NotificationDeliveryState.Claimed;
+        delivery.State = NotificationDeliveryState.Processing;
         delivery.AttemptCount++;
         delivery.LeaseId = Guid.NewGuid();
         delivery.LeaseExpirationTime = now.Add(leaseDuration);
@@ -314,7 +314,7 @@ public class NullNotificationDeliveryStore :
             delivery.LeaseExpirationTime.Value);
     }
 
-    private static void ValidateIdentity(NotificationDeliveryWorkEto workItem)
+    private static void ValidateIdentity(NotificationDeliveryRequestedEto workItem)
     {
         workItem.ValidateIntent();
         var expectedId = NotificationDeliveryIdentity.CreateId(
@@ -334,7 +334,7 @@ public class NullNotificationDeliveryStore :
         }
     }
 
-    private static bool SameIdentity(NotificationDeliveryWorkEto left, NotificationDeliveryWorkEto right)
+    private static bool SameIdentity(NotificationDeliveryRequestedEto left, NotificationDeliveryRequestedEto right)
     {
         return left.TenantId == right.TenantId
                && left.NotificationId == right.NotificationId
@@ -345,9 +345,9 @@ public class NullNotificationDeliveryStore :
                    StringComparison.Ordinal);
     }
 
-    private static NotificationDeliveryWorkEto Clone(NotificationDeliveryWorkEto source)
+    private static NotificationDeliveryRequestedEto Clone(NotificationDeliveryRequestedEto source)
     {
-        return new NotificationDeliveryWorkEto
+        return new NotificationDeliveryRequestedEto
         {
             DeliveryId = source.DeliveryId,
             IdempotencyKey = source.IdempotencyKey,
@@ -369,7 +369,7 @@ public class NullNotificationDeliveryStore :
 
     private sealed class VolatileDelivery
     {
-        public NotificationDeliveryWorkEto WorkItem { get; }
+        public NotificationDeliveryRequestedEto WorkItem { get; }
         public NotificationDeliveryState State { get; set; } = NotificationDeliveryState.Pending;
         public int AttemptCount { get; set; }
         public DateTime? NextAttemptTime { get; set; }
@@ -382,7 +382,7 @@ public class NullNotificationDeliveryStore :
         public NotificationDeliveryState? LastForceDeliveryPreviousState { get; set; }
         public string? LastForceDeliveryReasonCode { get; set; }
 
-        public VolatileDelivery(NotificationDeliveryWorkEto workItem)
+        public VolatileDelivery(NotificationDeliveryRequestedEto workItem)
         {
             WorkItem = workItem;
             NextAttemptTime = workItem.Intent == NotificationDeliveryIntent.Delay

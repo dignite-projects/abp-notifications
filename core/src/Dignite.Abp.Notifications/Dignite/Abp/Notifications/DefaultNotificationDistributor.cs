@@ -45,7 +45,7 @@ public class DefaultNotificationDistributor :
     /// Dependency injection uses the options-aware overload below.
     /// </summary>
     /// <remarks>
-    /// This overload pins the always-deliver <see cref="NullNotificationDeliveryPreferenceEvaluator"/>: user
+    /// This overload pins the always-deliver <see cref="AllowAllNotificationDeliveryPreferenceEvaluator"/>: user
     /// delivery preferences and quiet hours are NOT evaluated. Resolve the distributor from DI, or pass an
     /// <see cref="INotificationDeliveryPreferenceEvaluator"/> explicitly, to honor them.
     /// </remarks>
@@ -65,13 +65,13 @@ public class DefaultNotificationDistributor :
             currentTenant,
             logger,
             dataTypeRegistry,
-            new NullNotificationDeliveryPreferenceEvaluator(),
+            new AllowAllNotificationDeliveryPreferenceEvaluator(),
             Microsoft.Extensions.Options.Options.Create(new NotificationOptions()))
     {
     }
 
     /// <remarks>
-    /// This overload pins the always-deliver <see cref="NullNotificationDeliveryPreferenceEvaluator"/>: user
+    /// This overload pins the always-deliver <see cref="AllowAllNotificationDeliveryPreferenceEvaluator"/>: user
     /// delivery preferences and quiet hours are NOT evaluated. Resolve the distributor from DI, or pass an
     /// <see cref="INotificationDeliveryPreferenceEvaluator"/> explicitly, to honor them.
     /// </remarks>
@@ -92,7 +92,7 @@ public class DefaultNotificationDistributor :
             currentTenant,
             logger,
             dataTypeRegistry,
-            new NullNotificationDeliveryPreferenceEvaluator(),
+            new AllowAllNotificationDeliveryPreferenceEvaluator(),
             options)
     {
     }
@@ -865,7 +865,7 @@ public class DefaultNotificationDistributor :
                 "The delivery preference evaluator must return exactly one decision for every recipient/channel candidate.");
         }
 
-        var workItems = new List<NotificationDeliveryWorkEto>(candidates.Count);
+        var workItems = new List<NotificationDeliveryRequestedEto>(candidates.Count);
         foreach (var candidate in candidates)
         {
             if (!decisionMap.TryGetValue((
@@ -891,12 +891,12 @@ public class DefaultNotificationDistributor :
         }
     }
 
-    protected virtual NotificationDeliveryWorkEto CreateDeliveryWorkItem(
+    protected virtual NotificationDeliveryRequestedEto CreateDeliveryWorkItem(
         NotificationInfo notification,
         Guid userId,
         string channel)
     {
-        return new NotificationDeliveryWorkEto
+        return new NotificationDeliveryRequestedEto
         {
             DeliveryId = NotificationDeliveryIdentity.CreateId(
                 notification.TenantId,
