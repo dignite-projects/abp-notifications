@@ -34,6 +34,7 @@ public class NotificationRetentionCleanupService :
     protected IOptions<NotificationRetentionOptions> Options { get; }
     protected IReadOnlyList<INotificationRetentionDeletionContributor> DeletionContributors { get; }
     protected ILogger<NotificationRetentionCleanupService> Logger { get; }
+    protected NotificationAudienceBroadcastStateRetentionCleaner? BroadcastStateRetentionCleaner { get; }
 
     public NotificationRetentionCleanupService(
         IRepository<Notification, Guid> notificationRepository,
@@ -46,7 +47,8 @@ public class NotificationRetentionCleanupService :
         IUnitOfWorkManager unitOfWorkManager,
         IOptions<NotificationRetentionOptions> options,
         IEnumerable<INotificationRetentionDeletionContributor> deletionContributors,
-        ILogger<NotificationRetentionCleanupService> logger)
+        ILogger<NotificationRetentionCleanupService> logger,
+        NotificationAudienceBroadcastStateRetentionCleaner? broadcastStateRetentionCleaner = null)
     {
         NotificationRepository = notificationRepository;
         UserNotificationRepository = userNotificationRepository;
@@ -59,6 +61,7 @@ public class NotificationRetentionCleanupService :
         Options = options;
         DeletionContributors = deletionContributors.ToArray();
         Logger = logger;
+        BroadcastStateRetentionCleaner = broadcastStateRetentionCleaner;
     }
 
     public virtual async Task<NotificationRetentionCleanupResult> CleanupAsync(
@@ -78,6 +81,15 @@ public class NotificationRetentionCleanupService :
 
         await CleanupUserNotificationsAsync(request, result, now, batchSize, cancellationToken);
         await CleanupDeliveriesAsync(request, result, now, batchSize, cancellationToken);
+        if (BroadcastStateRetentionCleaner != null)
+        {
+            await BroadcastStateRetentionCleaner.CleanupAsync(
+                request,
+                result,
+                now,
+                batchSize,
+                cancellationToken);
+        }
         await CleanupNotificationsAsync(request, result, now, batchSize, cancellationToken);
         await SetOldestRetainedTimestampsAsync(request, result, cancellationToken);
 
@@ -1005,6 +1017,13 @@ public class NotificationRetentionCleanupService :
             result.DeletedDeliveries,
             result.SkippedDeliveries,
             result.DeliveryErrors);
+        NotificationRetentionMetrics.Record(
+            "audience_broadcast_state",
+            result.IsDryRun,
+            result.ScannedAudienceBroadcastStates,
+            result.DeletedAudienceBroadcastStates,
+            result.SkippedAudienceBroadcastStates,
+            result.AudienceBroadcastStateErrors);
         NotificationRetentionMetrics.RecordOldestRetained(
             result.OldestRetainedNotificationCreationTime,
             result.OldestRetainedUserNotificationCreationTime,

@@ -24,6 +24,8 @@ public class NotificationCenterMongoDbContext : AbpMongoDbContext, INotification
 
     public IMongoCollection<NotificationRetentionCleanupCursor> NotificationRetentionCleanupCursors => Collection<NotificationRetentionCleanupCursor>();
 
+    public IMongoCollection<NotificationAudienceBroadcastState> NotificationAudienceBroadcastStates => Collection<NotificationAudienceBroadcastState>();
+
     public IMongoCollection<IncomingEventRecord> IncomingEvents => Collection<IncomingEventRecord>();
 
     public IMongoCollection<OutgoingEventRecord> OutgoingEvents => Collection<OutgoingEventRecord>();
@@ -240,6 +242,24 @@ public class NotificationCenterMongoDbContext : AbpMongoDbContext, INotification
                         .Ascending(nameof(NotificationRetentionCleanupCursor.TenantKey))
                         .Ascending(nameof(NotificationRetentionCleanupCursor.RecordKind)),
                     new CreateIndexOptions { Unique = true }));
+            });
+        });
+
+        modelBuilder.Entity<NotificationAudienceBroadcastState>(b =>
+        {
+            b.CollectionName = NotificationCenterDbProperties.DbTablePrefix + "NotificationAudienceBroadcastStates";
+            b.ConfigureIndexes(indexes =>
+            {
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(NotificationAudienceBroadcastState.TenantKey))
+                        .Ascending(nameof(NotificationAudienceBroadcastState.Status))
+                        .Ascending(nameof(NotificationAudienceBroadcastState.CompletionTime))));
+
+                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+                    Builders<BsonDocument>.IndexKeys
+                        .Ascending(nameof(NotificationAudienceBroadcastState.Status))
+                        .Ascending(nameof(NotificationAudienceBroadcastState.CompletionTime))));
             });
         });
     }

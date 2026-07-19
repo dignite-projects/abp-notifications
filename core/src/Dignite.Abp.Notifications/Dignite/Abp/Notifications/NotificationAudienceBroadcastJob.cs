@@ -174,22 +174,22 @@ public class NotificationAudienceBroadcastJob :
                     Clock.Now,
                     cancellationToken);
 
+                if (await ProgressStore.IsCancellationRequestedAsync(
+                        args.Notification.Id,
+                        args.TenantId,
+                        cancellationToken))
+                {
+                    await ProgressStore.RecordCanceledAsync(
+                        args.Notification,
+                        args.AudienceName,
+                        args.TenantId,
+                        Clock.Now,
+                        cancellationToken);
+                    return;
+                }
+
                 if (page.HasMore)
                 {
-                    if (await ProgressStore.IsCancellationRequestedAsync(
-                            args.Notification.Id,
-                            args.TenantId,
-                            cancellationToken))
-                    {
-                        await ProgressStore.RecordCanceledAsync(
-                            args.Notification,
-                            args.AudienceName,
-                            args.TenantId,
-                            Clock.Now,
-                            cancellationToken);
-                        return;
-                    }
-
                     await BackgroundJobManager.EnqueueAsync(args.NextPage(page.NextContinuationToken!));
                 }
                 else
@@ -231,6 +231,7 @@ public class NotificationAudienceBroadcastJob :
                 args.Notification,
                 args.AudienceName,
                 args.TenantId,
+                "page-failed",
                 "Audience broadcast page failed.",
                 Clock.Now,
                 CancellationToken.None);

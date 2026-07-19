@@ -103,20 +103,35 @@ public class DefaultNotificationAudienceBroadcaster : INotificationAudienceBroad
         };
 
         await InsertNotificationAsync(notification, cancellationToken);
-        await BackgroundJobManager.EnqueueAsync(
-            new NotificationAudienceBroadcastJobArgs(
-                request.TenantId,
-                request.AudienceName,
-                notification,
-                continuationToken: null,
-                pageIndex: 0,
-                request.ExcludedUserIds));
         await ProgressStore.RecordStartedAsync(
             notification,
             request.AudienceName,
             request.TenantId,
             Clock.Now,
             cancellationToken);
+        try
+        {
+            await BackgroundJobManager.EnqueueAsync(
+                new NotificationAudienceBroadcastJobArgs(
+                    request.TenantId,
+                    request.AudienceName,
+                    notification,
+                    continuationToken: null,
+                    pageIndex: 0,
+                    request.ExcludedUserIds));
+        }
+        catch
+        {
+            await ProgressStore.RecordFailedAsync(
+                notification,
+                request.AudienceName,
+                request.TenantId,
+                "enqueue-failed",
+                "The audience broadcast could not be enqueued.",
+                Clock.Now,
+                CancellationToken.None);
+            throw;
+        }
 
         Logger.LogInformation(
             "Enqueued audience broadcast for '{NotificationName}' ({NotificationId}) to audience {AudienceName} " +

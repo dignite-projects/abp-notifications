@@ -56,11 +56,13 @@ public interface INotificationAudienceBroadcastProgressStore
         DateTime updateTime,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Records a stable failure code and a sanitized, non-sensitive diagnostic message.</summary>
     Task RecordFailedAsync(
         NotificationInfo notification,
         string audienceName,
         Guid? tenantId,
-        string errorMessage,
+        string failureCode,
+        string failureMessage,
         DateTime updateTime,
         CancellationToken cancellationToken = default);
 }

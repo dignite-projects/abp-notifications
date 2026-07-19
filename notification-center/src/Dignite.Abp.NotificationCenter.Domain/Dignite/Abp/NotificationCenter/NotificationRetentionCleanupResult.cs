@@ -40,11 +40,23 @@ public class NotificationRetentionCleanupResult
 
     public DateTime? OldestRetainedDeliveryCreationTime { get; set; }
 
-    public long ScannedCount => ScannedNotifications + ScannedUserNotifications + ScannedDeliveries;
+    public long ScannedAudienceBroadcastStates { get; set; }
 
-    public long DeletedCount => DeletedNotifications + DeletedUserNotifications + DeletedDeliveries;
+    public long DeletedAudienceBroadcastStates { get; set; }
 
-    public long SkippedCount => SkippedNotifications + SkippedUserNotifications + SkippedDeliveries;
+    public long SkippedAudienceBroadcastStates { get; set; }
 
-    public long ErrorCount => NotificationErrors + UserNotificationErrors + DeliveryErrors;
+    public long AudienceBroadcastStateErrors { get; set; }
+
+    public long ScannedCount => ScannedNotifications + ScannedUserNotifications + ScannedDeliveries +
+                                ScannedAudienceBroadcastStates;
+
+    public long DeletedCount => DeletedNotifications + DeletedUserNotifications + DeletedDeliveries +
+                                DeletedAudienceBroadcastStates;
+
+    public long SkippedCount => SkippedNotifications + SkippedUserNotifications + SkippedDeliveries +
+                                SkippedAudienceBroadcastStates;
+
+    public long ErrorCount => NotificationErrors + UserNotificationErrors + DeliveryErrors +
+                              AudienceBroadcastStateErrors;
 }

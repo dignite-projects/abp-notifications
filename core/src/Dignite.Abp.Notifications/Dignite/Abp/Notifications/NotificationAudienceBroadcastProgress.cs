@@ -27,9 +27,19 @@ public class NotificationAudienceBroadcastProgress
 
     public bool IsCancellationRequested { get; set; }
 
-    public string? ErrorMessage { get; set; }
+    public DateTime? CancellationRequestedTime { get; set; }
+
+    public string? FailureCode { get; set; }
+
+    public string? FailureMessage { get; set; }
+
+    public DateTime CreationTime { get; set; }
 
     public DateTime LastUpdatedTime { get; set; }
+
+    public DateTime? CompletionTime { get; set; }
+
+    public string ConcurrencyStamp { get; set; } = default!;
 
     public NotificationAudienceBroadcastProgress Clone()
     {
@@ -44,8 +54,13 @@ public class NotificationAudienceBroadcastProgress
             CandidateCount = CandidateCount,
             NextContinuationToken = NextContinuationToken,
             IsCancellationRequested = IsCancellationRequested,
-            ErrorMessage = ErrorMessage,
-            LastUpdatedTime = LastUpdatedTime
+            CancellationRequestedTime = CancellationRequestedTime,
+            FailureCode = FailureCode,
+            FailureMessage = FailureMessage,
+            CreationTime = CreationTime,
+            LastUpdatedTime = LastUpdatedTime,
+            CompletionTime = CompletionTime,
+            ConcurrencyStamp = ConcurrencyStamp
         };
     }
 }

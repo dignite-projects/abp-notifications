@@ -23,8 +23,12 @@ changes.
   normal prepared distribution pipeline for feature/permission/preference/inbox/delivery processing, and expose
   progress through stable notification id + tenant id + page index/continuation-token logs and
   `NotificationAudienceBroadcastMetrics`. Broadcast progress and cancellation are exposed through
-  `INotificationAudienceBroadcaster` and the replaceable `INotificationAudienceBroadcastProgressStore` (default
-  in-memory). `Dignite.Abp.Notifications.Identity` now contributes the `all-active-users` source, which pages ABP
+  `INotificationAudienceBroadcaster` and the replaceable `INotificationAudienceBroadcastProgressStore`. Core-only
+  uses an explicitly process-local in-memory implementation; installing Notification Center automatically replaces
+  it with durable, optimistic-concurrency state shared by EF Core and MongoDB. Cancellation, replay-safe page counts,
+  sanitized failure diagnostics, restart-style reload, tenant isolation, and terminal-state retention have shared
+  provider-parity tests. ABP Background Jobs continues to own queueing/retries and is not used as business-progress
+  storage. `Dignite.Abp.Notifications.Identity` now contributes the `all-active-users` source, which pages ABP
   Identity users by keyset and includes only active, not-leaved, not-deleted users in the requested tenant-or-host
   scope. Multi-tenant broadcasts take an explicit tenant list, exclude host users, and enqueue each tenant inside
   an independent ABP unit of work so a tenant failure does not mix or block other tenant jobs.
@@ -80,6 +84,15 @@ changes.
   explicit batches.
 
 ### Changed
+
+- **Notification Center schema addition for durable audience-broadcast state.** EF Core consuming hosts must add a
+  host-owned `AbpNotificationAudienceBroadcastStates` migration with the mappings and indexes from
+  `ConfigureNotificationCenter()`; MongoDB creates the equivalent collection/indexes from `CreateModel`. Terminal
+  state participates in `NotificationRetentionOptions.TerminalAudienceBroadcastRetention` (90 days by default when
+  cleanup is enabled). `NotificationAudienceBroadcastProgress.ErrorMessage` is replaced by stable `FailureCode` and
+  sanitized `FailureMessage`, with creation/cancellation/completion timestamps and `ConcurrencyStamp`; custom
+  `INotificationAudienceBroadcastProgressStore` implementations must accept both failure values. No existing row
+  backfill is required, and Core retains its non-durable in-memory store.
 
 - **Breaking audience-broadcast terminology cleanup before 10.0.0 stable.** Scope APIs now describe their actual
   behavior: `EnqueueTenantBroadcastAsync` is `EnqueueAsync`, `EnqueueHostBroadcastAsync` is
