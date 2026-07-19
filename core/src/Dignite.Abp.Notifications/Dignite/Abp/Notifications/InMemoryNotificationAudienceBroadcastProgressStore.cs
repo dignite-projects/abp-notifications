@@ -59,8 +59,7 @@ public class InMemoryNotificationAudienceBroadcastProgressStore :
         Guid? tenantId,
         long pageIndex,
         long candidateCount,
-        string? nextCursor,
-        bool hasMore,
+        string? nextContinuationToken,
         DateTime updateTime,
         CancellationToken cancellationToken = default)
     {
@@ -77,8 +76,7 @@ public class InMemoryNotificationAudienceBroadcastProgressStore :
                     updateTime);
                 progress.CompletedPageCount = pageIndex + 1;
                 progress.CandidateCount = candidateCount;
-                progress.NextCursor = nextCursor;
-                progress.HasMore = hasMore;
+                progress.NextContinuationToken = nextContinuationToken;
                 return progress;
             },
             (_, existing) =>
@@ -97,8 +95,7 @@ public class InMemoryNotificationAudienceBroadcastProgressStore :
                 existing.Status = existing.IsCancellationRequested
                     ? NotificationAudienceBroadcastStatus.CancellationRequested
                     : NotificationAudienceBroadcastStatus.Running;
-                existing.NextCursor = nextCursor;
-                existing.HasMore = hasMore;
+                existing.NextContinuationToken = nextContinuationToken;
                 existing.LastUpdatedTime = updateTime;
                 existing.ErrorMessage = null;
                 return existing;
@@ -125,8 +122,7 @@ public class InMemoryNotificationAudienceBroadcastProgressStore :
                 }
 
                 existing.Status = NotificationAudienceBroadcastStatus.Completed;
-                existing.HasMore = false;
-                existing.NextCursor = null;
+                existing.NextContinuationToken = null;
                 existing.LastUpdatedTime = updateTime;
                 existing.ErrorMessage = null;
                 return existing;
@@ -185,7 +181,7 @@ public class InMemoryNotificationAudienceBroadcastProgressStore :
 
                 existing.Status = NotificationAudienceBroadcastStatus.Canceled;
                 existing.IsCancellationRequested = true;
-                existing.HasMore = false;
+                existing.NextContinuationToken = null;
                 existing.LastUpdatedTime = updateTime;
                 return existing;
             });
@@ -243,7 +239,6 @@ public class InMemoryNotificationAudienceBroadcastProgressStore :
             NotificationName = notification.NotificationName,
             AudienceName = audienceName,
             Status = status,
-            HasMore = status is NotificationAudienceBroadcastStatus.Enqueued or NotificationAudienceBroadcastStatus.Running,
             LastUpdatedTime = updateTime
         };
     }

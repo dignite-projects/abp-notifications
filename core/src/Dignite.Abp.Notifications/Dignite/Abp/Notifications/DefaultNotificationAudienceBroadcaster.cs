@@ -74,13 +74,13 @@ public class DefaultNotificationAudienceBroadcaster : INotificationAudienceBroad
         Logger = logger;
     }
 
-    public virtual async Task<NotificationAudienceBroadcastTenantResult> EnqueueTenantBroadcastAsync(
-        NotificationAudienceTenantBroadcastRequest request,
+    public virtual async Task<NotificationAudienceBroadcastEnqueueResult> EnqueueAsync(
+        NotificationAudienceBroadcastRequest request,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
-        EnsureAmbientTenantCanTarget(request.TenantId);
+        EnsureAmbientTenantCanTargetScope(request.TenantId);
         EnsureRecipientSource(request.AudienceName);
 
         var definition = DefinitionManager.Get(request.NotificationName);
@@ -108,7 +108,7 @@ public class DefaultNotificationAudienceBroadcaster : INotificationAudienceBroad
                 request.TenantId,
                 request.AudienceName,
                 notification,
-                cursor: null,
+                continuationToken: null,
                 pageIndex: 0,
                 request.ExcludedUserIds));
         await ProgressStore.RecordStartedAsync(
@@ -120,38 +120,38 @@ public class DefaultNotificationAudienceBroadcaster : INotificationAudienceBroad
 
         Logger.LogInformation(
             "Enqueued audience broadcast for '{NotificationName}' ({NotificationId}) to audience {AudienceName} " +
-            "in tenant {TenantId}.",
+            "in tenant-or-host scope {TenantId}.",
             notification.NotificationName,
             notification.Id,
             request.AudienceName,
             request.TenantId);
 
-        return new NotificationAudienceBroadcastTenantResult(
+        return new NotificationAudienceBroadcastEnqueueResult(
             request.TenantId,
             notification.Id,
             isEnqueued: true);
     }
 
-    public virtual async Task<NotificationAudienceBroadcastResult> EnqueueHostBroadcastAsync(
-        NotificationAudienceHostBroadcastRequest request,
+    public virtual async Task<NotificationAudienceMultiTenantBroadcastResult> EnqueueForTenantsAsync(
+        NotificationAudienceMultiTenantBroadcastRequest request,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
         if (CurrentTenant.Id.HasValue)
         {
-            throw new AbpException("Host-wide notification audience broadcasts must be started from the host tenant.");
+            throw new AbpException("Multi-tenant notification audience broadcasts must be started from the host scope.");
         }
 
-        var results = new List<NotificationAudienceBroadcastTenantResult>(request.TenantIds.Count);
+        var results = new List<NotificationAudienceBroadcastEnqueueResult>(request.TenantIds.Count);
         foreach (var tenantId in request.TenantIds)
         {
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
                 using var unitOfWork = UnitOfWorkManager.Begin(requiresNew: true, isTransactional: false);
-                var tenantResult = await EnqueueTenantBroadcastAsync(
-                    new NotificationAudienceTenantBroadcastRequest(tenantId, request.NotificationName)
+                var tenantResult = await EnqueueAsync(
+                    new NotificationAudienceBroadcastRequest(tenantId, request.NotificationName)
                     {
                         AudienceName = request.AudienceName,
                         Data = request.Data,
@@ -176,7 +176,7 @@ public class DefaultNotificationAudienceBroadcaster : INotificationAudienceBroad
                     request.NotificationName,
                     request.AudienceName,
                     tenantId);
-                results.Add(new NotificationAudienceBroadcastTenantResult(
+                results.Add(new NotificationAudienceBroadcastEnqueueResult(
                     tenantId,
                     Guid.Empty,
                     isEnqueued: false,
@@ -184,28 +184,28 @@ public class DefaultNotificationAudienceBroadcaster : INotificationAudienceBroad
             }
         }
 
-        return new NotificationAudienceBroadcastResult(results);
+        return new NotificationAudienceMultiTenantBroadcastResult(results);
     }
 
-    public virtual Task<NotificationAudienceBroadcastProgress?> GetTenantBroadcastProgressAsync(
+    public virtual Task<NotificationAudienceBroadcastProgress?> GetProgressAsync(
         Guid notificationId,
         Guid? tenantId,
         CancellationToken cancellationToken = default)
     {
         ValidateNotificationId(notificationId);
-        ValidateTenantId(tenantId);
-        EnsureAmbientTenantCanTarget(tenantId);
+        ValidateScopeTenantId(tenantId);
+        EnsureAmbientTenantCanTargetScope(tenantId);
         return ProgressStore.GetAsync(notificationId, tenantId, cancellationToken);
     }
 
-    public virtual Task<bool> CancelTenantBroadcastAsync(
+    public virtual Task<bool> CancelAsync(
         Guid notificationId,
         Guid? tenantId,
         CancellationToken cancellationToken = default)
     {
         ValidateNotificationId(notificationId);
-        ValidateTenantId(tenantId);
-        EnsureAmbientTenantCanTarget(tenantId);
+        ValidateScopeTenantId(tenantId);
+        EnsureAmbientTenantCanTargetScope(tenantId);
         return ProgressStore.RequestCancellationAsync(
             notificationId,
             tenantId,
@@ -213,18 +213,18 @@ public class DefaultNotificationAudienceBroadcaster : INotificationAudienceBroad
             cancellationToken);
     }
 
-    protected virtual void EnsureAmbientTenantCanTarget(Guid? tenantId)
+    protected virtual void EnsureAmbientTenantCanTargetScope(Guid? tenantId)
     {
-        ValidateTenantId(tenantId);
+        ValidateScopeTenantId(tenantId);
         if (CurrentTenant.Id.HasValue && CurrentTenant.Id != tenantId)
         {
             throw new AbpException(
-                $"Tenant-scoped notification audience broadcasts cannot target tenant '{tenantId}' from ambient " +
+                $"A notification audience broadcast cannot target scope tenant '{tenantId}' from ambient " +
                 $"tenant '{CurrentTenant.Id}'.");
         }
     }
 
-    protected virtual void ValidateTenantId(Guid? tenantId)
+    protected virtual void ValidateScopeTenantId(Guid? tenantId)
     {
         if (tenantId == Guid.Empty)
         {

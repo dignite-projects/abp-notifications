@@ -12,7 +12,7 @@ namespace Dignite.Abp.Notifications.Identity;
 
 /// <summary>
 /// Pages ABP Identity users for <see cref="NotificationAudienceNames.AllActiveUsers"/>.
-/// Eligible candidates are users in the requested tenant that are active, not leaved from the tenant, and not
+/// Eligible candidates are users in the requested tenant-or-host scope that are active, not leaved, and not
 /// soft-deleted by ABP's normal data filters.
 /// </summary>
 [ExposeServices(typeof(INotificationAudienceRecipientSource))]
@@ -58,9 +58,9 @@ public class IdentityActiveNotificationAudienceRecipientSource :
         }
 
         Guid? afterUserId = null;
-        if (!string.IsNullOrWhiteSpace(request.Cursor))
+        if (!string.IsNullOrWhiteSpace(request.ContinuationToken))
         {
-            afterUserId = Guid.Parse(request.Cursor);
+            afterUserId = Guid.Parse(request.ContinuationToken);
         }
 
         var query = await UserRepository.GetQueryableAsync();
@@ -72,8 +72,8 @@ public class IdentityActiveNotificationAudienceRecipientSource :
 
         if (afterUserId.HasValue)
         {
-            var cursor = afterUserId.Value;
-            query = query.Where(user => user.Id.CompareTo(cursor) > 0);
+            var continuationUserId = afterUserId.Value;
+            query = query.Where(user => user.Id.CompareTo(continuationUserId) > 0);
         }
 
         var takeCount = request.MaxResultCount == int.MaxValue
@@ -92,7 +92,6 @@ public class IdentityActiveNotificationAudienceRecipientSource :
 
         return new NotificationAudienceRecipientPage(
             userIds,
-            hasMore ? userIds[^1].ToString("N") : null,
-            hasMore);
+            hasMore ? userIds[^1].ToString("N") : null);
     }
 }

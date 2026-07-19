@@ -5,36 +5,37 @@ using System.Threading.Tasks;
 namespace Dignite.Abp.Notifications;
 
 /// <summary>
-/// Enqueues explicit-tenant large-audience broadcasts through bounded recipient-source pages.
+/// Enqueues tenant-or-host large-audience broadcasts through bounded recipient-source pages.
 /// </summary>
 public interface INotificationAudienceBroadcaster
 {
     /// <summary>
-    /// Starts one tenant/host-scoped broadcast. The supplied tenant id is authoritative for every queued page.
+    /// Starts one tenant-or-host scoped broadcast. The supplied tenant id is authoritative for every queued page.
     /// </summary>
-    Task<NotificationAudienceBroadcastTenantResult> EnqueueTenantBroadcastAsync(
-        NotificationAudienceTenantBroadcastRequest request,
+    Task<NotificationAudienceBroadcastEnqueueResult> EnqueueAsync(
+        NotificationAudienceBroadcastRequest request,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Starts a host-orchestrated broadcast by enqueueing one isolated tenant job per supplied tenant id.
+    /// Enqueues one isolated tenant broadcast per supplied tenant id. This host-authorized operation does not
+    /// include host users.
     /// </summary>
-    Task<NotificationAudienceBroadcastResult> EnqueueHostBroadcastAsync(
-        NotificationAudienceHostBroadcastRequest request,
+    Task<NotificationAudienceMultiTenantBroadcastResult> EnqueueForTenantsAsync(
+        NotificationAudienceMultiTenantBroadcastRequest request,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Gets observable progress for a previously enqueued tenant/host broadcast.
+    /// Gets observable progress for a previously enqueued tenant-or-host scoped broadcast.
     /// </summary>
-    Task<NotificationAudienceBroadcastProgress?> GetTenantBroadcastProgressAsync(
+    Task<NotificationAudienceBroadcastProgress?> GetProgressAsync(
         Guid notificationId,
         Guid? tenantId,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Requests cancellation for a previously enqueued tenant/host broadcast.
+    /// Requests cancellation for a previously enqueued tenant-or-host scoped broadcast.
     /// </summary>
-    Task<bool> CancelTenantBroadcastAsync(
+    Task<bool> CancelAsync(
         Guid notificationId,
         Guid? tenantId,
         CancellationToken cancellationToken = default);

@@ -22,16 +22,16 @@ namespace Dignite.Abp.Notifications;
 public class NotificationAudienceBroadcastTests
 {
     [Fact]
-    public void Tenant_broadcast_rejects_empty_tenant_id()
+    public void Broadcast_request_rejects_empty_scope_tenant_id()
     {
         Should.Throw<ArgumentException>(() =>
-            new NotificationAudienceTenantBroadcastRequest(
+            new NotificationAudienceBroadcastRequest(
                 Guid.Empty,
                 TestNotificationDefinitionProvider.Plain));
     }
 
     [Fact]
-    public async Task Tenant_broadcast_requires_matching_ambient_tenant()
+    public async Task Enqueue_requires_matching_ambient_tenant_for_tenant_scope()
     {
         var ambientTenantId = Guid.NewGuid();
         var requestedTenantId = Guid.NewGuid();
@@ -40,15 +40,67 @@ public class NotificationAudienceBroadcastTests
         {
             var broadcaster = CreateBroadcaster(currentTenant: currentTenant);
 
-            await Should.ThrowAsync<AbpException>(() => broadcaster.EnqueueTenantBroadcastAsync(
-                new NotificationAudienceTenantBroadcastRequest(
+            await Should.ThrowAsync<AbpException>(() => broadcaster.EnqueueAsync(
+                new NotificationAudienceBroadcastRequest(
                     requestedTenantId,
                     TestNotificationDefinitionProvider.Plain)));
         }
     }
 
     [Fact]
-    public async Task Host_broadcast_enqueues_one_isolated_tenant_job_and_records_failures()
+    public async Task Enqueue_supports_host_scope()
+    {
+        var backgroundJobManager = new FakeBackgroundJobManager();
+        var broadcaster = CreateBroadcaster(backgroundJobManager: backgroundJobManager);
+
+        var result = await broadcaster.EnqueueAsync(
+            new NotificationAudienceBroadcastRequest(null, TestNotificationDefinitionProvider.Plain));
+
+        result.TenantId.ShouldBeNull();
+        result.IsEnqueued.ShouldBeTrue();
+        backgroundJobManager.EnqueuedArgs.ShouldHaveSingleItem()
+            .ShouldBeOfType<NotificationAudienceBroadcastJobArgs>()
+            .TenantId.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Enqueue_supports_matching_tenant_scope()
+    {
+        var tenantId = Guid.NewGuid();
+        var currentTenant = new TestCurrentTenant();
+        var backgroundJobManager = new FakeBackgroundJobManager();
+        using (currentTenant.Change(tenantId, "tenant"))
+        {
+            var broadcaster = CreateBroadcaster(currentTenant, backgroundJobManager);
+
+            var result = await broadcaster.EnqueueAsync(
+                new NotificationAudienceBroadcastRequest(tenantId, TestNotificationDefinitionProvider.Plain));
+
+            result.TenantId.ShouldBe(tenantId);
+            result.IsEnqueued.ShouldBeTrue();
+            backgroundJobManager.EnqueuedArgs.ShouldHaveSingleItem()
+                .ShouldBeOfType<NotificationAudienceBroadcastJobArgs>()
+                .TenantId.ShouldBe(tenantId);
+        }
+    }
+
+    [Fact]
+    public async Task Enqueue_for_tenants_requires_host_scope()
+    {
+        var currentTenant = new TestCurrentTenant();
+        using (currentTenant.Change(Guid.NewGuid(), "tenant"))
+        {
+            var broadcaster = CreateBroadcaster(currentTenant);
+
+            await Should.ThrowAsync<AbpException>(() => broadcaster.EnqueueForTenantsAsync(
+                new NotificationAudienceMultiTenantBroadcastRequest(
+                    new[] { Guid.NewGuid() },
+                    TestNotificationDefinitionProvider.Plain)));
+        }
+    }
+
+    [Fact]
+    public async Task Enqueue_for_tenants_enqueues_isolated_jobs_and_records_failures()
     {
         var currentTenant = new TestCurrentTenant();
         var goodTenantId = Guid.NewGuid();
@@ -67,14 +119,14 @@ public class NotificationAudienceBroadcastTests
             store: store,
             unitOfWorkManager: unitOfWorkManager);
 
-        var result = await broadcaster.EnqueueHostBroadcastAsync(
-            new NotificationAudienceHostBroadcastRequest(
+        var result = await broadcaster.EnqueueForTenantsAsync(
+            new NotificationAudienceMultiTenantBroadcastRequest(
                 new[] { goodTenantId, failingTenantId },
                 TestNotificationDefinitionProvider.Plain));
 
-        result.Tenants.Count.ShouldBe(2);
-        result.Tenants.Single(tenant => tenant.TenantId == goodTenantId).IsEnqueued.ShouldBeTrue();
-        var failed = result.Tenants.Single(tenant => tenant.TenantId == failingTenantId);
+        result.Results.Count.ShouldBe(2);
+        result.Results.Single(scope => scope.TenantId == goodTenantId).IsEnqueued.ShouldBeTrue();
+        var failed = result.Results.Single(scope => scope.TenantId == failingTenantId);
         failed.IsEnqueued.ShouldBeFalse();
         failed.NotificationId.ShouldBe(Guid.Empty);
         failed.ErrorMessage.ShouldNotBeNull();
@@ -89,7 +141,7 @@ public class NotificationAudienceBroadcastTests
     }
 
     [Fact]
-    public async Task Job_processes_one_bounded_page_and_enqueues_resume_cursor()
+    public async Task Job_processes_one_bounded_page_and_enqueues_continuation_token()
     {
         var tenantId = Guid.NewGuid();
         var users = Enumerable.Range(0, 5).Select(_ => Guid.NewGuid()).ToArray();
@@ -113,7 +165,7 @@ public class NotificationAudienceBroadcastTests
             .ShouldBeOfType<NotificationAudienceBroadcastJobArgs>();
         nextArgs.TenantId.ShouldBe(tenantId);
         nextArgs.Notification.Id.ShouldBe(args.Notification.Id);
-        nextArgs.Cursor.ShouldBe("2");
+        nextArgs.ContinuationToken.ShouldBe("2");
         nextArgs.PageIndex.ShouldBe(1);
         var progress = await progressStore.GetAsync(args.Notification.Id, tenantId);
         progress.ShouldNotBeNull();
@@ -121,6 +173,26 @@ public class NotificationAudienceBroadcastTests
         progress.CompletedPageCount.ShouldBe(1);
         progress.CandidateCount.ShouldBe(2);
         progress.HasMore.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Recipient_page_derives_has_more_from_opaque_next_token()
+    {
+        const string opaqueToken = "provider-owned::token";
+
+        var continuingPage = new NotificationAudienceRecipientPage(Array.Empty<Guid>(), opaqueToken);
+        var finalPage = new NotificationAudienceRecipientPage(Array.Empty<Guid>(), null);
+
+        continuingPage.NextContinuationToken.ShouldBe(opaqueToken);
+        continuingPage.HasMore.ShouldBeTrue();
+        finalPage.HasMore.ShouldBeFalse();
+        Should.Throw<ArgumentException>(() =>
+            new NotificationAudienceRecipientPage(Array.Empty<Guid>(), " "));
+
+        var progress = new NotificationAudienceBroadcastProgress { NextContinuationToken = opaqueToken };
+        progress.HasMore.ShouldBeTrue();
+        progress.NextContinuationToken = null;
+        progress.HasMore.ShouldBeFalse();
     }
 
     [Fact]
@@ -141,7 +213,7 @@ public class NotificationAudienceBroadcastTests
     }
 
     [Fact]
-    public async Task Empty_tenant_page_completes_without_enqueuing_more_work()
+    public async Task Empty_audience_completes_without_enqueuing_more_work()
     {
         var tenantId = Guid.NewGuid();
         var source = new TestAudienceRecipientSource(tenantId);
@@ -181,11 +253,11 @@ public class NotificationAudienceBroadcastTests
             sources: new[] { source },
             progressStore: progressStore);
 
-        var result = await broadcaster.EnqueueTenantBroadcastAsync(
-            new NotificationAudienceTenantBroadcastRequest(
+        var result = await broadcaster.EnqueueAsync(
+            new NotificationAudienceBroadcastRequest(
                 tenantId,
                 TestNotificationDefinitionProvider.Plain));
-        (await broadcaster.CancelTenantBroadcastAsync(result.NotificationId, tenantId)).ShouldBeTrue();
+        (await broadcaster.CancelAsync(result.NotificationId, tenantId)).ShouldBeTrue();
         var enqueuedArgs = backgroundJobManager.EnqueuedArgs.ShouldHaveSingleItem()
             .ShouldBeOfType<NotificationAudienceBroadcastJobArgs>();
 
@@ -198,7 +270,7 @@ public class NotificationAudienceBroadcastTests
             .ExecuteAsync(enqueuedArgs, CancellationToken.None);
 
         source.Requests.ShouldBeEmpty();
-        var progress = await broadcaster.GetTenantBroadcastProgressAsync(result.NotificationId, tenantId);
+        var progress = await broadcaster.GetProgressAsync(result.NotificationId, tenantId);
         progress.ShouldNotBeNull();
         progress.Status.ShouldBe(NotificationAudienceBroadcastStatus.Canceled);
         progress.IsCancellationRequested.ShouldBeTrue();
@@ -238,8 +310,7 @@ public class NotificationAudienceBroadcastTests
             tenantId,
             pageIndex: 0,
             candidateCount: 2,
-            nextCursor: "2",
-            hasMore: true,
+            nextContinuationToken: "2",
             updateTime: DateTime.UtcNow);
         await store.RecordPageCompletedAsync(
             args.Notification,
@@ -247,8 +318,7 @@ public class NotificationAudienceBroadcastTests
             tenantId,
             pageIndex: 1,
             candidateCount: 2,
-            nextCursor: null,
-            hasMore: false,
+            nextContinuationToken: null,
             updateTime: DateTime.UtcNow);
         await store.RecordCompletedAsync(
             args.Notification,
@@ -262,8 +332,7 @@ public class NotificationAudienceBroadcastTests
             tenantId,
             pageIndex: 0,
             candidateCount: 2,
-            nextCursor: "2",
-            hasMore: true,
+            nextContinuationToken: "2",
             updateTime: DateTime.UtcNow);
         await store.RecordFailedAsync(
             args.Notification,
@@ -278,7 +347,7 @@ public class NotificationAudienceBroadcastTests
         progress.CompletedPageCount.ShouldBe(2);
         progress.CandidateCount.ShouldBe(4);
         progress.HasMore.ShouldBeFalse();
-        progress.NextCursor.ShouldBeNull();
+        progress.NextContinuationToken.ShouldBeNull();
         progress.ErrorMessage.ShouldBeNull();
     }
 
@@ -307,8 +376,7 @@ public class NotificationAudienceBroadcastTests
             tenantId,
             pageIndex: 0,
             candidateCount: 2,
-            nextCursor: null,
-            hasMore: false,
+            nextContinuationToken: null,
             updateTime: DateTime.UtcNow);
         await store.RecordCompletedAsync(
             args.Notification,
@@ -456,7 +524,7 @@ public class NotificationAudienceBroadcastTests
                 CreationTime = DateTime.UtcNow,
                 TenantId = tenantId
             },
-            cursor: null,
+            continuationToken: null,
             pageIndex: 0,
             excludedUserIds: null);
     }
@@ -483,15 +551,14 @@ public class NotificationAudienceBroadcastTests
             cancellationToken.ThrowIfCancellationRequested();
             request.TenantId.ShouldBe(_tenantId);
             Requests.Add(request);
-            var skip = string.IsNullOrWhiteSpace(request.Cursor)
+            var skip = string.IsNullOrWhiteSpace(request.ContinuationToken)
                 ? 0
-                : int.Parse(request.Cursor, CultureInfo.InvariantCulture);
+                : int.Parse(request.ContinuationToken, CultureInfo.InvariantCulture);
             var page = _userIds.Skip(skip).Take(request.MaxResultCount).ToArray();
             var nextIndex = skip + page.Length;
             return Task.FromResult(new NotificationAudienceRecipientPage(
                 page,
-                nextIndex < _userIds.Count ? nextIndex.ToString(CultureInfo.InvariantCulture) : null,
-                nextIndex < _userIds.Count));
+                nextIndex < _userIds.Count ? nextIndex.ToString(CultureInfo.InvariantCulture) : null));
         }
     }
 

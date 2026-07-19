@@ -50,21 +50,21 @@ public class IdentityActiveNotificationAudienceRecipientSourceTests : DigniteAbp
                 new NotificationAudienceRecipientPageRequest(
                     NotificationAudienceNames.AllActiveUsers,
                     tenantId,
-                    cursor: null,
+                    continuationToken: null,
                     maxResultCount: 1));
             var secondPage = await source.GetRecipientsAsync(
                 new NotificationAudienceRecipientPageRequest(
                     NotificationAudienceNames.AllActiveUsers,
                     tenantId,
-                    firstPage.NextCursor,
+                    firstPage.NextContinuationToken,
                     maxResultCount: 1));
 
             firstPage.UserIds.ShouldBe(new[] { active1.Id });
             firstPage.HasMore.ShouldBeTrue();
-            firstPage.NextCursor.ShouldBe(active1.Id.ToString("N"));
+            firstPage.NextContinuationToken.ShouldBe(active1.Id.ToString("N"));
             secondPage.UserIds.ShouldBe(new[] { active2.Id });
             secondPage.HasMore.ShouldBeFalse();
-            secondPage.NextCursor.ShouldBeNull();
+            secondPage.NextContinuationToken.ShouldBeNull();
         }
     }
 
@@ -86,7 +86,7 @@ public class IdentityActiveNotificationAudienceRecipientSourceTests : DigniteAbp
                 new NotificationAudienceRecipientPageRequest(
                     NotificationAudienceNames.AllActiveUsers,
                     tenantId,
-                    cursor: null,
+                    continuationToken: null,
                     maxResultCount: 10)));
         }
     }

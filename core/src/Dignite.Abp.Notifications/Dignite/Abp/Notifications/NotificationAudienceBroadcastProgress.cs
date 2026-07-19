@@ -4,6 +4,7 @@ namespace Dignite.Abp.Notifications;
 
 public class NotificationAudienceBroadcastProgress
 {
+    /// <summary>The authoritative tenant id, or <see langword="null"/> for the host scope.</summary>
     public Guid? TenantId { get; set; }
 
     public Guid NotificationId { get; set; }
@@ -18,9 +19,11 @@ public class NotificationAudienceBroadcastProgress
 
     public long CandidateCount { get; set; }
 
-    public string? NextCursor { get; set; }
+    /// <summary>Opaque token for the next page, or <see langword="null"/> when no next page is known.</summary>
+    public string? NextContinuationToken { get; set; }
 
-    public bool HasMore { get; set; }
+    /// <summary>Whether the opaque next continuation token identifies another page.</summary>
+    public bool HasMore => !string.IsNullOrWhiteSpace(NextContinuationToken);
 
     public bool IsCancellationRequested { get; set; }
 
@@ -39,8 +42,7 @@ public class NotificationAudienceBroadcastProgress
             Status = Status,
             CompletedPageCount = CompletedPageCount,
             CandidateCount = CandidateCount,
-            NextCursor = NextCursor,
-            HasMore = HasMore,
+            NextContinuationToken = NextContinuationToken,
             IsCancellationRequested = IsCancellationRequested,
             ErrorMessage = ErrorMessage,
             LastUpdatedTime = LastUpdatedTime

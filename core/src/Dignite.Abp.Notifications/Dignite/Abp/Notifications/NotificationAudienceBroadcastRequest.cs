@@ -5,7 +5,7 @@ namespace Dignite.Abp.Notifications;
 /// <summary>
 /// Starts a large-audience broadcast for one explicit tenant or host scope.
 /// </summary>
-public class NotificationAudienceTenantBroadcastRequest
+public class NotificationAudienceBroadcastRequest
 {
     /// <summary>
     /// The authoritative tenant id for the broadcast, or <see langword="null"/> for host users.
@@ -33,7 +33,7 @@ public class NotificationAudienceTenantBroadcastRequest
     /// </summary>
     public Guid[]? ExcludedUserIds { get; set; }
 
-    public NotificationAudienceTenantBroadcastRequest(Guid? tenantId, string notificationName)
+    public NotificationAudienceBroadcastRequest(Guid? tenantId, string notificationName)
     {
         if (tenantId == Guid.Empty)
         {

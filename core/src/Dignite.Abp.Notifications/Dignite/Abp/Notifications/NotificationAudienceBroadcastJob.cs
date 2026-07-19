@@ -16,7 +16,7 @@ using Volo.Abp.Timing;
 namespace Dignite.Abp.Notifications;
 
 /// <summary>
-/// Pages a tenant-scoped audience into the standard prepared notification distribution pipeline.
+/// Pages a tenant-or-host scoped audience into the standard prepared notification distribution pipeline.
 /// </summary>
 public class NotificationAudienceBroadcastJob :
     AsyncBackgroundJob<NotificationAudienceBroadcastJobArgs>,
@@ -85,7 +85,7 @@ public class NotificationAudienceBroadcastJob :
 
     /// <summary>
     /// Executes one audience page. Progress is represented by the stable notification id, tenant id, page index,
-    /// and cursor on <paramref name="args"/>; cancellation is honored through the supplied token.
+    /// and continuation token on <paramref name="args"/>; cancellation is honored through the supplied token.
     /// </summary>
     public virtual async Task ExecuteAsync(
         NotificationAudienceBroadcastJobArgs args,
@@ -136,7 +136,7 @@ public class NotificationAudienceBroadcastJob :
                     new NotificationAudienceRecipientPageRequest(
                         args.AudienceName,
                         args.TenantId,
-                        args.Cursor,
+                        args.ContinuationToken,
                         Options.RecipientBatchSize),
                     cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
@@ -146,12 +146,6 @@ public class NotificationAudienceBroadcastJob :
                     throw new AbpException(
                         $"Audience recipient source '{args.AudienceName}' returned {page.UserIds.Count} recipients, " +
                         $"exceeding the configured page size {Options.RecipientBatchSize}.");
-                }
-
-                if (page.HasMore && string.IsNullOrWhiteSpace(page.NextCursor))
-                {
-                    throw new AbpException(
-                        $"Audience recipient source '{args.AudienceName}' reported more recipients without a cursor.");
                 }
 
                 NotificationAudienceBroadcastMetrics.PageCount.Add(1, tags);
@@ -176,8 +170,7 @@ public class NotificationAudienceBroadcastJob :
                     args.TenantId,
                     args.PageIndex,
                     page.UserIds.Count,
-                    page.NextCursor,
-                    page.HasMore,
+                    page.NextContinuationToken,
                     Clock.Now,
                     cancellationToken);
 
@@ -197,7 +190,7 @@ public class NotificationAudienceBroadcastJob :
                         return;
                     }
 
-                    await BackgroundJobManager.EnqueueAsync(args.NextPage(page.NextCursor!));
+                    await BackgroundJobManager.EnqueueAsync(args.NextPage(page.NextContinuationToken!));
                 }
                 else
                 {
@@ -211,7 +204,7 @@ public class NotificationAudienceBroadcastJob :
 
                 JobLogger.LogInformation(
                     "Processed audience broadcast page {PageIndex} for '{NotificationName}' ({NotificationId}) " +
-                    "to audience {AudienceName} in tenant {TenantId}: {CandidateCount} candidates, " +
+                    "to audience {AudienceName} in tenant-or-host scope {TenantId}: {CandidateCount} candidates, " +
                     "{RecipientCount} prepared recipients, has more: {HasMore}.",
                     args.PageIndex,
                     args.Notification.NotificationName,

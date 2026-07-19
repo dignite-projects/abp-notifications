@@ -27,8 +27,7 @@ public interface INotificationAudienceBroadcastProgressStore
         Guid? tenantId,
         long pageIndex,
         long candidateCount,
-        string? nextCursor,
-        bool hasMore,
+        string? nextContinuationToken,
         DateTime updateTime,
         CancellationToken cancellationToken = default);
 

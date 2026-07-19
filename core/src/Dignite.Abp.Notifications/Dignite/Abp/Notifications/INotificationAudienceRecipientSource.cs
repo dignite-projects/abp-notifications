@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 namespace Dignite.Abp.Notifications;
 
 /// <summary>
-/// Resolves a named audience into one bounded, tenant-scoped recipient page at a time.
+/// Resolves a named audience into one bounded, tenant-or-host scoped recipient page at a time.
 /// </summary>
 public interface INotificationAudienceRecipientSource
 {

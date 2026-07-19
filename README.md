@@ -740,15 +740,16 @@ subscription-driven resolution for very large audiences already modeled as subsc
 is also bounded. Subscription scans use an exclusive user-ID keyset cursor rather than offset paging, so
 inserts/deletes before the cursor cannot repeat or skip later recipients.
 
-For tenant-wide audiences that should be resolved by infrastructure rather than by loading a `Guid[]` in the
-publisher, use `INotificationAudienceBroadcaster`. A tenant broadcast is always created with an explicit
-`TenantId` (or `null` for host users) and an audience name; `Guid.Empty` is rejected. Host-wide broadcasts take an
-explicit tenant-id list and enqueue one tenant job at a time inside independent ABP units of work, recording
-success/failure per tenant without combining tenants in one notification transaction or delivery event.
+For large audiences that should be resolved by infrastructure rather than by loading a `Guid[]` in the publisher,
+use `INotificationAudienceBroadcaster`. `EnqueueAsync` always receives an authoritative tenant-or-host scope:
+`TenantId` identifies one tenant and `null` identifies host users; `Guid.Empty` is rejected. The separate
+host-authorized `EnqueueForTenantsAsync` operation takes an explicit tenant-id list and enqueues one tenant job at a
+time inside independent ABP units of work. It records success/failure per tenant without combining tenants in one
+notification transaction or delivery event, and it intentionally never includes host users.
 
 ```csharp
-await _audienceBroadcaster.EnqueueTenantBroadcastAsync(
-    new NotificationAudienceTenantBroadcastRequest(tenantId, "Demo.TenantAnnouncement")
+await _audienceBroadcaster.EnqueueAsync(
+    new NotificationAudienceBroadcastRequest(tenantId, "Demo.TenantAnnouncement")
     {
         Data = new MessageNotificationData("Maintenance starts at 22:00 UTC.")
     });
@@ -757,21 +758,22 @@ await _audienceBroadcaster.EnqueueTenantBroadcastAsync(
 The built-in audience name is `NotificationAudienceNames.AllActiveUsers`. Core defines only the abstraction and
 continues to work with `NullNotificationStore`; it has no dependency on ABP Identity or Notification Center.
 Installing `Dignite.Abp.Notifications.Identity` registers an Identity-backed source for that audience. It pages
-ABP Identity users by an exclusive user-id keyset cursor and includes only users in the requested tenant that are
-`IsActive`, not `Leaved`, and not soft-deleted. Every page is then passed to
+ABP Identity users by an opaque, exclusive user-id continuation token and includes only users in the requested
+tenant-or-host scope that are `IsActive`, not `Leaved`, and not soft-deleted. Every page is then passed to
 `INotificationDistributor.DistributePreparedAsync`, so the normal feature/permission eligibility evaluator,
 Notification Center inbox persistence, delivery
 preferences/quiet hours, and work-event scheduling still run. Progress is represented by the stable notification
-id, tenant id, page index, and cursor in job args/logs, and low-cardinality page/candidate/failure counters are
+id, tenant id, page index, and continuation token in job args/logs, and low-cardinality page/candidate/failure
+counters are
 emitted from the `Dignite.Abp.Notifications.AudienceBroadcast` meter. Retried pages are idempotent against the
 Notification Center `(UserId, NotificationId)` inbox identity.
 
-`INotificationAudienceBroadcaster.GetTenantBroadcastProgressAsync(...)` returns the current observable state for a
-tenant/host broadcast, and `CancelTenantBroadcastAsync(...)` records a cancellation request. The default progress
+`INotificationAudienceBroadcaster.GetProgressAsync(...)` returns the current observable state for a tenant-or-host
+scoped broadcast, and `CancelAsync(...)` records a cancellation request. The default progress
 store is process-local and suitable for Core-only diagnostics; replace `INotificationAudienceBroadcastProgressStore`
 when cancellation/progress must survive process restarts or be queried by another service. A job checks the store
-before loading a page and before enqueueing the next cursor, then marks the broadcast completed, canceled, or
-failed.
+before loading a page and before enqueueing the next continuation token, then marks the broadcast completed,
+canceled, or failed.
 
 The EF Core package replaces the provider-neutral inbox writer with a flush-and-detach implementation. It saves
 only the configured write group and immediately detaches those `UserNotification` entities; a regression test
