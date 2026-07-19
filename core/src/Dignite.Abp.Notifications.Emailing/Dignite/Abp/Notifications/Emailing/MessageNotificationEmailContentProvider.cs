@@ -1,3 +1,4 @@
+using System.Threading;
 using System.Threading.Tasks;
 using Volo.Abp.DependencyInjection;
 
@@ -10,7 +11,9 @@ public class MessageNotificationEmailContentProvider
     public override int Order => NotificationEmailProviderOrders.BuiltInFallback;
 
     protected override Task<NotificationEmail?> BuildOrNullAsync(
-        NotificationEmailBuildContext context, MessageNotificationData data)
+        NotificationEmailBuildContext context,
+        MessageNotificationData data,
+        CancellationToken cancellationToken)
     {
         return Task.FromResult<NotificationEmail?>(
             new NotificationEmail(context.Notification.NotificationName, data.Message));

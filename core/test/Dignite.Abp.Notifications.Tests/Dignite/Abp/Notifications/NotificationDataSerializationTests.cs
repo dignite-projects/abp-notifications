@@ -249,7 +249,7 @@ public class NotificationDataSerializationTests
         var oldJson = JsonSerializer.Serialize(eto, oldOptions)
             .Replace("\"schemaVersion\":1,", string.Empty, StringComparison.Ordinal);
 
-        var received = JsonSerializer.Deserialize<NotificationDeliveryEto>(oldJson, newOptions)!;
+        var received = JsonSerializer.Deserialize<NotificationDeliveryRequestedEto>(oldJson, newOptions)!;
 
         var data = received.Data.ShouldBeOfType<RollingNotificationDataV2>();
         data.Text.ShouldBe("from old");
@@ -268,7 +268,7 @@ public class NotificationDataSerializationTests
             NewEvent(new RollingNotificationDataV2 { Text = "from new", Importance = 5 }),
             newOptions);
 
-        var received = JsonSerializer.Deserialize<NotificationDeliveryEto>(json, oldOptions)!;
+        var received = JsonSerializer.Deserialize<NotificationDeliveryRequestedEto>(json, oldOptions)!;
 
         var unsupported = received.Data.ShouldBeOfType<UnsupportedNotificationData>();
         unsupported.Reason.ShouldBe(UnsupportedNotificationDataReason.UnsupportedFutureVersion);
@@ -288,7 +288,7 @@ public class NotificationDataSerializationTests
         });
 
         var json = JsonSerializer.Serialize(eto, options);
-        var back = JsonSerializer.Deserialize<NotificationDeliveryEto>(json, options)!;
+        var back = JsonSerializer.Deserialize<NotificationDeliveryRequestedEto>(json, options)!;
 
         back.Data.ShouldBeOfType<OrderShippedNotificationData>().OrderNumber.ShouldBe("SO-7");
     }
@@ -331,14 +331,22 @@ public class NotificationDataSerializationTests
         return options;
     }
 
-    private static NotificationDeliveryEto NewEvent(NotificationData data)
+    private static NotificationDeliveryRequestedEto NewEvent(NotificationData data)
     {
-        return new NotificationDeliveryEto(
-            Guid.NewGuid(),
-            "test",
-            data,
-            NotificationSeverity.Info,
-            DateTime.UtcNow,
-            new[] { Guid.NewGuid() });
+        var notificationId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        const string channel = "test";
+        return new NotificationDeliveryRequestedEto
+        {
+            DeliveryId = NotificationDeliveryIdentity.CreateId(null, notificationId, userId, channel),
+            IdempotencyKey = NotificationDeliveryIdentity.CreateIdempotencyKey(null, notificationId, userId, channel),
+            NotificationId = notificationId,
+            NotificationName = "test",
+            Data = data,
+            Severity = NotificationSeverity.Info,
+            CreationTime = DateTime.UtcNow,
+            UserId = userId,
+            Channel = channel
+        };
     }
 }

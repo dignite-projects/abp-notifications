@@ -1,3 +1,4 @@
+using System.Threading;
 using System.Threading.Tasks;
 using Dignite.Abp.Notifications.Emailing;
 using Volo.Abp.DependencyInjection;
@@ -42,15 +43,17 @@ public class IdentityEmailNotificationAddressResolver : IEmailNotificationAddres
     }
 
     public virtual async Task<EmailNotificationAddress?> GetEmailOrNullAsync(
-        EmailNotificationAddressResolveContext context)
+        EmailNotificationAddressResolveContext context,
+        CancellationToken cancellationToken = default)
     {
-        var user = await UserRepository.FindAsync(context.UserId);
+        var user = await UserRepository.FindAsync(context.UserId, cancellationToken: cancellationToken);
         if (string.IsNullOrWhiteSpace(user?.Email))
         {
             return null;
         }
 
-        // ISettingProvider reads the ambient user. A distributed notification has several recipients, so use ABP's
+        cancellationToken.ThrowIfCancellationRequested();
+        // ISettingProvider reads the ambient user, which may differ from this delivery's recipient. Use ABP's
         // user-targeted setting-management API, which performs the complete fallback chain for this UserId.
         var cultureName = SettingManager == null
             ? null
@@ -58,6 +61,7 @@ public class IdentityEmailNotificationAddressResolver : IEmailNotificationAddres
                 LocalizationSettingNames.DefaultLanguage,
                 context.UserId,
                 fallback: true);
+        cancellationToken.ThrowIfCancellationRequested();
 
         return EmailNotificationAddress.To(user.Email, cultureName);
     }

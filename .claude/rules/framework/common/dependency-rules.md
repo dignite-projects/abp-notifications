@@ -18,7 +18,7 @@ paths:
 ## This repo's actual dependency graph (two trees)
 
 ```
-Notifications.Abstractions               (contracts: NotificationData, NotificationDeliveryEto, registries)
+Notifications.Abstractions               (contracts: NotificationData, NotificationDeliveryRequestedEto, registries)
         │
         ▼
 Notifications (Core)                     (definitions, publish/distribute, INotificationStore abstraction)

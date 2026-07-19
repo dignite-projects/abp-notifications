@@ -1,12 +1,14 @@
 using System;
 using System.Collections.Concurrent;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using Shouldly;
 using Volo.Abp.Timing;
+using Volo.Abp.Threading;
 using Xunit;
 
 namespace Dignite.Abp.Notifications;
@@ -132,23 +134,82 @@ public class NotificationDeliveryProcessorTests
     }
 
     [Fact]
-    public async Task Legacy_notifier_receives_a_singleton_compatibility_event_with_stable_identity()
+    public async Task Cancellation_propagates_to_the_notifier_and_is_not_recorded_as_a_channel_failure()
     {
         var now = DateTime.UtcNow;
-        var legacy = new TestLegacyNotifier();
+        using var cancellation = new CancellationTokenSource();
+        CancellationToken receivedToken = default;
+        var notifier = new TestReliableNotifier("Email", (_, cancellationToken) =>
+        {
+            receivedToken = cancellationToken;
+            cancellation.Cancel();
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(NotificationDeliveryResult.Succeeded());
+        });
+        var (processor, store) = CreateProcessor(now, new INotificationNotifier[] { notifier });
+        var work = CreateWork(Guid.NewGuid(), Guid.NewGuid(), "Email");
+
+        await Should.ThrowAsync<OperationCanceledException>(
+            () => processor.ProcessAsync(work, cancellation.Token));
+
+        receivedToken.ShouldBe(cancellation.Token);
+        (await store.GetDueWorkItemsAsync(now, 10)).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Distributed_event_adapter_passes_the_ambient_cancellation_token_to_the_processor()
+    {
+        var now = DateTime.UtcNow;
+        using var cancellation = new CancellationTokenSource();
+        CancellationToken receivedToken = default;
+        var notifier = new TestReliableNotifier("Email", (request, cancellationToken) =>
+        {
+            receivedToken = cancellationToken;
+            return Task.FromResult(NotificationDeliveryResult.Succeeded());
+        });
+        var (processor, _) = CreateProcessor(now, new INotificationNotifier[] { notifier });
+        var tokenProvider = Substitute.For<ICancellationTokenProvider>();
+        tokenProvider.Token.Returns(cancellation.Token);
+        var handler = new NotificationDeliveryRequestedHandler(processor, tokenProvider);
+
+        await handler.HandleEventAsync(CreateWork(Guid.NewGuid(), Guid.NewGuid(), "Email"));
+
+        receivedToken.ShouldBe(cancellation.Token);
+    }
+
+    [Fact]
+    public async Task Duplicate_exposure_of_the_same_implementation_and_channel_executes_once()
+    {
+        var callCount = 0;
+        var notifier = new TestReliableNotifier("Email", _ =>
+        {
+            callCount++;
+            return Task.FromResult(NotificationDeliveryResult.Succeeded());
+        });
         var (processor, _) = CreateProcessor(
-            now,
-            Array.Empty<INotificationDeliveryNotifier>(),
-            legacyNotifiers: new[] { legacy });
-        var work = CreateWork(Guid.NewGuid(), Guid.NewGuid(), "Legacy");
+            DateTime.UtcNow,
+            new INotificationNotifier[] { notifier, notifier });
 
-        await processor.ProcessAsync(work);
+        await processor.ProcessAsync(CreateWork(Guid.NewGuid(), Guid.NewGuid(), "email"));
 
-        var adapted = legacy.Received.ShouldNotBeNull();
-        adapted.UserIds.ShouldBe(new[] { work.UserId });
-        adapted.Channels.ShouldBe(new[] { work.Channel });
-        adapted.DeliveryId.ShouldBe(work.DeliveryId);
-        adapted.IdempotencyKey.ShouldBe(work.IdempotencyKey);
+        callCount.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Distinct_implementations_with_the_same_case_insensitive_channel_are_rejected()
+    {
+        var first = new TestReliableNotifier(
+            "Email",
+            _ => Task.FromResult(NotificationDeliveryResult.Succeeded()));
+        var second = new OtherTestNotifier("eMaIl");
+        var (processor, _) = CreateProcessor(
+            DateTime.UtcNow,
+            new INotificationNotifier[] { first, second });
+
+        var exception = await Should.ThrowAsync<InvalidOperationException>(
+            () => processor.ProcessAsync(CreateWork(Guid.NewGuid(), Guid.NewGuid(), "EMAIL")));
+
+        exception.Message.ShouldContain("Multiple notification notifiers");
     }
 
     [Fact]
@@ -170,7 +231,7 @@ public class NotificationDeliveryProcessorTests
     public async Task A_process_that_does_not_host_the_work_channel_does_not_create_or_fail_delivery_state()
     {
         var now = DateTime.UtcNow;
-        var (processor, store) = CreateProcessor(now, Array.Empty<INotificationDeliveryNotifier>());
+        var (processor, store) = CreateProcessor(now, Array.Empty<INotificationNotifier>());
         var work = CreateWork(Guid.NewGuid(), Guid.NewGuid(), "RemoteEmail");
 
         await processor.ProcessAsync(work);
@@ -208,7 +269,6 @@ public class NotificationDeliveryProcessorTests
         var processor = new NotificationDeliveryProcessor(
             store,
             new[] { notifier },
-            Array.Empty<INotificationNotifier<NotificationDeliveryEto>>(),
             new NotificationDeliveryRetryPolicy(options),
             clock,
             new TestCurrentTenant(),
@@ -237,9 +297,8 @@ public class NotificationDeliveryProcessorTests
 
     private static (NotificationDeliveryProcessor Processor, InMemoryNotificationDeliveryStore Store) CreateProcessor(
         DateTime now,
-        INotificationDeliveryNotifier[] reliableNotifiers,
-        NotificationOptions? options = null,
-        INotificationNotifier<NotificationDeliveryEto>[]? legacyNotifiers = null)
+        INotificationNotifier[] notifiers,
+        NotificationOptions? options = null)
     {
         options ??= DeliveryOptions();
         var optionWrapper = Options.Create(options);
@@ -248,8 +307,7 @@ public class NotificationDeliveryProcessorTests
         var store = new InMemoryNotificationDeliveryStore();
         return (new NotificationDeliveryProcessor(
             store,
-            reliableNotifiers,
-            legacyNotifiers ?? Array.Empty<INotificationNotifier<NotificationDeliveryEto>>(),
+            notifiers,
             new NotificationDeliveryRetryPolicy(optionWrapper),
             clock,
             new TestCurrentTenant(),
@@ -290,36 +348,47 @@ public class NotificationDeliveryProcessorTests
         };
     }
 
-    private sealed class TestReliableNotifier : INotificationDeliveryNotifier
+    private sealed class TestReliableNotifier : INotificationNotifier
     {
-        private readonly Func<NotificationDeliveryRequestedEto, Task<NotificationDeliveryResult>> _deliver;
+        private readonly Func<NotificationDeliveryRequestedEto, CancellationToken, Task<NotificationDeliveryResult>> _deliver;
 
         public string Name { get; }
 
         public TestReliableNotifier(
             string name,
             Func<NotificationDeliveryRequestedEto, Task<NotificationDeliveryResult>> deliver)
+            : this(name, (request, _) => deliver(request))
+        {
+        }
+
+        public TestReliableNotifier(
+            string name,
+            Func<NotificationDeliveryRequestedEto, CancellationToken, Task<NotificationDeliveryResult>> deliver)
         {
             Name = name;
             _deliver = deliver;
         }
 
-        public Task<NotificationDeliveryResult> DeliverAsync(NotificationDeliveryRequestedEto workItem)
+        public Task<NotificationDeliveryResult> DeliverAsync(
+            NotificationDeliveryRequestedEto workItem,
+            CancellationToken cancellationToken = default)
         {
-            return _deliver(workItem);
+            return _deliver(workItem, cancellationToken);
         }
     }
 
-    private sealed class TestLegacyNotifier : INotificationNotifier<NotificationDeliveryEto>
+    private sealed class OtherTestNotifier : INotificationNotifier
     {
-        public string Name => "Legacy";
+        public string Name { get; }
 
-        public NotificationDeliveryEto? Received { get; private set; }
-
-        public Task HandleEventAsync(NotificationDeliveryEto eventData)
+        public OtherTestNotifier(string name)
         {
-            Received = eventData;
-            return Task.CompletedTask;
+            Name = name;
         }
+
+        public Task<NotificationDeliveryResult> DeliverAsync(
+            NotificationDeliveryRequestedEto request,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(NotificationDeliveryResult.Succeeded());
     }
 }

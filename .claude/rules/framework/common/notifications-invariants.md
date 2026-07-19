@@ -71,8 +71,9 @@ constructor injection).
 
 A Notifier (SignalR, Email, future WebPush/FCM/SMS/Webhook) references
 `Dignite.Abp.Notifications.Abstractions` and its own channel SDK — nothing else in this repo. It
-reacts to `NotificationDeliveryEto` (an `IDistributedEventHandler<NotificationDeliveryEto>`); it
-should not need `INotificationStore`, EF Core, or MongoDB. This is what lets a channel be added,
+implements `INotificationNotifier` and handles one `NotificationDeliveryRequestedEto` through cancellation-aware
+`DeliverAsync`; Core's internal handler owns distributed transport adaptation. A Notifier should not need
+`INotificationStore`, EF Core, or MongoDB. This is what lets a channel be added,
 removed, or deployed independently without touching Core.
 
 There is **no exception left** — `Emailing` used to be one and no longer is; its `.csproj` has a
@@ -81,12 +82,12 @@ identity lookups belong in a separate integration package, as `Notifications.Ema
 for ABP Identity. Everything a Notifier needs about the notification — including the entity it
 concerns (`EntityTypeName` / `EntityId`) — rides on the ETO.
 
-## 4. Don't leak other recipients through the distributed event
+## 4. Delivery requests are single-recipient and cancellation-aware
 
-`NotificationDeliveryEto` currently carries the full `Guid[] UserIds` of every recipient of a
-notification. A Notifier that relays the ETO payload as-is to each user's client will leak sibling
-recipients' user IDs to each other. When writing or touching a Notifier, deliver a per-recipient
-view (or at least strip `UserIds` down before it reaches the client), don't forward the raw ETO.
+`NotificationDeliveryRequestedEto` carries exactly one `UserId` and one channel. Never reintroduce an aggregate
+recipient list at this boundary: channel plugins must relay only the per-recipient `NotificationDelivery` view.
+Forward the supplied `CancellationToken` to channel SDK calls and other cancellable I/O. The stable delivery ID and
+idempotency key remain authoritative across retries.
 
 ## 5. Both operation modes must keep working
 
@@ -126,7 +127,7 @@ caller-supplied exclusions and before inbox persistence or channel publication.
   can replace it with an efficient remote or bulk policy evaluator without forking distribution.
 - The only supported bypass is the narrowly named explicit-recipient trusted-system API. It must never resolve
   subscriptions, must bypass both permission and feature requirements together, and must remain observable.
-- A failed requirement filters that candidate before any `UserNotificationInfo` or `NotificationDeliveryEto`
+- A failed requirement filters that candidate before any `UserNotificationInfo` or `NotificationDeliveryRequestedEto`
   is produced. Publishing authorization is a separate application-layer concern.
 
 ## 8. Definition payload/entity contracts validate before side effects
@@ -159,8 +160,8 @@ the same bounded candidate → eligibility → persistence → delivery pipeline
   bounded keyset windows over the caller-owned array, never a notification-wide `HashSet` or normalized copy.
 - EF Core must flush and detach each completed inbox group so the change tracker does not become a hidden
   notification-wide collection. Atomic rollback requires an ambient transactional UoW.
-- Never put every recipient into one `NotificationDeliveryEto`; respect
-  `NotificationOptions.DeliveryEventRecipientLimit`. Broker limits also include the notification payload.
+- Publish one `NotificationDeliveryRequestedEto` for each recipient/channel after bounded candidate processing.
+  Broker limits also include the notification payload.
 - Observe cancellation between candidate, store, and event batches. Do not describe cancellation as rollback:
   EF/outbox, EF without outbox, MongoDB, and null-store forwarding have different partial-progress semantics.
 - Keep candidates, eligible recipients, filtered recipients, batches, duration, and failures observable without

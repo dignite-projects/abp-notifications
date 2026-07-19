@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using Dignite.Abp.Notifications.Emailing;
 using Shouldly;
@@ -25,7 +26,9 @@ public class NotificationEmailContentProvider_Tests
         public MessageNotificationData? Narrowed { get; private set; }
 
         protected override Task<NotificationEmail?> BuildOrNullAsync(
-            NotificationEmailBuildContext context, MessageNotificationData data)
+            NotificationEmailBuildContext context,
+            MessageNotificationData data,
+            CancellationToken cancellationToken)
         {
             Narrowed = data;
             return Task.FromResult<NotificationEmail?>(new NotificationEmail("subject", data.Message));

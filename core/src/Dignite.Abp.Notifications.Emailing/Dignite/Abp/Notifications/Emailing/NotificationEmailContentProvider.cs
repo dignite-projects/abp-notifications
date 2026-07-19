@@ -1,3 +1,4 @@
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Dignite.Abp.Notifications.Emailing;
@@ -28,10 +29,13 @@ public abstract class NotificationEmailContentProvider<TData> : INotificationEma
     /// <summary>
     /// Deliberately not virtual: overriding it would reintroduce the chance to drop the payload guard.
     /// </summary>
-    public Task<NotificationEmail?> BuildOrNullAsync(NotificationEmailBuildContext context)
+    public Task<NotificationEmail?> BuildOrNullAsync(
+        NotificationEmailBuildContext context,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         return context.Notification.Data is TData data
-            ? BuildOrNullAsync(context, data)
+            ? BuildOrNullAsync(context, data, cancellationToken)
             : Task.FromResult<NotificationEmail?>(null);
     }
 
@@ -39,5 +43,8 @@ public abstract class NotificationEmailContentProvider<TData> : INotificationEma
     /// Builds the email for a payload already narrowed to <typeparamref name="TData"/>. Return null to pass the
     /// notification to the next provider — for example when this payload carries nothing worth emailing.
     /// </summary>
-    protected abstract Task<NotificationEmail?> BuildOrNullAsync(NotificationEmailBuildContext context, TData data);
+    protected abstract Task<NotificationEmail?> BuildOrNullAsync(
+        NotificationEmailBuildContext context,
+        TData data,
+        CancellationToken cancellationToken);
 }

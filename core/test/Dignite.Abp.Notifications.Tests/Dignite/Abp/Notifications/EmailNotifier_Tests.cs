@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Reflection;
+using System.Threading;
 using System.Threading.Tasks;
 using Dignite.Abp.Notifications.Emailing;
 using Microsoft.Extensions.Localization;
@@ -10,7 +12,7 @@ using Microsoft.Extensions.Options;
 using NSubstitute;
 using Shouldly;
 using Volo.Abp.Emailing;
-using Volo.Abp.EventBus.Distributed;
+using Volo.Abp.DependencyInjection;
 using Xunit;
 
 namespace Dignite.Abp.Notifications;
@@ -18,7 +20,7 @@ namespace Dignite.Abp.Notifications;
 public class EmailNotifier_Tests
 {
     [Fact]
-    public void Email_notifier_exposes_its_channel_name_and_event_contract()
+    public void Email_notifier_exposes_the_canonical_channel_contract()
     {
         var notifier = new EmailNotifier(
             Substitute.For<IEmailSender>(),
@@ -26,10 +28,14 @@ public class EmailNotifier_Tests
             CreateDefaultBuilder(),
             NullLogger<EmailNotifier>.Instance);
 
-        ((INotificationNotifier)notifier).Name.ShouldBe(EmailNotifier.ChannelName);
-        (notifier is INotificationDeliveryNotifier).ShouldBeTrue();
-        (notifier is INotificationNotifier<NotificationDeliveryEto>).ShouldBeTrue();
-        (notifier is IDistributedEventHandler<NotificationDeliveryEto>).ShouldBeTrue();
+        notifier.Name.ShouldBe(EmailNotifier.ChannelName);
+        notifier.ShouldBeAssignableTo<INotificationNotifier>();
+
+        var exposedServices = typeof(EmailNotifier)
+            .GetCustomAttribute<ExposeServicesAttribute>()!
+            .ServiceTypes;
+        exposedServices.Count(type => type == typeof(INotificationNotifier)).ShouldBe(1);
+        exposedServices.ShouldBe(new[] { typeof(INotificationNotifier), typeof(EmailNotifier) });
     }
 
     [Fact]
@@ -85,14 +91,7 @@ public class EmailNotifier_Tests
             new[] { resolver },
             CreateDefaultBuilder(),
             NullLogger<EmailNotifier>.Instance);
-        var eto = new NotificationDeliveryEto(
-            Guid.NewGuid(), "order.shipped", new MessageNotificationData("Shipped!"),
-            NotificationSeverity.Info, DateTime.UtcNow, new[] { userWithEmail, userWithoutEmail })
-        {
-            Channels = new[] { EmailNotifier.ChannelName }
-        };
-
-        await notifier.HandleEventAsync(eto);
+        await DeliverAsync(notifier, userWithEmail, userWithoutEmail);
 
         await emailSender.Received(1).SendAsync(
             Arg.Is<string>(to => to == "a@b.com"),
@@ -119,15 +118,7 @@ public class EmailNotifier_Tests
             new[] { resolver },
             CreateDefaultBuilder(),
             NullLogger<EmailNotifier>.Instance);
-        var eto = new NotificationDeliveryEto(
-            Guid.NewGuid(), "order.shipped", new MessageNotificationData("Shipped!"),
-            NotificationSeverity.Info, DateTime.UtcNow,
-            new[] { Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid() })
-        {
-            Channels = new[] { EmailNotifier.ChannelName }
-        };
-
-        await notifier.HandleEventAsync(eto);
+        await DeliverAsync(notifier, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
 
         // Deliberately NOT deduplicated by address. The body is built per recipient
         // (NotificationEmailBuildContext carries the UserId), so collapsing three recipients into one send would
@@ -138,7 +129,7 @@ public class EmailNotifier_Tests
     }
 
     [Fact]
-    public async Task Skips_when_the_email_channel_is_not_allowed()
+    public async Task Rejects_a_request_for_another_channel()
     {
         var emailSender = Substitute.For<IEmailSender>();
         var resolver = Substitute.For<IEmailNotificationAddressResolver>();
@@ -150,14 +141,8 @@ public class EmailNotifier_Tests
             new[] { resolver },
             CreateDefaultBuilder(),
             NullLogger<EmailNotifier>.Instance);
-        var eto = new NotificationDeliveryEto(
-            Guid.NewGuid(), "test", new MessageNotificationData("x"),
-            NotificationSeverity.Info, DateTime.UtcNow, new[] { Guid.NewGuid() })
-        {
-            Channels = new[] { "SignalR" } // Email channel excluded
-        };
-
-        await notifier.HandleEventAsync(eto);
+        await Should.ThrowAsync<InvalidOperationException>(
+            () => notifier.DeliverAsync(CreateRequest(Guid.NewGuid(), channel: "SignalR")));
 
         await emailSender.DidNotReceiveWithAnyArgs().SendAsync(
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>());
@@ -176,14 +161,7 @@ public class EmailNotifier_Tests
             CreateDefaultBuilder(),
             NullLogger<EmailNotifier>.Instance);
 
-        var eto = new NotificationDeliveryEto(
-            Guid.NewGuid(), "order.shipped", new OrderShippedNotificationData(),
-            NotificationSeverity.Info, DateTime.UtcNow, new[] { Guid.NewGuid() })
-        {
-            Channels = new[] { EmailNotifier.ChannelName }
-        };
-
-        await notifier.HandleEventAsync(eto);
+        await notifier.DeliverAsync(CreateRequest(Guid.NewGuid(), new OrderShippedNotificationData()));
 
         await emailSender.DidNotReceiveWithAnyArgs().SendAsync(
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>());
@@ -207,19 +185,13 @@ public class EmailNotifier_Tests
             new[] { resolver },
             builder,
             NullLogger<EmailNotifier>.Instance);
-        var eto = new NotificationDeliveryEto(
-            Guid.NewGuid(), "test", new MessageNotificationData("x"),
-            NotificationSeverity.Info, DateTime.UtcNow, new[] { firstUserId, secondUserId })
-        {
-            Channels = new[] { EmailNotifier.ChannelName },
-            TenantId = Guid.NewGuid()
-        };
-
-        await notifier.HandleEventAsync(eto);
+        var tenantId = Guid.NewGuid();
+        await notifier.DeliverAsync(CreateRequest(firstUserId, tenantId: tenantId));
+        await notifier.DeliverAsync(CreateRequest(secondUserId, tenantId: tenantId));
 
         builder.Contexts.Select(context => context.UserId).ShouldBe(new[] { firstUserId, secondUserId });
         builder.Contexts.Select(context => context.EmailAddress).ShouldBe(new[] { "first@example.com", "second@example.com" });
-        builder.Contexts.ShouldAllBe(context => context.TenantId == eto.TenantId);
+        builder.Contexts.ShouldAllBe(context => context.TenantId == tenantId);
     }
 
     [Fact]
@@ -245,7 +217,7 @@ public class EmailNotifier_Tests
             builder,
             NullLogger<EmailNotifier>.Instance);
 
-        await notifier.HandleEventAsync(CreateEto(firstUserId, secondUserId));
+        await DeliverAsync(notifier, firstUserId, secondUserId);
 
         builder.Cultures.ShouldBe(new[] { "fr-FR", "ja-JP" });
         builder.Contexts.Select(context => context.CultureName).ShouldBe(new[] { "fr-FR", "ja-JP" });
@@ -269,7 +241,7 @@ public class EmailNotifier_Tests
             NullLogger<EmailNotifier>.Instance,
             Options.Create(new NotificationEmailOptions { DefaultCulture = "en-US" }));
 
-        await notifier.HandleEventAsync(CreateEto(Guid.NewGuid()));
+        await DeliverAsync(notifier, Guid.NewGuid());
 
         builder.Cultures.ShouldBe(new[] { "en-US" });
         builder.Contexts.Single().CultureName.ShouldBe("en-US");
@@ -291,7 +263,7 @@ public class EmailNotifier_Tests
             NullLogger<EmailNotifier>.Instance,
             Options.Create(new NotificationEmailOptions { DefaultCulture = "en-US" }));
 
-        await notifier.HandleEventAsync(CreateEto(Guid.NewGuid()));
+        await DeliverAsync(notifier, Guid.NewGuid());
 
         builder.Cultures.ShouldBe(new[] { "en-US" });
         await emailSender.Received(1).SendAsync(
@@ -324,9 +296,7 @@ public class EmailNotifier_Tests
             NullLogger<EmailNotifier>.Instance,
             Options.Create(new NotificationEmailOptions { DefaultCulture = "en-US" }));
 
-        // A bad culture on the first recipient must not abort the event: the recipients after it would get nothing,
-        // and a redelivery would re-mail the ones before it.
-        await notifier.HandleEventAsync(CreateEto(brokenUserId, laterUserId));
+        await DeliverAsync(notifier, brokenUserId, laterUserId);
 
         builder.Cultures.ShouldBe(new[] { "en-US", "ja-JP" });
         await emailSender.Received(2).SendAsync(
@@ -358,7 +328,7 @@ public class EmailNotifier_Tests
             CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
             CultureInfo.CurrentUICulture = CultureInfo.InvariantCulture;
 
-            await notifier.HandleEventAsync(CreateEto(Guid.NewGuid()));
+            await DeliverAsync(notifier, Guid.NewGuid());
         }
         finally
         {
@@ -388,7 +358,7 @@ public class EmailNotifier_Tests
         var previousUICulture = CultureInfo.CurrentUICulture;
 
         await Should.ThrowAsync<InvalidOperationException>(
-            () => notifier.HandleEventAsync(CreateEto(Guid.NewGuid())));
+            () => notifier.DeliverAsync(CreateRequest(Guid.NewGuid())));
 
         CultureInfo.CurrentCulture.ShouldBe(previousCulture);
         CultureInfo.CurrentUICulture.ShouldBe(previousUICulture);
@@ -414,20 +384,12 @@ public class EmailNotifier_Tests
             new[] { resolver },
             CreateDefaultBuilder(),
             NullLogger<EmailNotifier>.Instance);
-        var eto = new NotificationDeliveryEto(
-            Guid.NewGuid(), "test", new MessageNotificationData("x"),
-            NotificationSeverity.Info, DateTime.UtcNow, new[] { userId })
-        {
-            Channels = new[] { EmailNotifier.ChannelName },
-            TenantId = tenantId
-        };
-
-        await notifier.HandleEventAsync(eto);
+        await notifier.DeliverAsync(CreateRequest(userId, tenantId: tenantId));
 
         capturedContext.ShouldNotBeNull();
         capturedContext!.UserId.ShouldBe(userId);
         capturedContext.TenantId.ShouldBe(tenantId);
-        capturedContext.Notification.NotificationName.ShouldBe("test");
+        capturedContext.Notification.NotificationName.ShouldBe("order.shipped");
     }
 
     [Fact]
@@ -505,7 +467,7 @@ public class EmailNotifier_Tests
             CreateDefaultBuilder(),
             NullLogger<EmailNotifier>.Instance);
 
-        await notifier.HandleEventAsync(CreateEto(Guid.NewGuid()));
+        await DeliverAsync(notifier, Guid.NewGuid());
 
         await emailSender.Received(1).SendAsync(
             "order@example.com", Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>());
@@ -526,7 +488,7 @@ public class EmailNotifier_Tests
             CreateDefaultBuilder(),
             NullLogger<EmailNotifier>.Instance);
 
-        await notifier.HandleEventAsync(CreateEto(Guid.NewGuid()));
+        await DeliverAsync(notifier, Guid.NewGuid());
 
         await emailSender.Received(1).SendAsync(
             "account@example.com", Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>());
@@ -545,7 +507,7 @@ public class EmailNotifier_Tests
             CreateDefaultBuilder(),
             NullLogger<EmailNotifier>.Instance);
 
-        await notifier.HandleEventAsync(CreateEto(Guid.NewGuid()));
+        await DeliverAsync(notifier, Guid.NewGuid());
 
         await emailSender.DidNotReceiveWithAnyArgs().SendAsync(
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>());
@@ -565,20 +527,75 @@ public class EmailNotifier_Tests
             var notifier = new EmailNotifier(
                 emailSender, chain, CreateDefaultBuilder(), NullLogger<EmailNotifier>.Instance);
 
-            await notifier.HandleEventAsync(CreateEto(Guid.NewGuid()));
+            await DeliverAsync(notifier, Guid.NewGuid());
 
             await emailSender.Received(1).SendAsync(
                 "aaa@example.com", Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>());
         }
     }
 
-    private static NotificationDeliveryEto CreateEto(params Guid[] userIds)
+    private static async Task DeliverAsync(EmailNotifier notifier, params Guid[] userIds)
     {
-        return new NotificationDeliveryEto(
-            Guid.NewGuid(), "order.shipped", new MessageNotificationData("Shipped!"),
-            NotificationSeverity.Info, DateTime.UtcNow, userIds)
+        foreach (var userId in userIds)
         {
-            Channels = new[] { EmailNotifier.ChannelName }
+            await notifier.DeliverAsync(CreateRequest(userId));
+        }
+    }
+
+    [Fact]
+    public async Task Cancellation_reaches_the_address_resolution_boundary_and_stops_before_sending()
+    {
+        var emailSender = Substitute.For<IEmailSender>();
+        var resolver = Substitute.For<IEmailNotificationAddressResolver>();
+        using var cancellation = new CancellationTokenSource();
+        CancellationToken receivedToken = default;
+        resolver.GetEmailOrNullAsync(
+                Arg.Any<EmailNotificationAddressResolveContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                receivedToken = call.ArgAt<CancellationToken>(1);
+                cancellation.Cancel();
+                receivedToken.ThrowIfCancellationRequested();
+                return EmailNotificationAddress.To("never@example.com");
+            });
+        var notifier = new EmailNotifier(
+            emailSender,
+            new[] { resolver },
+            CreateDefaultBuilder(),
+            NullLogger<EmailNotifier>.Instance);
+
+        await Should.ThrowAsync<OperationCanceledException>(
+            () => notifier.DeliverAsync(CreateRequest(Guid.NewGuid()), cancellation.Token));
+
+        receivedToken.ShouldBe(cancellation.Token);
+        await emailSender.DidNotReceiveWithAnyArgs().SendAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>());
+    }
+
+    private static NotificationDeliveryRequestedEto CreateRequest(
+        Guid userId,
+        NotificationData? data = null,
+        Guid? tenantId = null,
+        string channel = EmailNotifier.ChannelName)
+    {
+        var notificationId = Guid.NewGuid();
+        return new NotificationDeliveryRequestedEto
+        {
+            DeliveryId = NotificationDeliveryIdentity.CreateId(tenantId, notificationId, userId, channel),
+            IdempotencyKey = NotificationDeliveryIdentity.CreateIdempotencyKey(
+                tenantId,
+                notificationId,
+                userId,
+                channel),
+            NotificationId = notificationId,
+            NotificationName = "order.shipped",
+            Data = data ?? new MessageNotificationData("Shipped!"),
+            Severity = NotificationSeverity.Info,
+            CreationTime = DateTime.UtcNow,
+            UserId = userId,
+            Channel = channel,
+            TenantId = tenantId
         };
     }
 
@@ -596,7 +613,9 @@ public class EmailNotifier_Tests
             _address = address == null ? null : EmailNotificationAddress.To(address);
         }
 
-        public Task<EmailNotificationAddress?> GetEmailOrNullAsync(EmailNotificationAddressResolveContext context)
+        public Task<EmailNotificationAddress?> GetEmailOrNullAsync(
+            EmailNotificationAddressResolveContext context,
+            CancellationToken cancellationToken = default)
         {
             Calls++;
             return Task.FromResult(_address);
@@ -608,7 +627,9 @@ public class EmailNotifier_Tests
     {
         public int Order => NotificationEmailProviderOrders.Default;
 
-        public Task<EmailNotificationAddress?> GetEmailOrNullAsync(EmailNotificationAddressResolveContext context)
+        public Task<EmailNotificationAddress?> GetEmailOrNullAsync(
+            EmailNotificationAddressResolveContext context,
+            CancellationToken cancellationToken = default)
             => Task.FromResult<EmailNotificationAddress?>(EmailNotificationAddress.To("aaa@example.com"));
     }
 
@@ -616,7 +637,9 @@ public class EmailNotifier_Tests
     {
         public int Order => NotificationEmailProviderOrders.Default;
 
-        public Task<EmailNotificationAddress?> GetEmailOrNullAsync(EmailNotificationAddressResolveContext context)
+        public Task<EmailNotificationAddress?> GetEmailOrNullAsync(
+            EmailNotificationAddressResolveContext context,
+            CancellationToken cancellationToken = default)
             => Task.FromResult<EmailNotificationAddress?>(EmailNotificationAddress.To("zzz@example.com"));
     }
 
@@ -659,7 +682,9 @@ public class EmailNotifier_Tests
             _build = build;
         }
 
-        public Task<NotificationEmail?> BuildOrNullAsync(NotificationEmailBuildContext context)
+        public Task<NotificationEmail?> BuildOrNullAsync(
+            NotificationEmailBuildContext context,
+            CancellationToken cancellationToken = default)
         {
             return Task.FromResult(_build(context));
         }
@@ -671,7 +696,9 @@ public class EmailNotifier_Tests
 
         public List<string> Cultures { get; } = new();
 
-        public Task<NotificationEmail?> BuildAsync(NotificationEmailBuildContext context)
+        public Task<NotificationEmail?> BuildAsync(
+            NotificationEmailBuildContext context,
+            CancellationToken cancellationToken = default)
         {
             Contexts.Add(context);
             Cultures.Add(CultureInfo.CurrentUICulture.Name);
@@ -682,7 +709,9 @@ public class EmailNotifier_Tests
 
     private sealed class ThrowingEmailBuilder : INotificationEmailBuilder
     {
-        public Task<NotificationEmail?> BuildAsync(NotificationEmailBuildContext context)
+        public Task<NotificationEmail?> BuildAsync(
+            NotificationEmailBuildContext context,
+            CancellationToken cancellationToken = default)
         {
             throw new InvalidOperationException("content build failed");
         }

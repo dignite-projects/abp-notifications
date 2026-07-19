@@ -102,7 +102,7 @@ public abstract class Notification_Outbox_Tests<TStartupModule> : NotificationCe
             var outbox = (IEventOutbox)ServiceProvider.GetRequiredService(outboxConfig.ImplementationType);
             await outbox.EnqueueAsync(new OutgoingEventInfo(
                 Guid.NewGuid(),
-                "Dignite.Abp.Notifications.NotificationDeliveryEto",
+                "Dignite.Abp.Notifications.NotificationDeliveryWork",
                 Array.Empty<byte>(),
                 DateTime.UtcNow));
 

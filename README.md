@@ -39,7 +39,7 @@ the first stable version exists the initial pre-release is necessarily also expo
 
 | Package | Purpose |
 |---|---|
-| `Dignite.Abp.Notifications.Abstractions` | Shared contracts: `NotificationData`, `NotificationDeliveryRequestedEto`, `[NotificationDataType]`, `INotificationDefinitionProvider`, `INotificationDeliveryNotifier`. Notifiers and remote clients depend on **only** this. |
+| `Dignite.Abp.Notifications.Abstractions` | Shared contracts: `NotificationData`, `NotificationDeliveryRequestedEto`, `[NotificationDataType]`, `INotificationDefinitionProvider`, `INotificationNotifier`. Notifiers and remote clients depend on **only** this. |
 | `Dignite.Abp.Notifications` | The core: definitions, the publish/distribute pipeline, the `INotificationStore` abstraction + `NullNotificationStore`. |
 | `Dignite.Abp.Notifications.SignalR` | Real-time push notifier (SignalR hub at `/signalr-hubs/notifications`). |
 | `Dignite.Abp.Notifications.Emailing` | Email notifier (ABP `IEmailSender`). |
@@ -509,13 +509,11 @@ Hosts upgrading an existing delivery ledger must also add the nullable
 implementations must replace the old broad `RequeueAsync` operation with preference-preserving `RetryAsync` and
 the separately audited `ForceDeliverAsync` operation.
 
-This wire change does **not** support a zero-downtime mixed-version rollout. The old aggregate
-`NotificationDeliveryEto` handler retains its old partial-progress semantics, while old consumers cannot understand
-`NotificationDeliveryRequestedEto`. Quiesce notification publication, drain old aggregate events, apply the consumer
-schema and code upgrade, then upgrade producers and resume publication. Legacy notifier *implementations* remain
-source-compatible through the new processor's singleton aggregate-event adapter; that adapter does not make an old
-producer event reliable. The ledger begins with newly consumed work events, so historical notifications require no
-backfill.
+This wire change does **not** support a zero-downtime mixed-version rollout. The legacy aggregate event and generic
+notifier adapter were removed before 10.0.0 stable. Quiesce notification publication, drain every queued
+`Dignite.Abp.Notifications.NotificationDelivery` aggregate event, upgrade custom notifiers and consumer code/schema,
+then upgrade producers and resume. A 10.0 consumer handles only the single-recipient
+`NotificationDeliveryRequestedEto`; historical notifications require no ledger backfill.
 
 Large explicit fan-outs are split into independently scheduled jobs. The publisher prepares the shared
 `Notification` record first, then each job commits or fails independently; no provider promises one transaction
@@ -822,13 +820,11 @@ recipient.
 
 ## Notifiers
 
-A reliable notifier implements `INotificationDeliveryNotifier` and relays one claimed
-`NotificationDeliveryRequestedEto` to a single channel. The contract returns `Succeeded` or an intentional
-`Suppressed(reasonCode)` result; throwing reports a retryable channel failure. The non-generic
-`INotificationNotifier` keeps stable channel metadata (`Name`) available for channel enumeration and routing.
-Existing `INotificationNotifier<NotificationDeliveryEto>` implementations remain source-compatible: the processor
-passes them a singleton-recipient legacy event and interprets normal completion as success. Migrate to the reliable
-contract to consume the stable idempotency key and report suppression explicitly.
+A notifier implements the single canonical `INotificationNotifier` contract and relays one claimed
+`NotificationDeliveryRequestedEto` to a single channel. `Name` is the stable routing key. `DeliverAsync` receives a
+`CancellationToken` and returns `Succeeded` or an intentional `Suppressed(reasonCode)` result; throwing reports a
+retryable channel failure. The Core-owned distributed-event handler is the transport adapter, so a channel plugin
+does not implement an event-handler interface.
 
 - **SignalR** — clients connect to the hub at `/signalr-hubs/notifications` (an ABP `AbpHub`, mapped
   **automatically**; the host must *not* call `MapHub`) and receive a trimmed `NotificationDelivery`
@@ -848,14 +844,17 @@ contract to consume the stable idempotency key and report suppression explicitly
   {
       public int Order => NotificationEmailProviderOrders.Default;
 
-      public async Task<EmailNotificationAddress?> GetEmailOrNullAsync(EmailNotificationAddressResolveContext context)
+      public async Task<EmailNotificationAddress?> GetEmailOrNullAsync(
+          EmailNotificationAddressResolveContext context,
+          CancellationToken cancellationToken = default)
       {
           if (context.Notification.NotificationName != "Demo.OrderShipped")
           {
               return null;  // not mine — fall through to the Identity fallback
           }
 
-          var contact = await _orders.FindContactAsync(context.Notification.EntityId!, context.UserId);
+          var contact = await _orders.FindContactAsync(
+              context.Notification.EntityId!, context.UserId, cancellationToken);
           return contact == null
               ? null   // no address — fall through
               : EmailNotificationAddress.To(contact.Email, contact.CultureName);
@@ -884,7 +883,9 @@ contract to consume the stable idempotency key and report suppression explicitly
       : NotificationEmailContentProvider<OrderShippedNotificationData>, ITransientDependency
   {
       protected override Task<NotificationEmail?> BuildOrNullAsync(
-          NotificationEmailBuildContext context, OrderShippedNotificationData data)
+          NotificationEmailBuildContext context,
+          OrderShippedNotificationData data,
+          CancellationToken cancellationToken)
       {
           return Task.FromResult<NotificationEmail?>(
               new NotificationEmail($"Order {data.OrderNumber} shipped", RenderBody(data), isBodyHtml: true));
@@ -901,20 +902,29 @@ contract to consume the stable idempotency key and report suppression explicitly
 
 ```csharp
 public class WebPushNotifier
-    : INotificationDeliveryNotifier, ITransientDependency
+    : INotificationNotifier, ITransientDependency
 {
     public const string ChannelName = "WebPush";
     public string Name => ChannelName;
 
-    public async Task<NotificationDeliveryResult> DeliverAsync(NotificationDeliveryRequestedEto workItem)
+    public async Task<NotificationDeliveryResult> DeliverAsync(
+        NotificationDeliveryRequestedEto request,
+        CancellationToken cancellationToken = default)
     {
-        var payload = NotificationDelivery.FromWorkItem(workItem);
-        // Forward workItem.IdempotencyKey if the provider supports idempotent requests.
-        await _webPush.SendAsync(workItem.UserId, payload, workItem.IdempotencyKey);
+        var payload = NotificationDelivery.FromWorkItem(request);
+        // Forward request.IdempotencyKey if the provider supports idempotent requests.
+        await _webPush.SendAsync(request.UserId, payload, request.IdempotencyKey, cancellationToken);
         return NotificationDeliveryResult.Succeeded();
     }
 }
 ```
+
+For a pre-stable custom notifier, replace
+`INotificationNotifier<NotificationDeliveryEto>.HandleEventAsync(NotificationDeliveryEto)` with the contract above.
+The old aggregate event exposed many recipients and no result/cancellation boundary; the replacement receives one
+recipient/channel request, observes cancellation, forwards its idempotency key, and reports suppression explicitly.
+Drain old aggregate events before deploying the upgraded consumer because 10.0 intentionally registers no legacy
+aggregate handler.
 
 Use `UseChannels(...)` only for external delivery channels. If a definition omits `UseChannels(...)`,
 it is NotificationCenter inbox-only: the notification is persisted for the recipient to read later,
