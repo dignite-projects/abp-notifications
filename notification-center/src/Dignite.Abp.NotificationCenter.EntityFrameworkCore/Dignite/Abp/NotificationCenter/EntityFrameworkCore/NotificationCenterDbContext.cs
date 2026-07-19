@@ -18,19 +18,10 @@ public class NotificationCenterDbContext :
 
     public DbSet<NotificationSubscription> NotificationSubscriptions { get; set; } = default!;
 
-    public DbSet<NotificationDeliveryRecord> NotificationDeliveries { get; set; } = default!;
-
     public DbSet<NotificationDeliveryPreference> NotificationDeliveryPreferences { get; set; } = default!;
 
-    public DbSet<NotificationQuietHours> NotificationQuietHours { get; set; } = default!;
-
-    public DbSet<NotificationRetentionCleanupCursor> NotificationRetentionCleanupCursors { get; set; } = default!;
-
-    public DbSet<NotificationAudienceBroadcastState> NotificationAudienceBroadcastStates { get; set; } = default!;
-
-    // Transactional inbox/outbox support makes notification/inbox persistence and publishing
-    // NotificationDeliveryRequestedEto atomic. The channel consumer persists its own delivery state before claiming it;
-    // external side effects remain at least once unless the provider honors the idempotency key.
+    // Transactional inbox/outbox support makes persisting the notification/inbox rows and publishing
+    // NotificationDeliveryRequestedEto atomic. Channel delivery itself is best-effort and keeps no per-recipient state.
     public DbSet<IncomingEventRecord> IncomingEvents { get; set; } = default!;
 
     public DbSet<OutgoingEventRecord> OutgoingEvents { get; set; } = default!;

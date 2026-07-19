@@ -2,41 +2,32 @@ using System;
 
 namespace Dignite.Abp.Notifications;
 
-/// <summary>The final producer-side delivery intent for one preference candidate.</summary>
+/// <summary>The producer-side delivery decision for one preference candidate: deliver, or suppress with a reason.</summary>
 public sealed class NotificationDeliveryPreferenceDecision
 {
     public Guid UserId { get; }
 
     public string Channel { get; }
 
-    public NotificationDeliveryIntent Intent { get; }
+    public bool ShouldDeliver { get; }
 
-    public DateTime? NotBefore { get; }
-
-    public string? ReasonCode { get; }
+    public string? SuppressionReasonCode { get; }
 
     private NotificationDeliveryPreferenceDecision(
         Guid userId,
         string channel,
-        NotificationDeliveryIntent intent,
-        DateTime? notBefore,
-        string? reasonCode)
+        bool shouldDeliver,
+        string? suppressionReasonCode)
     {
         UserId = userId;
         Channel = NotificationDeliveryIdentity.NormalizeChannel(channel);
-        Intent = intent;
-        NotBefore = notBefore;
-        ReasonCode = reasonCode;
+        ShouldDeliver = shouldDeliver;
+        SuppressionReasonCode = suppressionReasonCode;
     }
 
     public static NotificationDeliveryPreferenceDecision Deliver(Guid userId, string channel)
     {
-        return new NotificationDeliveryPreferenceDecision(
-            userId,
-            channel,
-            NotificationDeliveryIntent.Deliver,
-            null,
-            null);
+        return new NotificationDeliveryPreferenceDecision(userId, channel, true, null);
     }
 
     public static NotificationDeliveryPreferenceDecision Suppress(Guid userId, string channel, string reasonCode)
@@ -46,30 +37,6 @@ public sealed class NotificationDeliveryPreferenceDecision
             throw new ArgumentException("A suppression reason code is required.", nameof(reasonCode));
         }
 
-        return new NotificationDeliveryPreferenceDecision(
-            userId,
-            channel,
-            NotificationDeliveryIntent.Suppress,
-            null,
-            reasonCode.Trim());
-    }
-
-    public static NotificationDeliveryPreferenceDecision Delay(
-        Guid userId,
-        string channel,
-        DateTime notBefore,
-        string reasonCode)
-    {
-        if (string.IsNullOrWhiteSpace(reasonCode))
-        {
-            throw new ArgumentException("A delay reason code is required.", nameof(reasonCode));
-        }
-
-        return new NotificationDeliveryPreferenceDecision(
-            userId,
-            channel,
-            NotificationDeliveryIntent.Delay,
-            notBefore,
-            reasonCode.Trim());
+        return new NotificationDeliveryPreferenceDecision(userId, channel, false, reasonCode.Trim());
     }
 }

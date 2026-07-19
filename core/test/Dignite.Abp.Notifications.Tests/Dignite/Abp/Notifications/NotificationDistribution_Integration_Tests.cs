@@ -34,7 +34,6 @@ public class NotificationDistribution_Integration_Tests : DigniteAbpNotification
     [Fact]
     public async Task Publishing_to_explicit_users_emits_a_delivery_eto_through_the_bus()
     {
-        GetRequiredService<INotificationDeliveryStore>().ShouldNotBeNull();
         GetRequiredService<IEnumerable<IDistributedEventHandler<NotificationDeliveryRequestedEto>>>()
             .ShouldContain(handler => handler is NotificationDeliveryRequestedHandler);
 
@@ -53,7 +52,6 @@ public class NotificationDistribution_Integration_Tests : DigniteAbpNotification
             item.NotificationName.ShouldBe(TestNotificationDefinitionProvider.Plain);
             item.Channel.ShouldBe("SignalR");
             item.Data.ShouldBeOfType<MessageNotificationData>().Message.ShouldBe("hi");
-            item.IdempotencyKey.ShouldStartWith(NotificationDeliveryIdentity.IdempotencyKeyPrefix);
         }
     }
 

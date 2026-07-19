@@ -253,33 +253,6 @@ public class NotificationRegistration_Tests
     }
 
     [Fact]
-    public async Task Missing_upcast_step_fails_host_start_with_the_exact_gap()
-    {
-        var exception = await Should.ThrowAsync<Exception>(
-            () => StartHostAsync<MissingUpcastStepStartupModule>());
-
-        exception.ToString().ShouldContain("Test.EvolvingOrder");
-        exception.ToString().ShouldContain("v2→v3");
-    }
-
-    [Fact]
-    public async Task Duplicate_upcast_registration_fails_host_start_clearly()
-    {
-        var exception = await Should.ThrowAsync<Exception>(
-            () => StartHostAsync<DuplicateUpcastStepStartupModule>());
-
-        exception.ToString().ShouldContain("Duplicate notification data upcaster");
-        exception.ToString().ShouldContain("Test.EvolvingOrder");
-        exception.ToString().ShouldContain("v1");
-    }
-
-    [Fact]
-    public async Task Complete_upcast_chain_allows_reverse_registration_order_at_host_start()
-    {
-        await StartHostAsync<CompleteUpcastChainStartupModule>();
-    }
-
-    [Fact]
     public async Task Invalid_distribution_batch_configuration_fails_host_start()
     {
         var exception = await Should.ThrowAsync<Exception>(
@@ -291,26 +264,6 @@ public class NotificationRegistration_Tests
     }
 
     [Fact]
-    public async Task Invalid_delivery_configuration_fails_host_start_with_its_option_group()
-    {
-        var exception = await Should.ThrowAsync<Exception>(
-            () => StartHostAsync<InvalidDeliveryOptionsStartupModule>());
-
-        exception.ToString().ShouldContain(nameof(NotificationDeliveryOptions));
-        exception.ToString().ShouldContain(nameof(NotificationDeliveryOptions.DeliveryLeaseDuration));
-    }
-
-    [Fact]
-    public async Task Invalid_audience_configuration_fails_host_start_with_its_option_group()
-    {
-        var exception = await Should.ThrowAsync<Exception>(
-            () => StartHostAsync<InvalidAudienceOptionsStartupModule>());
-
-        exception.ToString().ShouldContain(nameof(NotificationAudienceBroadcastOptions));
-        exception.ToString().ShouldContain(nameof(NotificationAudienceBroadcastOptions.RecipientBatchSize));
-    }
-
-    [Fact]
     public void Split_option_groups_preserve_existing_defaults()
     {
         var distribution = new NotificationDistributionOptions();
@@ -319,24 +272,8 @@ public class NotificationRegistration_Tests
         distribution.UserNotificationWriteBatchSize.ShouldBe(256);
         distribution.DeliveryWorkItemBatchSize.ShouldBe(100);
 
-        var delivery = new NotificationDeliveryOptions();
-        delivery.DeliveryLeaseDuration.ShouldBe(TimeSpan.FromMinutes(2));
-        delivery.MaxDeliveryAttempts.ShouldBe(5);
-        delivery.InitialDeliveryRetryDelay.ShouldBe(TimeSpan.FromSeconds(10));
-        delivery.MaxDeliveryRetryDelay.ShouldBe(TimeSpan.FromMinutes(15));
-        delivery.DeliveryRetryBackoffFactor.ShouldBe(2d);
-        delivery.DeliveryRetryJitterFactor.ShouldBe(0.2d);
-        delivery.DeliveryRetryWorkerPeriod.ShouldBe(TimeSpan.FromSeconds(30));
-        delivery.DeliveryRetryBatchSize.ShouldBe(100);
-        delivery.IsDeliveryRetryWorkerEnabled.ShouldBeTrue();
-        delivery.DeliveryRetryWorkerLockName.ShouldBe(NotificationDeliveryOptions.DefaultDeliveryRetryWorkerLockName);
-        delivery.DeliveryRetryWorkerLockTimeout.ShouldBe(TimeSpan.Zero);
-
-        new NotificationAudienceBroadcastOptions().RecipientBatchSize.ShouldBe(256);
         new NotificationDefinitionOptions().DefinitionProviders.ShouldBeEmpty();
         NotificationDistributionOptions.MaxBatchSize.ShouldBe(10_000);
-        NotificationDeliveryOptions.MaxBatchSize.ShouldBe(10_000);
-        NotificationAudienceBroadcastOptions.MaxBatchSize.ShouldBe(10_000);
     }
 
     [Fact]
@@ -362,7 +299,6 @@ public class NotificationRegistration_Tests
         var unsupported = data.ShouldBeOfType<UnsupportedNotificationData>();
         unsupported.Reason.ShouldBe(UnsupportedNotificationDataReason.UnknownDiscriminator);
         unsupported.OriginalDiscriminator.ShouldBe("Other.Product.Payload");
-        unsupported.OriginalSchemaVersion.ShouldBe(7);
 
         await host.StopAsync();
     }
@@ -647,47 +583,6 @@ public class StringThenGenericPayloadContractStartupModule : AbpModule
 }
 
 [DependsOn(typeof(AbpNotificationsModule))]
-public class MissingUpcastStepStartupModule : AbpModule
-{
-    public override void ConfigureServices(ServiceConfigurationContext context)
-    {
-        Configure<NotificationDataOptions>(options =>
-        {
-            options.Add<EvolvingOrderNotificationData>();
-            options.AddUpcaster<EvolvingOrderNotificationData>(1, payload => payload);
-        });
-    }
-}
-
-[DependsOn(typeof(AbpNotificationsModule))]
-public class DuplicateUpcastStepStartupModule : AbpModule
-{
-    public override void ConfigureServices(ServiceConfigurationContext context)
-    {
-        Configure<NotificationDataOptions>(options =>
-        {
-            options.Add<EvolvingOrderNotificationData>();
-            options.AddUpcaster<EvolvingOrderNotificationData>(1, payload => payload);
-            options.AddUpcaster<EvolvingOrderNotificationData>(1, payload => payload);
-        });
-    }
-}
-
-[DependsOn(typeof(AbpNotificationsModule))]
-public class CompleteUpcastChainStartupModule : AbpModule
-{
-    public override void ConfigureServices(ServiceConfigurationContext context)
-    {
-        Configure<NotificationDataOptions>(options =>
-        {
-            options.Add<EvolvingOrderNotificationData>();
-            options.AddUpcaster<EvolvingOrderNotificationData>(2, payload => payload);
-            options.AddUpcaster<EvolvingOrderNotificationData>(1, payload => payload);
-        });
-    }
-}
-
-[DependsOn(typeof(AbpNotificationsModule))]
 public class InvalidDistributionBatchStartupModule : AbpModule
 {
     public override void ConfigureServices(ServiceConfigurationContext context)
@@ -710,24 +605,6 @@ public class ProviderDependencyStartupModule : AbpModule
         context.Services.AddTransient<ProviderDependencyDefinitionProvider>();
         Configure<NotificationDefinitionOptions>(options =>
             options.DefinitionProviders.Add(typeof(ProviderDependencyDefinitionProvider)));
-    }
-}
-
-[DependsOn(typeof(AbpNotificationsModule))]
-public class InvalidDeliveryOptionsStartupModule : AbpModule
-{
-    public override void ConfigureServices(ServiceConfigurationContext context)
-    {
-        Configure<NotificationDeliveryOptions>(options => options.DeliveryLeaseDuration = TimeSpan.Zero);
-    }
-}
-
-[DependsOn(typeof(AbpNotificationsModule))]
-public class InvalidAudienceOptionsStartupModule : AbpModule
-{
-    public override void ConfigureServices(ServiceConfigurationContext context)
-    {
-        Configure<NotificationAudienceBroadcastOptions>(options => options.RecipientBatchSize = 0);
     }
 }
 

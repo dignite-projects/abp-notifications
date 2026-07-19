@@ -40,21 +40,13 @@ public class AbpNotificationsModule : AbpModule
     {
         AddValidatedOptions<NotificationDefinitionOptions>(context.Services, options => options.Validate());
         AddValidatedOptions<NotificationDistributionOptions>(context.Services, options => options.Validate());
-        AddValidatedOptions<NotificationDeliveryOptions>(context.Services, options => options.Validate());
-        AddValidatedOptions<NotificationAudienceBroadcastOptions>(context.Services, options => options.Validate());
 
         context.Services.AddHostedService<NotificationDefinitionStartupService>();
-        context.Services.TryAddSingleton<NotificationDeliveryRetryWorker>();
 
         Configure<AbpDistributedEventBusOptions>(options =>
         {
             options.Handlers.Add<NotificationDeliveryRequestedHandler>();
         });
-    }
-
-    public override async Task OnApplicationInitializationAsync(ApplicationInitializationContext context)
-    {
-        await context.AddBackgroundWorkerAsync<NotificationDeliveryRetryWorker>();
     }
 
     private static void AutoAddDefinitionProviders(IServiceCollection services)

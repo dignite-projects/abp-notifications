@@ -45,18 +45,17 @@ public abstract class NotificationPeriodicWorker_Tests<TStartupModule> :
     {
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        async Task<NotificationRetentionCleanupResult> WaitForReleaseAsync(CancellationToken cancellationToken)
+        async Task WaitForReleaseAsync(CancellationToken cancellationToken)
         {
             entered.TrySetResult();
             await release.Task.WaitAsync(cancellationToken);
-            return new NotificationRetentionCleanupResult();
         }
 
         var cleanupCount = 0;
-        async Task<NotificationRetentionCleanupResult> CleanupAsync(CancellationToken cancellationToken)
+        async Task CleanupAsync(CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref cleanupCount);
-            return await WaitForReleaseAsync(cancellationToken);
+            await WaitForReleaseAsync(cancellationToken);
         }
         var distributedLock = new TestDistributedLock();
         using var fixture = CreateFixture(
@@ -86,7 +85,7 @@ public abstract class NotificationPeriodicWorker_Tests<TStartupModule> :
             _ =>
             {
                 Interlocked.Increment(ref cleanupCount);
-                return Task.FromResult(new NotificationRetentionCleanupResult());
+                return Task.CompletedTask;
             });
 
         await fixture.Worker.ExecuteCycleAsync(fixture.ServiceProvider);
@@ -106,7 +105,7 @@ public abstract class NotificationPeriodicWorker_Tests<TStartupModule> :
             _ =>
             {
                 Interlocked.Increment(ref cleanupCount);
-                return Task.FromResult(new NotificationRetentionCleanupResult());
+                return Task.CompletedTask;
             });
 
         await fixture.Worker.ExecuteCycleAsync(fixture.ServiceProvider);
@@ -119,21 +118,19 @@ public abstract class NotificationPeriodicWorker_Tests<TStartupModule> :
     public async Task Shutdown_cancellation_is_forwarded_to_retention_cleanup()
     {
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        async Task<NotificationRetentionCleanupResult> WaitForCancellationAsync(
-            CancellationToken cancellationToken)
+        async Task WaitForCancellationAsync(CancellationToken cancellationToken)
         {
             entered.TrySetResult();
             await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
-            return new NotificationRetentionCleanupResult();
         }
 
         var cleanupCount = 0;
         var receivedToken = default(CancellationToken);
-        async Task<NotificationRetentionCleanupResult> CleanupAsync(CancellationToken cancellationToken)
+        async Task CleanupAsync(CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref cleanupCount);
             receivedToken = cancellationToken;
-            return await WaitForCancellationAsync(cancellationToken);
+            await WaitForCancellationAsync(cancellationToken);
         }
         var distributedLock = new TestDistributedLock();
         using var fixture = CreateFixture(
@@ -159,12 +156,11 @@ public abstract class NotificationPeriodicWorker_Tests<TStartupModule> :
     public async Task Failed_retention_cycle_releases_the_lock_and_next_cycle_continues()
     {
         var attempt = 0;
-        Task<NotificationRetentionCleanupResult> CleanupAsync(CancellationToken _)
+        Task CleanupAsync(CancellationToken _)
         {
             return Interlocked.Increment(ref attempt) == 1
-                ? Task.FromException<NotificationRetentionCleanupResult>(
-                    new InvalidOperationException("cleanup failed"))
-                : Task.FromResult(new NotificationRetentionCleanupResult());
+                ? Task.FromException(new InvalidOperationException("cleanup failed"))
+                : Task.CompletedTask;
         }
         var distributedLock = new TestDistributedLock();
         using var fixture = CreateFixture(
@@ -184,7 +180,7 @@ public abstract class NotificationPeriodicWorker_Tests<TStartupModule> :
     private static WorkerFixture CreateFixture(
         NotificationRetentionOptions options,
         IAbpDistributedLock distributedLock,
-        Func<CancellationToken, Task<NotificationRetentionCleanupResult>> cleanupAsync)
+        Func<CancellationToken, Task> cleanupAsync)
     {
         var services = new ServiceCollection();
         services.AddSingleton(distributedLock);
@@ -202,7 +198,7 @@ public abstract class NotificationPeriodicWorker_Tests<TStartupModule> :
 
     private sealed class TestNotificationRetentionCleanupWorker : NotificationRetentionCleanupWorker
     {
-        private readonly Func<CancellationToken, Task<NotificationRetentionCleanupResult>> _cleanupAsync;
+        private readonly Func<CancellationToken, Task> _cleanupAsync;
 
         public TestNotificationRetentionCleanupWorker(
             AbpAsyncTimer timer,
@@ -211,13 +207,13 @@ public abstract class NotificationPeriodicWorker_Tests<TStartupModule> :
             IAbpLazyServiceProvider lazyServiceProvider,
             IOptions<NotificationRetentionOptions> options,
             Microsoft.Extensions.Logging.ILogger<NotificationRetentionCleanupWorker> logger,
-            Func<CancellationToken, Task<NotificationRetentionCleanupResult>> cleanupAsync)
+            Func<CancellationToken, Task> cleanupAsync)
             : base(timer, serviceScopeFactory, serviceProvider, lazyServiceProvider, options, logger)
         {
             _cleanupAsync = cleanupAsync;
         }
 
-        protected override Task<NotificationRetentionCleanupResult> CleanupAsync(
+        protected override Task CleanupAsync(
             IServiceProvider serviceProvider,
             CancellationToken cancellationToken)
         {

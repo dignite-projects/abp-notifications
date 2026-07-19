@@ -82,7 +82,6 @@ public abstract class NotificationStore_Tests<TStartupModule> : NotificationCent
 
             entity.Data.ShouldNotBeNull();
             entity.Data!.ShouldContain("\"type\":\"Test.OrderShipped\"");
-            entity.Data.ShouldContain("\"schemaVersion\":1");
             entity.Data.ShouldNotContain("Version=");
             entity.Data.ShouldNotContain("OrderShippedNotificationData");
         });
@@ -176,7 +175,6 @@ public abstract class NotificationStore_Tests<TStartupModule> : NotificationCent
         var userId = Guid.NewGuid();
         var legacyId = Guid.NewGuid();
         var unknownId = Guid.NewGuid();
-        var futureId = Guid.NewGuid();
         var malformedId = Guid.NewGuid();
         var throwingSetterId = Guid.NewGuid();
         await InsertRawAsync(
@@ -189,11 +187,6 @@ public abstract class NotificationStore_Tests<TStartupModule> : NotificationCent
             userId,
             HistoricalPayloadFixtures.Read("unknown-payload-v1.json"),
             DateTime.UtcNow.AddMinutes(-3));
-        await InsertRawAsync(
-            futureId,
-            userId,
-            HistoricalPayloadFixtures.Read("future-order-shipped-v99.json"),
-            DateTime.UtcNow.AddMinutes(-2));
         await InsertRawAsync(
             malformedId,
             userId,
@@ -209,20 +202,16 @@ public abstract class NotificationStore_Tests<TStartupModule> : NotificationCent
         {
             var rows = await GetRequiredService<INotificationStore>().GetUserNotificationsAsync(userId);
 
-            rows.Count.ShouldBe(5);
+            rows.Count.ShouldBe(4);
             var legacy = rows.Single(row => row.Notification.Id == legacyId)
                 .Notification.Data.ShouldBeOfType<OrderShippedNotificationData>();
             legacy.OrderNumber.ShouldBe("SO-LEGACY");
-            legacy.SchemaVersion.ShouldBe(NotificationDataSchema.LegacyVersion);
 
             var unknown = rows.Single(row => row.Notification.Id == unknownId)
                 .Notification.Data.ShouldBeOfType<UnsupportedNotificationData>();
             unknown.Reason.ShouldBe(UnsupportedNotificationDataReason.UnknownDiscriminator);
             unknown.OriginalDiscriminator.ShouldBe("Removed.Module.Payload");
 
-            rows.Single(row => row.Notification.Id == futureId)
-                .Notification.Data.ShouldBeOfType<UnsupportedNotificationData>()
-                .Reason.ShouldBe(UnsupportedNotificationDataReason.UnsupportedFutureVersion);
             var malformed = rows.Single(row => row.Notification.Id == malformedId)
                 .Notification.Data.ShouldBeOfType<UnsupportedNotificationData>();
             malformed.Reason.ShouldBe(UnsupportedNotificationDataReason.MalformedPayload);

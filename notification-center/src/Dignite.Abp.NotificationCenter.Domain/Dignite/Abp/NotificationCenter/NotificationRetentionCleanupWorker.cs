@@ -55,42 +55,22 @@ internal class NotificationRetentionCleanupWorker : AsyncPeriodicBackgroundWorke
                 cancellationToken);
             if (handle == null)
             {
-                NotificationRetentionMetrics.RecordWorkerCycle("lock_miss");
                 _logger.LogDebug(
                     "Skipped the notification retention cleanup scan because lock {LockName} is held by another worker.",
                     _options.Value.CleanupWorkerLockName);
                 return;
             }
 
-            var result = await CleanupAsync(serviceProvider, cancellationToken);
-
-            NotificationRetentionMetrics.RecordWorkerCycle("completed");
-            if (result.ScannedCount > 0 || result.ErrorCount > 0)
-            {
-                _logger.LogInformation(
-                    "Notification retention cleanup scanned {ScannedCount}, deleted {DeletedCount}, skipped {SkippedCount}, errors {ErrorCount}.",
-                    result.ScannedCount,
-                    result.DeletedCount,
-                    result.SkippedCount,
-                    result.ErrorCount);
-            }
+            await CleanupAsync(serviceProvider, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             _logger.LogDebug("The notification retention cleanup scan was canceled during shutdown.");
         }
-        catch
-        {
-            NotificationRetentionMetrics.RecordWorkerCycle("failed");
-            throw;
-        }
     }
 
-    protected virtual Task<NotificationRetentionCleanupResult> CleanupAsync(
-        IServiceProvider serviceProvider,
-        CancellationToken cancellationToken)
+    protected virtual Task CleanupAsync(IServiceProvider serviceProvider, CancellationToken cancellationToken)
     {
-        return serviceProvider.GetRequiredService<NotificationRetentionManager>()
-            .CleanupAsync(cancellationToken: cancellationToken);
+        return serviceProvider.GetRequiredService<NotificationRetentionManager>().CleanupAsync(cancellationToken);
     }
 }

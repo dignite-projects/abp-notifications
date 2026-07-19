@@ -10,18 +10,14 @@ public class NotificationDataReadException : JsonException
 
     public string? Discriminator { get; }
 
-    public int? SchemaVersion { get; }
-
     public NotificationDataReadException(
         UnsupportedNotificationDataReason reason,
         string message,
         string? discriminator = null,
-        int? schemaVersion = null,
         Exception? innerException = null)
         : base(message, innerException)
     {
         Reason = reason;
         Discriminator = discriminator;
-        SchemaVersion = schemaVersion;
     }
 }

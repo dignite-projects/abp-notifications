@@ -14,9 +14,6 @@ namespace Dignite.Abp.Notifications;
 /// </summary>
 public class NotificationDataOptions
 {
-    private readonly Dictionary<string, SortedDictionary<int, NotificationDataUpcaster>> _upcasters =
-        new(StringComparer.Ordinal);
-
     /// <summary>
     /// Gets the registered discriminator-to-type mappings. Keys use ordinal, case-sensitive comparison.
     /// Use <see cref="Add(string, Type)"/> to preserve conflict validation.
@@ -49,104 +46,6 @@ public class NotificationDataOptions
     {
         DataTypes.Add(discriminator, dataType);
         return this;
-    }
-
-    /// <summary>
-    /// Registers one deterministic N→N+1 step for the discriminator declared by <typeparamref name="TData"/>.
-    /// Every step from legacy v1 to the type's current declared version must exist at startup.
-    /// </summary>
-    public NotificationDataOptions AddUpcaster<TData>(
-        int fromVersion,
-        NotificationDataUpcaster upcaster)
-        where TData : NotificationData
-    {
-        var dataType = typeof(TData);
-        var discriminator = NotificationDataTypeAttribute.GetNameOrNull(dataType)
-            ?? throw new ArgumentException(
-                $"'{dataType.FullName}' must be annotated with [NotificationDataType(\"...\")] " +
-                "before an upcaster can be registered.",
-                nameof(TData));
-
-        return AddUpcaster(discriminator, fromVersion, upcaster);
-    }
-
-    /// <summary>Registers one deterministic N→N+1 step for a stable discriminator.</summary>
-    public NotificationDataOptions AddUpcaster(
-        string discriminator,
-        int fromVersion,
-        NotificationDataUpcaster upcaster)
-    {
-        Check.NotNullOrWhiteSpace(discriminator, nameof(discriminator));
-        Check.NotNull(upcaster, nameof(upcaster));
-        if (fromVersion < NotificationDataSchema.LegacyVersion)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(fromVersion),
-                fromVersion,
-                $"Upcast source versions start at {NotificationDataSchema.LegacyVersion}.");
-        }
-
-        if (!_upcasters.TryGetValue(discriminator, out var byVersion))
-        {
-            byVersion = new SortedDictionary<int, NotificationDataUpcaster>();
-            _upcasters.Add(discriminator, byVersion);
-        }
-
-        if (byVersion.ContainsKey(fromVersion))
-        {
-            throw new InvalidOperationException(
-                $"Duplicate notification data upcaster registration for discriminator '{discriminator}' " +
-                $"from schema v{fromVersion} to v{fromVersion + 1}.");
-        }
-
-        byVersion.Add(fromVersion, upcaster);
-        return this;
-    }
-
-    internal IReadOnlyDictionary<string, SortedDictionary<int, NotificationDataUpcaster>> Upcasters => _upcasters;
-
-    internal void ValidateEvolution()
-    {
-        foreach (var upcasterGroup in _upcasters.OrderBy(pair => pair.Key, StringComparer.Ordinal))
-        {
-            if (!DataTypes.TryGetValue(upcasterGroup.Key, out var dataType))
-            {
-                throw new InvalidOperationException(
-                    $"Notification data upcasters are registered for discriminator '{upcasterGroup.Key}', " +
-                    "but no payload type is registered for that discriminator.");
-            }
-
-            var currentVersion = NotificationDataTypeAttribute.GetSchemaVersionOrDefault(dataType);
-            foreach (var fromVersion in upcasterGroup.Value.Keys)
-            {
-                if (fromVersion >= currentVersion)
-                {
-                    throw new InvalidOperationException(
-                        $"Notification data upcaster '{upcasterGroup.Key}' v{fromVersion}→v{fromVersion + 1} " +
-                        $"does not lead toward the registered current schema v{currentVersion}.");
-                }
-            }
-        }
-
-        foreach (var registration in DataTypes.OrderBy(pair => pair.Key, StringComparer.Ordinal))
-        {
-            var currentVersion = NotificationDataTypeAttribute.GetSchemaVersionOrDefault(registration.Value);
-            if (currentVersion == NotificationDataSchema.LegacyVersion)
-            {
-                continue;
-            }
-
-            _upcasters.TryGetValue(registration.Key, out var byVersion);
-            for (var version = NotificationDataSchema.LegacyVersion; version < currentVersion; version++)
-            {
-                if (byVersion == null || !byVersion.ContainsKey(version))
-                {
-                    throw new InvalidOperationException(
-                        $"Notification data discriminator '{registration.Key}' declares current schema " +
-                        $"v{currentVersion}, but its deterministic upcast chain is missing v{version}→v{version + 1}.");
-                }
-            }
-        }
     }
 
     private sealed class NotificationDataTypeDictionary : IDictionary<string, Type>

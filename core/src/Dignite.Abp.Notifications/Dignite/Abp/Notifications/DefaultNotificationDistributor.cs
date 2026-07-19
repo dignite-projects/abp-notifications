@@ -557,7 +557,8 @@ public class DefaultNotificationDistributor :
     }
 
     /// <summary>
-    /// Converts an already-bounded recipient batch into independently claimable recipient/channel work items.
+    /// Applies user delivery preferences to an already-bounded recipient batch and publishes one best-effort
+    /// delivery event per recipient/channel that is not suppressed.
     /// </summary>
     protected virtual async Task PublishNotificationDeliveryBatchAsync(
         NotificationInfo notification,
@@ -597,9 +598,9 @@ public class DefaultNotificationDistributor :
                 "The delivery preference evaluator must return exactly one decision for every recipient/channel candidate.");
         }
 
-        var workItems = new List<NotificationDeliveryRequestedEto>(candidates.Count);
         foreach (var candidate in candidates)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (!decisionMap.TryGetValue((
                     candidate.UserId,
                     NotificationDeliveryIdentity.NormalizeChannel(candidate.Channel)), out var decision))
@@ -609,19 +610,16 @@ public class DefaultNotificationDistributor :
                     $"and channel '{candidate.Channel}'.");
             }
 
-            var workItem = CreateDeliveryWorkItem(notification, candidate.UserId, candidate.Channel);
-            workItem.Intent = decision.Intent;
-            workItem.DeliveryNotBefore = decision.NotBefore;
-            workItem.PreferenceReasonCode = decision.ReasonCode;
-            workItem.ValidateIntent();
-            workItems.Add(workItem);
+            // A user opt-out simply means no channel event is published; the inbox row is already persisted.
+            if (!decision.ShouldDeliver)
+            {
+                continue;
+            }
+
+            await DistributedEventBus.PublishAsync(
+                CreateDeliveryWorkItem(notification, candidate.UserId, candidate.Channel));
         }
 
-        foreach (var workItem in workItems)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            await DistributedEventBus.PublishAsync(workItem);
-        }
         cancellationToken.ThrowIfCancellationRequested();
     }
 
@@ -632,16 +630,6 @@ public class DefaultNotificationDistributor :
     {
         return new NotificationDeliveryRequestedEto
         {
-            DeliveryId = NotificationDeliveryIdentity.CreateId(
-                notification.TenantId,
-                notification.Id,
-                userId,
-                channel),
-            IdempotencyKey = NotificationDeliveryIdentity.CreateIdempotencyKey(
-                notification.TenantId,
-                notification.Id,
-                userId,
-                channel),
             NotificationId = notification.Id,
             NotificationName = notification.NotificationName,
             Data = notification.Data,
