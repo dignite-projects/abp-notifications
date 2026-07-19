@@ -170,7 +170,7 @@ public class NullNotificationDeliveryStore :
         }
     }
 
-    public Task<bool> RequeueAsync(
+    public Task<bool> RetryAsync(
         Guid deliveryId,
         Guid? tenantId,
         DateTime now,
@@ -182,26 +182,66 @@ public class NullNotificationDeliveryStore :
             if (!_deliveries.TryGetValue(deliveryId, out var delivery)
                 || delivery.WorkItem.TenantId != tenantId
                 || delivery.State != NotificationDeliveryState.Failed
-                && delivery.State != NotificationDeliveryState.Suppressed
                 && delivery.State != NotificationDeliveryState.DeadLetter)
             {
                 return Task.FromResult(false);
             }
 
-            delivery.State = NotificationDeliveryState.Pending;
-            delivery.AttemptCount = 0;
-            delivery.NextAttemptTime = now;
-            delivery.LeaseId = null;
-            delivery.LeaseExpirationTime = null;
-            delivery.DiagnosticCode = null;
-            delivery.Diagnostic = null;
-            // Mirror NotificationDeliveryRecord.Requeue: a manual requeue discards the producer's original
-            // suppress/delay intent so the retried attempt is delivered rather than re-suppressed or re-delayed.
+            ResetForRetry(delivery, now);
+            return Task.FromResult(true);
+        }
+    }
+
+    public Task<bool> ForceDeliverAsync(
+        Guid deliveryId,
+        Guid? tenantId,
+        Guid actorId,
+        DateTime now,
+        string reasonCode,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (actorId == Guid.Empty)
+        {
+            throw new ArgumentException("The force-delivery actor id cannot be empty.", nameof(actorId));
+        }
+
+        if (string.IsNullOrWhiteSpace(reasonCode)
+            || reasonCode.Length > NotificationDeliveryOverrideReasonCodes.MaxLength)
+        {
+            throw new ArgumentException("The force-delivery reason code is invalid.", nameof(reasonCode));
+        }
+
+        lock (_sync)
+        {
+            if (!_deliveries.TryGetValue(deliveryId, out var delivery)
+                || delivery.WorkItem.TenantId != tenantId
+                || delivery.State != NotificationDeliveryState.Suppressed)
+            {
+                return Task.FromResult(false);
+            }
+
+            delivery.LastForceDeliveryActorId = actorId;
+            delivery.LastForceDeliveryTime = now;
+            delivery.LastForceDeliveryPreviousState = delivery.State;
+            delivery.LastForceDeliveryReasonCode = reasonCode;
+            ResetForRetry(delivery, now);
             delivery.WorkItem.Intent = NotificationDeliveryIntent.Deliver;
             delivery.WorkItem.DeliveryNotBefore = null;
             delivery.WorkItem.PreferenceReasonCode = null;
             return Task.FromResult(true);
         }
+    }
+
+    private static void ResetForRetry(VolatileDelivery delivery, DateTime now)
+    {
+        delivery.State = NotificationDeliveryState.Pending;
+        delivery.AttemptCount = 0;
+        delivery.NextAttemptTime = now;
+        delivery.LeaseId = null;
+        delivery.LeaseExpirationTime = null;
+        delivery.DiagnosticCode = null;
+        delivery.Diagnostic = null;
     }
 
     private Task<bool> CompleteAsync(
@@ -337,6 +377,10 @@ public class NullNotificationDeliveryStore :
         public DateTime? LeaseExpirationTime { get; set; }
         public string? DiagnosticCode { get; set; }
         public string? Diagnostic { get; set; }
+        public Guid? LastForceDeliveryActorId { get; set; }
+        public DateTime? LastForceDeliveryTime { get; set; }
+        public NotificationDeliveryState? LastForceDeliveryPreviousState { get; set; }
+        public string? LastForceDeliveryReasonCode { get; set; }
 
         public VolatileDelivery(NotificationDeliveryWorkEto workItem)
         {

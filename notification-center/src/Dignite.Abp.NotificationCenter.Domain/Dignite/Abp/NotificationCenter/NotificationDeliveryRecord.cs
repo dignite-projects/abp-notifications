@@ -64,6 +64,18 @@ public class NotificationDeliveryRecord : BasicAggregateRoot<Guid>, IMultiTenant
 
     public virtual string? LastFailureMessage { get; protected set; }
 
+    /// <summary>The actor responsible for the most recent explicit force-delivery override.</summary>
+    public virtual Guid? LastForceDeliveryActorId { get; protected set; }
+
+    /// <summary>The time of the most recent explicit force-delivery override.</summary>
+    public virtual DateTime? LastForceDeliveryTime { get; protected set; }
+
+    /// <summary>The state immediately before the most recent explicit force-delivery override.</summary>
+    public virtual NotificationDeliveryState? LastForceDeliveryPreviousState { get; protected set; }
+
+    /// <summary>A stable, non-sensitive reason code for the most recent force-delivery override.</summary>
+    public virtual string? LastForceDeliveryReasonCode { get; protected set; }
+
     public virtual DateTime CreationTime { get; protected set; }
 
     protected NotificationDeliveryRecord()
@@ -201,15 +213,49 @@ public class NotificationDeliveryRecord : BasicAggregateRoot<Guid>, IMultiTenant
         return true;
     }
 
-    public virtual bool Requeue(DateTime now)
+    public virtual bool Retry(DateTime now)
     {
         if (State != NotificationDeliveryState.Failed
-            && State != NotificationDeliveryState.Suppressed
             && State != NotificationDeliveryState.DeadLetter)
         {
             return false;
         }
 
+        ResetForRetry(now);
+        return true;
+    }
+
+    public virtual bool ForceDeliver(Guid actorId, DateTime now, string reasonCode)
+    {
+        if (actorId == Guid.Empty)
+        {
+            throw new ArgumentException("The force-delivery actor id cannot be empty.", nameof(actorId));
+        }
+
+        if (string.IsNullOrWhiteSpace(reasonCode)
+            || reasonCode.Length > NotificationDeliveryOverrideReasonCodes.MaxLength)
+        {
+            throw new ArgumentException("The force-delivery reason code is invalid.", nameof(reasonCode));
+        }
+
+        if (State != NotificationDeliveryState.Suppressed)
+        {
+            return false;
+        }
+
+        LastForceDeliveryActorId = actorId;
+        LastForceDeliveryTime = now;
+        LastForceDeliveryPreviousState = State;
+        LastForceDeliveryReasonCode = reasonCode;
+        ResetForRetry(now);
+        Intent = NotificationDeliveryIntent.Deliver;
+        DeliveryNotBefore = null;
+        PreferenceReasonCode = null;
+        return true;
+    }
+
+    private void ResetForRetry(DateTime now)
+    {
         State = NotificationDeliveryState.Pending;
         AttemptCount = 0;
         NextAttemptTime = now;
@@ -219,13 +265,6 @@ public class NotificationDeliveryRecord : BasicAggregateRoot<Guid>, IMultiTenant
         CompletedTime = null;
         LastFailureCode = null;
         LastFailureMessage = null;
-        // A manual requeue is an explicit operator override: discard the producer's original suppress/delay
-        // intent so the retried attempt is actually delivered instead of being immediately re-suppressed or
-        // re-delayed by the processor reading a stale Intent.
-        Intent = NotificationDeliveryIntent.Deliver;
-        DeliveryNotBefore = null;
-        PreferenceReasonCode = null;
-        return true;
     }
 
     private bool HasLease(Guid leaseId)

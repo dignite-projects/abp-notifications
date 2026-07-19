@@ -356,8 +356,11 @@ channel delivery. Cancellation remains a boundary for stopping new work, not com
 Workers atomically claim a time-limited lease before invoking a notifier; a competing event or worker cannot claim
 the same work concurrently. Expired leases are recoverable, failures use bounded exponential backoff with jitter,
 and exhausted work becomes `DeadLetter`. Intentional channel decisions such as a missing email address return
-`Suppressed` and are not retried automatically. Operators may requeue `Failed`, `Suppressed`, or `DeadLetter`
-work, which begins a fresh attempt cycle. Each channel consumer owns this execution state. In a monolith the one
+`Suppressed` and are not retried automatically. Ordinary operator retry is limited to `Failed` and `DeadLetter`
+work and preserves the producer-resolved intent, delay, and preference reason. A suppressed delivery can only be
+requeued through the separately authorized force-delivery operation, which explicitly changes the intent to
+`Deliver` and records the actor, time, previous state, and stable `operator-force-delivery` audit reason without
+copying payload data into the audit fields. Each channel consumer owns this execution state. In a monolith the one
 Notification Center database contains every channel; independently deployed channel services may use their own
 Notification Center database because the delivery row stores a stable System.Text.Json payload snapshot and does
 not require the producer's `Notification` row to retry. Operational queries therefore report the channels hosted
@@ -499,6 +502,12 @@ same unique/due indexes. This is a new ledger,
 so historical notifications require no backfill. Custom MongoDB contexts must expose
 `IMongoCollection<NotificationDeliveryRecord> NotificationDeliveries` and configure the collection name plus the
 same unique and due-work indexes in `CreateModel`.
+
+Hosts upgrading an existing delivery ledger must also add the nullable
+`LastForceDeliveryActorId`, `LastForceDeliveryTime`, `LastForceDeliveryPreviousState`, and
+`LastForceDeliveryReasonCode` columns. No backfill is required. Custom `INotificationDeliveryStore`
+implementations must replace the old broad `RequeueAsync` operation with preference-preserving `RetryAsync` and
+the separately audited `ForceDeliverAsync` operation.
 
 This wire change does **not** support a zero-downtime mixed-version rollout. The old aggregate
 `NotificationDeliveryEto` handler retains its old partial-progress semantics, while old consumers cannot understand
@@ -946,7 +955,8 @@ that mode.
 | `POST /api/notifications/subscription-scopes` | Subscribe to the definition-wide or exact entity scope in the JSON body |
 | `DELETE /api/notifications/subscription-scopes` | Unsubscribe only the definition-wide or exact entity scope in the query |
 | `GET /api/notifications/deliveries` | Query delivery state by notification, user, channel, state, and time (`NotificationCenter.Deliveries`) |
-| `POST /api/notifications/deliveries/{id}/retry` | Requeue failed, suppressed, or dead-letter work in the current tenant (`NotificationCenter.Deliveries.Retry`) |
+| `POST /api/notifications/deliveries/{id}/retry` | Retry failed or dead-letter work in the current tenant without overriding preferences (`NotificationCenter.Deliveries.Retry`) |
+| `POST /api/notifications/deliveries/{id}/force-deliver` | Explicitly override a suppressed delivery in the current tenant and record the operator audit (`NotificationCenter.Deliveries.ForceDeliver`) |
 | `GET /api/notifications/preferences` | List the caller's global, notification, channel, and exact rules |
 | `PUT /api/notifications/preferences` | Upsert one caller-owned rule (`notificationName` and `channel` are independently optional) |
 | `DELETE /api/notifications/preferences` | Delete exactly the caller-owned rule identified by the nullable query scope |

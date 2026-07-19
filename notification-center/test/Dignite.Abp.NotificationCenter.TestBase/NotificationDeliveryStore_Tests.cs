@@ -27,7 +27,7 @@ public abstract class NotificationDeliveryStore_Tests<TStartupModule> : Notifica
     where TStartupModule : IAbpModule
 {
     [Fact]
-    public void Operator_query_and_retry_have_separate_permission_boundaries()
+    public void Operator_query_retry_and_force_delivery_have_separate_permission_boundaries()
     {
         typeof(NotificationDeliveryAppService)
             .GetCustomAttribute<AuthorizeAttribute>()!
@@ -36,6 +36,12 @@ public abstract class NotificationDeliveryStore_Tests<TStartupModule> : Notifica
             .GetMethod(nameof(NotificationDeliveryAppService.RetryAsync))!
             .GetCustomAttribute<AuthorizeAttribute>()!
             .Policy.ShouldBe(NotificationCenterPermissions.Deliveries.Retry);
+        typeof(NotificationDeliveryAppService)
+            .GetMethod(nameof(NotificationDeliveryAppService.ForceDeliverAsync))!
+            .GetCustomAttribute<AuthorizeAttribute>()!
+            .Policy.ShouldBe(NotificationCenterPermissions.Deliveries.ForceDeliver);
+        NotificationCenterPermissions.Deliveries.ForceDeliver
+            .ShouldNotBe(NotificationCenterPermissions.Deliveries.Retry);
     }
 
     [Fact]
@@ -347,7 +353,7 @@ public abstract class NotificationDeliveryStore_Tests<TStartupModule> : Notifica
     }
 
     [Fact]
-    public async Task Suppressed_delivery_is_terminal_until_manual_retry_requeues_a_fresh_attempt_cycle()
+    public async Task Suppressed_delivery_is_terminal_and_ordinary_retry_is_rejected()
     {
         var now = DateTime.UtcNow;
         var work = await CreateAndPersistWorkAsync(now: now);
@@ -371,23 +377,16 @@ public abstract class NotificationDeliveryStore_Tests<TStartupModule> : Notifica
             TimeSpan.FromMinutes(2),
             3)).ShouldBeNull();
 
-        (await store.RequeueAsync(work.DeliveryId, work.TenantId, now.AddHours(1))).ShouldBeTrue();
-        var retried = await store.TryClaimAsync(
-            work.DeliveryId,
-            work.TenantId,
-            now.AddHours(1),
-            TimeSpan.FromMinutes(2),
-            3);
-        retried.ShouldNotBeNull();
-        retried!.AttemptCount.ShouldBe(1);
+        (await store.RetryAsync(work.DeliveryId, work.TenantId, now.AddHours(1))).ShouldBeFalse();
+        var record = (await GetRecordsAsync(work.TenantId, work.NotificationId)).Single();
+        record.State.ShouldBe(NotificationDeliveryState.Suppressed);
+        record.LastFailureCode.ShouldBe("preference-disabled");
     }
 
     [Fact]
-    public async Task Manual_retry_of_a_producer_suppressed_delivery_clears_the_intent_so_the_next_attempt_delivers()
+    public async Task Force_delivery_overrides_suppression_and_records_non_sensitive_audit_data()
     {
         var now = DateTime.UtcNow;
-        // A user opt-out is frozen onto the record as Intent=Suppress at distribution time (not a store-side
-        // MarkSuppressed with Intent=Deliver), so a requeue that leaves the Intent stale would re-suppress forever.
         var work = await CreateWorkAsync(now: now);
         work.Intent = NotificationDeliveryIntent.Suppress;
         work.PreferenceReasonCode = "preference-disabled";
@@ -408,11 +407,16 @@ public abstract class NotificationDeliveryStore_Tests<TStartupModule> : Notifica
             now,
             "preference-disabled")).ShouldBeTrue();
 
-        (await store.RequeueAsync(work.DeliveryId, work.TenantId, now.AddHours(1))).ShouldBeTrue();
+        var actorId = Guid.NewGuid();
+        var forcedAt = now.AddHours(1);
+        (await store.ForceDeliverAsync(
+            work.DeliveryId,
+            work.TenantId,
+            actorId,
+            forcedAt,
+            NotificationDeliveryOverrideReasonCodes.OperatorForceDelivery)).ShouldBeTrue();
 
-        // The reconstructed work item is what the processor will receive; it must no longer carry Suppress intent,
-        // otherwise NotificationDeliveryProcessor short-circuits and the manual retry is a permanent no-op.
-        var due = await store.GetDueWorkItemsAsync(now.AddHours(1), 10);
+        var due = await store.GetDueWorkItemsAsync(forcedAt, 10);
         var requeued = due.Single(item => item.DeliveryId == work.DeliveryId);
         requeued.Intent.ShouldBe(NotificationDeliveryIntent.Deliver);
         requeued.DeliveryNotBefore.ShouldBeNull();
@@ -421,6 +425,137 @@ public abstract class NotificationDeliveryStore_Tests<TStartupModule> : Notifica
         var record = (await GetRecordsAsync(work.TenantId, work.NotificationId)).Single();
         record.Intent.ShouldBe(NotificationDeliveryIntent.Deliver);
         record.PreferenceReasonCode.ShouldBeNull();
+        record.LastForceDeliveryActorId.ShouldBe(actorId);
+        record.LastForceDeliveryTime.ShouldNotBeNull();
+        record.LastForceDeliveryTime.Value.ShouldBe(forcedAt, TimeSpan.FromMilliseconds(1));
+        record.LastForceDeliveryPreviousState.ShouldBe(NotificationDeliveryState.Suppressed);
+        record.LastForceDeliveryReasonCode.ShouldBe(
+            NotificationDeliveryOverrideReasonCodes.OperatorForceDelivery);
+        record.Data!.ShouldNotContain(NotificationDeliveryOverrideReasonCodes.OperatorForceDelivery);
+    }
+
+    [Fact]
+    public async Task Retry_preserves_the_producer_intent_and_preference_diagnostics()
+    {
+        var now = DateTime.UtcNow;
+        var work = await CreateWorkAsync(now: now);
+        work.Intent = NotificationDeliveryIntent.Delay;
+        work.DeliveryNotBefore = now.AddHours(1);
+        work.PreferenceReasonCode = NotificationDeliveryPreferenceReasonCodes.QuietHours;
+        await WithTenantUnitOfWorkAsync(work.TenantId, () =>
+            GetRequiredService<INotificationDeliveryStore>().EnsureCreatedAsync(work));
+
+        var store = GetRequiredService<INotificationDeliveryStore>();
+        var claim = (await store.TryClaimAsync(
+            work.DeliveryId,
+            work.TenantId,
+            work.DeliveryNotBefore.Value,
+            TimeSpan.FromMinutes(2),
+            3))!;
+        await store.MarkFailedAsync(
+            work.DeliveryId,
+            work.TenantId,
+            claim.LeaseId,
+            work.DeliveryNotBefore.Value,
+            "channel-execution-failed",
+            nextAttemptTime: now.AddHours(3));
+
+        (await store.RetryAsync(work.DeliveryId, work.TenantId, now.AddHours(2))).ShouldBeTrue();
+
+        var record = (await GetRecordsAsync(work.TenantId, work.NotificationId)).Single();
+        record.Intent.ShouldBe(NotificationDeliveryIntent.Delay);
+        record.DeliveryNotBefore.ShouldNotBeNull();
+        record.DeliveryNotBefore.Value.ShouldBe(
+            work.DeliveryNotBefore.ShouldNotBeNull(),
+            TimeSpan.FromMilliseconds(1));
+        record.PreferenceReasonCode.ShouldBe(NotificationDeliveryPreferenceReasonCodes.QuietHours);
+    }
+
+    [Fact]
+    public async Task Concurrent_force_delivery_has_one_winner_and_tenant_scope_is_authoritative()
+    {
+        var tenantId = Guid.NewGuid();
+        var otherTenantId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+        var work = await CreateAndPersistWorkAsync(tenantId, now: now);
+        var store = GetRequiredService<INotificationDeliveryStore>();
+        var claim = (await store.TryClaimAsync(
+            work.DeliveryId,
+            tenantId,
+            now,
+            TimeSpan.FromMinutes(2),
+            3))!;
+        await store.MarkSuppressedAsync(
+            work.DeliveryId,
+            tenantId,
+            claim.LeaseId,
+            now,
+            "preference-disabled");
+
+        (await store.ForceDeliverAsync(
+            work.DeliveryId,
+            otherTenantId,
+            Guid.NewGuid(),
+            now,
+            NotificationDeliveryOverrideReasonCodes.OperatorForceDelivery)).ShouldBeFalse();
+
+        var actorIds = new[] { Guid.NewGuid(), Guid.NewGuid() };
+        var results = await Task.WhenAll(actorIds.Select(actorId =>
+            ForceDeliverInScopeAsync(work, actorId, now.AddMinutes(1))));
+        results.Count(result => result).ShouldBe(1);
+
+        var record = (await GetRecordsAsync(tenantId, work.NotificationId)).Single();
+        actorIds.ShouldContain(record.LastForceDeliveryActorId.ShouldNotBeNull());
+    }
+
+    [Fact]
+    public async Task Operator_api_rejects_suppressed_retry_and_force_delivery_records_the_current_actor()
+    {
+        var tenantId = Guid.NewGuid();
+        var actorId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+        var work = await CreateAndPersistWorkAsync(tenantId, now: now);
+        var store = GetRequiredService<INotificationDeliveryStore>();
+        var claim = (await store.TryClaimAsync(
+            work.DeliveryId,
+            tenantId,
+            now,
+            TimeSpan.FromMinutes(2),
+            3))!;
+        await store.MarkSuppressedAsync(
+            work.DeliveryId,
+            tenantId,
+            claim.LeaseId,
+            now,
+            "preference-disabled");
+
+        using (GetRequiredService<ICurrentTenant>().Change(tenantId, "tenant"))
+        using (ChangeCurrentUser(actorId))
+        {
+            var appService = GetRequiredService<INotificationDeliveryAppService>();
+            var exception = await Should.ThrowAsync<Volo.Abp.BusinessException>(
+                () => appService.RetryAsync(work.DeliveryId));
+            exception.Code.ShouldBe(NotificationCenterErrorCodes.SuppressedDeliveryCannotBeRetried);
+
+            await appService.ForceDeliverAsync(work.DeliveryId);
+            var dto = (await appService.GetListAsync(new GetNotificationDeliveryListInput
+            {
+                NotificationId = work.NotificationId,
+                MaxResultCount = 10
+            })).Items.Single();
+            dto.LastForceDeliveryActorId.ShouldBe(actorId);
+            dto.LastForceDeliveryPreviousState.ShouldBe(NotificationDeliveryState.Suppressed);
+            dto.LastForceDeliveryReasonCode.ShouldBe(
+                NotificationDeliveryOverrideReasonCodes.OperatorForceDelivery);
+        }
+
+        using (GetRequiredService<ICurrentTenant>().Change(Guid.NewGuid(), "other-tenant"))
+        using (ChangeCurrentUser(actorId))
+        {
+            var appService = GetRequiredService<INotificationDeliveryAppService>();
+            await Should.ThrowAsync<Volo.Abp.Domain.Entities.EntityNotFoundException>(
+                () => appService.ForceDeliverAsync(work.DeliveryId));
+        }
     }
 
     [Fact]
@@ -471,7 +606,7 @@ public abstract class NotificationDeliveryStore_Tests<TStartupModule> : Notifica
 
         (await GetRecordsAsync(tenantId, work.NotificationId)).Single().State
             .ShouldBe(NotificationDeliveryState.Pending);
-        (await store.RequeueAsync(work.DeliveryId, tenantId: null, now.AddHours(1))).ShouldBeFalse();
+        (await store.RetryAsync(work.DeliveryId, tenantId: null, now.AddHours(1))).ShouldBeFalse();
     }
 
     private async Task<NotificationDeliveryWorkEto> CreateAndPersistWorkAsync(
@@ -571,6 +706,20 @@ public abstract class NotificationDeliveryStore_Tests<TStartupModule> : Notifica
             now,
             TimeSpan.FromMinutes(2),
             3);
+    }
+
+    private async Task<bool> ForceDeliverInScopeAsync(
+        NotificationDeliveryWorkEto work,
+        Guid actorId,
+        DateTime now)
+    {
+        using var scope = GetRequiredService<IServiceScopeFactory>().CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<INotificationDeliveryStore>().ForceDeliverAsync(
+            work.DeliveryId,
+            work.TenantId,
+            actorId,
+            now,
+            NotificationDeliveryOverrideReasonCodes.OperatorForceDelivery);
     }
 
     private async Task<System.Collections.Generic.List<NotificationDeliveryRecord>> GetRecordsAsync(

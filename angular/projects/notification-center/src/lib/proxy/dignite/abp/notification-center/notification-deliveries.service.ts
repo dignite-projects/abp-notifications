@@ -9,6 +9,14 @@ import { Injectable, inject } from '@angular/core';
 export class NotificationDeliveriesService {
   private restService = inject(RestService);
   apiName = 'NotificationCenter';
+
+
+  forceDeliver = (id: string, config?: Partial<Rest.Config>) =>
+    this.restService.request<any, void>({
+      method: 'POST',
+      url: `/api/notifications/deliveries/${id}/force-deliver`,
+    },
+    { apiName: this.apiName,...config });
   
 
   getList = (input: GetNotificationDeliveryListInput, config?: Partial<Rest.Config>) =>

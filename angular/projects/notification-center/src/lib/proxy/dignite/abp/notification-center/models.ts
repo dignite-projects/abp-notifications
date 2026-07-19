@@ -43,6 +43,10 @@ export interface NotificationDeliveryDto {
   completedTime?: string | null;
   lastFailureCode?: string | null;
   lastFailureMessage?: string | null;
+  lastForceDeliveryActorId?: string | null;
+  lastForceDeliveryTime?: string | null;
+  lastForceDeliveryPreviousState?: NotificationDeliveryState | null;
+  lastForceDeliveryReasonCode?: string | null;
   creationTime?: string;
 }
 

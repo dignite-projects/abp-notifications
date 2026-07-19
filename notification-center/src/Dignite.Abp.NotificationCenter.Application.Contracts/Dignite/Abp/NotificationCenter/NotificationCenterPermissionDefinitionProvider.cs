@@ -17,6 +17,9 @@ public class NotificationCenterPermissionDefinitionProvider : PermissionDefiniti
         deliveries.AddChild(
             NotificationCenterPermissions.Deliveries.Retry,
             L("Permission:Deliveries.Retry"));
+        deliveries.AddChild(
+            NotificationCenterPermissions.Deliveries.ForceDeliver,
+            L("Permission:Deliveries.ForceDeliver"));
     }
 
     private static LocalizableString L(string name)

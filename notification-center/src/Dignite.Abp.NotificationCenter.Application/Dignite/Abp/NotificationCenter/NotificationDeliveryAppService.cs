@@ -8,6 +8,7 @@ using Volo.Abp.Application.Dtos;
 using Volo.Abp.Application.Services;
 using Volo.Abp.Domain.Entities;
 using Volo.Abp.Domain.Repositories;
+using Volo.Abp.Users;
 
 namespace Dignite.Abp.NotificationCenter;
 
@@ -57,14 +58,41 @@ public class NotificationDeliveryAppService : ApplicationService, INotificationD
     {
         // Resolve through the tenant-filtered repository first. This prevents an operator from probing or requeueing
         // another tenant's delivery by a known id before calling the infrastructure store's explicit tenant method.
+        var delivery = await DeliveryRepository.FindAsync(id);
+        if (delivery == null)
+        {
+            throw new EntityNotFoundException(typeof(NotificationDeliveryRecord), id);
+        }
+
+        if (delivery.State == NotificationDeliveryState.Suppressed)
+        {
+            throw new BusinessException(NotificationCenterErrorCodes.SuppressedDeliveryCannotBeRetried)
+                .WithData("DeliveryId", id);
+        }
+
+        if (!await DeliveryStore.RetryAsync(id, CurrentTenant.Id, Clock.Now))
+        {
+            throw new BusinessException(NotificationCenterErrorCodes.DeliveryCannotBeRetried)
+                .WithData("DeliveryId", id);
+        }
+    }
+
+    [Authorize(NotificationCenterPermissions.Deliveries.ForceDeliver)]
+    public virtual async Task ForceDeliverAsync(Guid id)
+    {
         if (await DeliveryRepository.FindAsync(id) == null)
         {
             throw new EntityNotFoundException(typeof(NotificationDeliveryRecord), id);
         }
 
-        if (!await DeliveryStore.RequeueAsync(id, CurrentTenant.Id, Clock.Now))
+        if (!await DeliveryStore.ForceDeliverAsync(
+                id,
+                CurrentTenant.Id,
+                CurrentUser.GetId(),
+                Clock.Now,
+                NotificationDeliveryOverrideReasonCodes.OperatorForceDelivery))
         {
-            throw new BusinessException("NotificationCenter:DeliveryCannotBeRetried")
+            throw new BusinessException(NotificationCenterErrorCodes.DeliveryCannotBeForceDelivered)
                 .WithData("DeliveryId", id);
         }
     }
@@ -90,6 +118,10 @@ public class NotificationDeliveryAppService : ApplicationService, INotificationD
             CompletedTime = delivery.CompletedTime,
             LastFailureCode = delivery.LastFailureCode,
             LastFailureMessage = delivery.LastFailureMessage,
+            LastForceDeliveryActorId = delivery.LastForceDeliveryActorId,
+            LastForceDeliveryTime = delivery.LastForceDeliveryTime,
+            LastForceDeliveryPreviousState = delivery.LastForceDeliveryPreviousState,
+            LastForceDeliveryReasonCode = delivery.LastForceDeliveryReasonCode,
             CreationTime = delivery.CreationTime
         };
     }
