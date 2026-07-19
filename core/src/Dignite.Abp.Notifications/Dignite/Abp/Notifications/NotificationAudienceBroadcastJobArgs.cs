@@ -21,9 +21,9 @@ public class NotificationAudienceBroadcastJobArgs
     public NotificationInfo Notification { get; set; } = default!;
 
     /// <summary>
-    /// Opaque source cursor for this page. <see langword="null"/> means the first page.
+    /// Opaque source continuation token for this page. <see langword="null"/> means the first page.
     /// </summary>
-    public string? Cursor { get; set; }
+    public string? ContinuationToken { get; set; }
 
     /// <summary>
     /// Zero-based page index used for diagnostics.
@@ -40,25 +40,25 @@ public class NotificationAudienceBroadcastJobArgs
         Guid? tenantId,
         string audienceName,
         NotificationInfo notification,
-        string? cursor,
+        string? continuationToken,
         long pageIndex,
         Guid[]? excludedUserIds)
     {
         TenantId = tenantId;
         AudienceName = audienceName;
         Notification = notification;
-        Cursor = cursor;
+        ContinuationToken = continuationToken;
         PageIndex = pageIndex;
         ExcludedUserIds = excludedUserIds;
     }
 
-    public NotificationAudienceBroadcastJobArgs NextPage(string cursor)
+    public NotificationAudienceBroadcastJobArgs NextPage(string continuationToken)
     {
         return new NotificationAudienceBroadcastJobArgs(
             TenantId,
             AudienceName,
             Notification,
-            cursor,
+            continuationToken,
             PageIndex + 1,
             ExcludedUserIds);
     }

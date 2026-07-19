@@ -2,8 +2,10 @@ using System;
 
 namespace Dignite.Abp.Notifications;
 
-public class NotificationAudienceBroadcastTenantResult
+/// <summary>Describes the enqueue outcome for one tenant-or-host scope.</summary>
+public class NotificationAudienceBroadcastEnqueueResult
 {
+    /// <summary>The authoritative tenant id, or <see langword="null"/> for the host scope.</summary>
     public Guid? TenantId { get; }
 
     public Guid NotificationId { get; }
@@ -12,7 +14,7 @@ public class NotificationAudienceBroadcastTenantResult
 
     public string? ErrorMessage { get; }
 
-    public NotificationAudienceBroadcastTenantResult(
+    public NotificationAudienceBroadcastEnqueueResult(
         Guid? tenantId,
         Guid notificationId,
         bool isEnqueued,

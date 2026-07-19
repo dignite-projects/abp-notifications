@@ -6,7 +6,7 @@ namespace Dignite.Abp.Notifications;
 public static class NotificationAudienceNames
 {
     /// <summary>
-    /// All active users in one explicit tenant/host scope. Provided by the optional Identity integration.
+    /// All active users in one explicit tenant-or-host scope. Provided by the optional Identity integration.
     /// </summary>
     public const string AllActiveUsers = "all-active-users";
 }

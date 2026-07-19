@@ -5,9 +5,9 @@ using System.Linq;
 namespace Dignite.Abp.Notifications;
 
 /// <summary>
-/// Host-orchestrated broadcast request for an explicit set of tenant ids.
+/// Host-authorized broadcast request for an explicit set of tenant scopes. Host users are not included.
 /// </summary>
-public class NotificationAudienceHostBroadcastRequest
+public class NotificationAudienceMultiTenantBroadcastRequest
 {
     /// <summary>
     /// Tenant ids to process independently. Host users are intentionally not included here.
@@ -35,7 +35,7 @@ public class NotificationAudienceHostBroadcastRequest
     /// </summary>
     public Guid[]? ExcludedUserIds { get; set; }
 
-    public NotificationAudienceHostBroadcastRequest(
+    public NotificationAudienceMultiTenantBroadcastRequest(
         IReadOnlyCollection<Guid> tenantIds,
         string notificationName)
     {

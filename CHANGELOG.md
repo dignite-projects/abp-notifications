@@ -19,15 +19,15 @@ changes.
   uses a shared `dignite.notificationCenter.realtime` manager with the same refresh-on-receive/reconnect contract.
 - Added tenant-safe large-audience broadcast orchestration through `INotificationAudienceBroadcaster`,
   `INotificationAudienceRecipientSource`, and resumable `NotificationAudienceBroadcastJob` page args. Broadcasts
-  require an explicit tenant/host scope, enqueue one bounded recipient page at a time, hand every page into the
+  require an explicit tenant-or-host scope, enqueue one bounded recipient page at a time, hand every page into the
   normal prepared distribution pipeline for feature/permission/preference/inbox/delivery processing, and expose
-  progress through stable notification id + tenant id + page index/cursor logs and
+  progress through stable notification id + tenant id + page index/continuation-token logs and
   `NotificationAudienceBroadcastMetrics`. Broadcast progress and cancellation are exposed through
   `INotificationAudienceBroadcaster` and the replaceable `INotificationAudienceBroadcastProgressStore` (default
   in-memory). `Dignite.Abp.Notifications.Identity` now contributes the `all-active-users` source, which pages ABP
-  Identity users by keyset and includes only active, not-leaved, not-deleted users in the requested tenant.
-  Host-wide broadcasts take an explicit tenant list and enqueue each tenant inside an independent ABP unit of
-  work so a tenant failure does not mix or block other tenant jobs.
+  Identity users by keyset and includes only active, not-leaved, not-deleted users in the requested tenant-or-host
+  scope. Multi-tenant broadcasts take an explicit tenant list, exclude host users, and enqueue each tenant inside
+  an independent ABP unit of work so a tenant failure does not mix or block other tenant jobs.
 - Added opt-in Notification Center retention cleanup with `NotificationRetentionOptions`, a default-disabled
   hosted worker, manual dry-run/reporting through `INotificationRetentionCleanupService`, metrics, and
   `INotificationRetentionDeletionContributor` hooks for archive/veto behavior. Cleanup deletes only expired read
@@ -80,6 +80,19 @@ changes.
   explicit batches.
 
 ### Changed
+
+- **Breaking audience-broadcast terminology cleanup before 10.0.0 stable.** Scope APIs now describe their actual
+  behavior: `EnqueueTenantBroadcastAsync` is `EnqueueAsync`, `EnqueueHostBroadcastAsync` is
+  `EnqueueForTenantsAsync`, while `GetTenantBroadcastProgressAsync` / `CancelTenantBroadcastAsync` become
+  `GetProgressAsync` / `CancelAsync`. `NotificationAudienceTenantBroadcastRequest`,
+  `NotificationAudienceHostBroadcastRequest`, `NotificationAudienceBroadcastTenantResult`, and
+  `NotificationAudienceBroadcastResult` become `NotificationAudienceBroadcastRequest`,
+  `NotificationAudienceMultiTenantBroadcastRequest`, `NotificationAudienceBroadcastEnqueueResult`, and
+  `NotificationAudienceMultiTenantBroadcastResult`, respectively; the multi-tenant result collection is now
+  `Results` instead of `Tenants`. Public audience paging and job state use
+  `ContinuationToken` / `NextContinuationToken` instead of cursor names; `NotificationAudienceRecipientPage.HasMore`
+  is derived from the presence of its opaque next token. Multi-tenant orchestration remains host-authorized and
+  explicitly excludes host users. No persistence migration is needed.
 
 - **Breaking options split before 10.0.0 stable.** The catch-all `NotificationOptions` type was replaced by
   `NotificationDefinitionOptions`, `NotificationDistributionOptions`, `NotificationDeliveryOptions`, and
