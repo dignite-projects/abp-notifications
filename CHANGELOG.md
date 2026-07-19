@@ -33,7 +33,7 @@ changes.
   scope. Multi-tenant broadcasts take an explicit tenant list, exclude host users, and enqueue each tenant inside
   an independent ABP unit of work so a tenant failure does not mix or block other tenant jobs.
 - Added opt-in Notification Center retention cleanup with `NotificationRetentionOptions`, a default-disabled
-  hosted worker, manual dry-run/reporting through `INotificationRetentionCleanupService`, metrics, and
+  ABP periodic worker, manual dry-run/reporting through `INotificationRetentionCleanupService`, metrics, and
   `INotificationRetentionDeletionContributor` hooks for archive/veto behavior. Cleanup deletes only expired read
   inbox rows, expired terminal delivery rows, and tenant-local orphan payload rows; base payload deletion is
   two-phase through `RetentionDeletionTime` so unread inbox rows, active delivery work, and concurrently
@@ -84,6 +84,13 @@ changes.
   explicit batches.
 
 ### Changed
+
+- Delivery retry and retention cleanup scanners now use ABP's periodic background-worker lifecycle and a stable,
+  configurable `IAbpDistributedLock` per scanner. Competing instances skip a locked cycle without failure;
+  shutdown cancellation flows through scans and publication waits, scoped services are resolved per cycle, and
+  exceptions leave the next period runnable. The abstraction package's default lock is process-local, so clustered
+  hosts must configure a real distributed-lock provider and a shared application-specific key prefix. Worker cycle
+  metrics expose `completed`, `lock_miss`, and `failed` outcomes. No database migration is required.
 
 - **Notification Center schema addition for durable audience-broadcast state.** EF Core consuming hosts must add a
   host-owned `AbpNotificationAudienceBroadcastStates` migration with the mappings and indexes from

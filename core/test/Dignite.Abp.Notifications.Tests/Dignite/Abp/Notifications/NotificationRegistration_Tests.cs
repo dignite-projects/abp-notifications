@@ -329,6 +329,8 @@ public class NotificationRegistration_Tests
         delivery.DeliveryRetryWorkerPeriod.ShouldBe(TimeSpan.FromSeconds(30));
         delivery.DeliveryRetryBatchSize.ShouldBe(100);
         delivery.IsDeliveryRetryWorkerEnabled.ShouldBeTrue();
+        delivery.DeliveryRetryWorkerLockName.ShouldBe(NotificationDeliveryOptions.DefaultDeliveryRetryWorkerLockName);
+        delivery.DeliveryRetryWorkerLockTimeout.ShouldBe(TimeSpan.Zero);
 
         new NotificationAudienceBroadcastOptions().RecipientBatchSize.ShouldBe(256);
         new NotificationDefinitionOptions().DefinitionProviders.ShouldBeEmpty();

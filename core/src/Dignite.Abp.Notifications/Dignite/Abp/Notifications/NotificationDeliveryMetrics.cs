@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Diagnostics.Metrics;
 
 namespace Dignite.Abp.Notifications;
@@ -12,4 +13,13 @@ internal static class NotificationDeliveryMetrics
 
     public static readonly Counter<long> RetryPublishedCount =
         Meter.CreateCounter<long>("notification.delivery.retry.work_items");
+
+    public static readonly Counter<long> RetryScanCount =
+        Meter.CreateCounter<long>("notification.delivery.retry.scans");
+
+    public static void RecordRetryScan(string outcome)
+    {
+        var tags = new TagList { { "outcome", outcome } };
+        RetryScanCount.Add(1, tags);
+    }
 }

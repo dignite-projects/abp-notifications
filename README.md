@@ -380,10 +380,10 @@ or deployment.
 
 #### Retention and lifecycle cleanup
 
-Notification Center retention is opt-in. The hosted cleanup worker is disabled by default, so upgrading preserves
-the historical behavior of retaining inbox rows, base payload rows, and delivery state until an application or user
-explicitly deletes them. Enable it only after setting retention windows that match your operational and legal
-requirements:
+Notification Center retention is opt-in. The ABP periodic cleanup worker is disabled by default, so upgrading
+preserves the historical behavior of retaining inbox rows, base payload rows, and delivery state until an application
+or user explicitly deletes them. Enable it only after setting retention windows that match your operational and
+legal requirements:
 
 ```csharp
 Configure<NotificationRetentionOptions>(options =>
@@ -391,6 +391,8 @@ Configure<NotificationRetentionOptions>(options =>
     options.IsCleanupEnabled = true;
     options.CleanupBatchSize = 500;              // max scanned candidates per record kind and pass
     options.CleanupWorkerPeriod = TimeSpan.FromHours(6);
+    options.CleanupWorkerLockName = NotificationRetentionOptions.DefaultCleanupWorkerLockName;
+    options.CleanupWorkerLockTimeout = TimeSpan.Zero; // skip immediately when another instance owns the cycle
     options.ReadUserNotificationRetention = TimeSpan.FromDays(180);
     options.TerminalDeliveryRetention = TimeSpan.FromDays(30);
     options.TerminalAudienceBroadcastRetention = TimeSpan.FromDays(30);
@@ -435,6 +437,38 @@ and continues with the next candidate. Cleanup reads candidates in keyset order,
 `NotificationRetentionCleanupCursor`, so protected, vetoed, or temporarily failing old rows do not starve later
 eligible rows. Base notification deletion checks references again after contributors run, and its concurrency stamp
 prevents physical deletion from winning over a same-tenant retained reference that cancels the marker concurrently.
+
+#### Periodic workers in clustered deployments
+
+The delivery retry scanner and retention cleanup scanner are registered through ABP's background-worker manager and
+run as `AsyncPeriodicBackgroundWorkerBase` workers. Every cycle gets a fresh dependency-injection scope, observes
+the application shutdown token, and tries its stable lock without waiting by default. A lock miss is an expected
+`lock_miss` outcome: the cycle is skipped, logged at debug level, and is not reported as a worker failure. An
+exception is recorded as `failed` and rethrown to ABP's periodic-worker boundary, which logs it and allows the next
+timer cycle to run. Existing delivery claims/idempotency and retention concurrency checks remain the final safety
+boundaries.
+
+`Volo.Abp.DistributedLocking.Abstractions` supplies only a process-local default lock. Multiple application
+instances therefore require a real ABP distributed-lock provider (for example, the provider already used by the
+host's background jobs). All instances that scan the same notification store must use the same worker lock names
+and the same `AbpDistributedLockOptions.KeyPrefix`. Set that prefix to a stable application/deployment name when
+unrelated applications share the lock backend; changing it per replica defeats coordination. The two lock names
+and acquisition timeouts are configurable through `NotificationDeliveryOptions` and
+`NotificationRetentionOptions` as shown in [Configuration](#configuration).
+
+For a dedicated-worker deployment, keep ABP workers enabled only in the worker process and configure
+`AbpBackgroundWorkerOptions.IsEnabled = false` on web/API replicas. Alternatively, leave ABP workers enabled and
+disable only `IsDeliveryRetryWorkerEnabled` or `IsCleanupEnabled` on replicas that should not run that scanner.
+The dedicated worker must use the same notification database, distributed-event transport/outbox configuration,
+lock provider, application key prefix, and notification option values as the producer/consumer deployment.
+
+The ABP 10.5 distributed-event publish API has no cancellation-token parameter. The retry scanner checks shutdown
+before every item and applies the shutdown token to its wait for each publication; an already-started transport
+call can still finish in the background. Durable delivery identity and claims keep such a late publication
+idempotent.
+
+Worker cycle outcomes are emitted as `notification.delivery.retry.scans` and
+`dignite.notifications.retention.worker.cycles`, each tagged with `outcome=completed|lock_miss|failed`.
 
 **Retention database upgrade:** EF Core hosts should add a host-owned migration for the new retention query indexes
 from `ConfigureNotificationCenter()`: `AbpNotifications.RetentionDeletionTime` and its concurrency stamp, old
@@ -1055,6 +1089,8 @@ Configure<NotificationDeliveryOptions>(options =>
     options.DeliveryRetryWorkerPeriod = TimeSpan.FromSeconds(30);
     options.DeliveryRetryBatchSize = 100;
     options.IsDeliveryRetryWorkerEnabled = true;
+    options.DeliveryRetryWorkerLockName = NotificationDeliveryOptions.DefaultDeliveryRetryWorkerLockName;
+    options.DeliveryRetryWorkerLockTimeout = TimeSpan.Zero; // skip immediately when another instance owns the cycle
 });
 
 Configure<NotificationAudienceBroadcastOptions>(options =>
