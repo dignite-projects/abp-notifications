@@ -26,8 +26,7 @@ public class NotificationDeliveryProcessor : ITransientDependency
 
     public NotificationDeliveryProcessor(
         INotificationDeliveryStore store,
-        IEnumerable<INotificationDeliveryNotifier> reliableNotifiers,
-        IEnumerable<INotificationNotifier<NotificationDeliveryEto>> legacyNotifiers,
+        IEnumerable<INotificationNotifier> notifiers,
         INotificationDeliveryRetryPolicy retryPolicy,
         IClock clock,
         ICurrentTenant currentTenant,
@@ -35,12 +34,9 @@ public class NotificationDeliveryProcessor : ITransientDependency
         ILogger<NotificationDeliveryProcessor> logger)
     {
         Store = store;
-        Notifiers = reliableNotifiers
-            .Cast<INotificationNotifier>()
-            .Concat(legacyNotifiers)
-            // One implementation is commonly exposed through both the reliable and legacy contracts. Collapse
-            // that duplicate registration without discarding a configurable implementation type used for two
-            // different channel names.
+        Notifiers = notifiers
+            // Collapse duplicate exposure of the same implementation/channel while preserving two distinct
+            // implementations so ResolveNotifierOrNull can reject an ambiguous channel deterministically.
             .GroupBy(notifier => (
                 ImplementationType: notifier.GetType(),
                 ChannelKey: NotificationDeliveryIdentity.NormalizeChannel(notifier.Name)))
@@ -111,22 +107,8 @@ public class NotificationDeliveryProcessor : ITransientDependency
                     return;
                 }
 
-                NotificationDeliveryResult result;
-                if (notifier is INotificationDeliveryNotifier reliableNotifier)
-                {
-                    result = await reliableNotifier.DeliverAsync(workItem)
+                var result = await notifier.DeliverAsync(workItem, cancellationToken)
                              ?? throw new InvalidOperationException("A notification notifier returned no result.");
-                }
-                else if (notifier is INotificationNotifier<NotificationDeliveryEto> legacyNotifier)
-                {
-                    await legacyNotifier.HandleEventAsync(workItem.ToLegacyEto());
-                    result = NotificationDeliveryResult.Succeeded();
-                }
-                else
-                {
-                    throw new InvalidOperationException(
-                        $"Notifier '{notifier.GetType().FullName}' cannot execute notification delivery work items.");
-                }
 
                 var completedAt = Clock.Now;
                 bool updated;

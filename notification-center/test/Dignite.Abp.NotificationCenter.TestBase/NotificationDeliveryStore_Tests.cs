@@ -176,7 +176,6 @@ public abstract class NotificationDeliveryStore_Tests<TStartupModule> : Notifica
         var processor = new NotificationDeliveryProcessor(
             GetRequiredService<INotificationDeliveryStore>(),
             new[] { notifier },
-            Array.Empty<INotificationNotifier<NotificationDeliveryEto>>(),
             new NotificationDeliveryRetryPolicy(deliveryOptions),
             GetRequiredService<IClock>(),
             GetRequiredService<ICurrentTenant>(),
@@ -735,7 +734,7 @@ public abstract class NotificationDeliveryStore_Tests<TStartupModule> : Notifica
         return records!;
     }
 
-    private sealed class RecordingDeliveryNotifier : INotificationDeliveryNotifier
+    private sealed class RecordingDeliveryNotifier : INotificationNotifier
     {
         private int _invocationCount;
 
@@ -748,7 +747,9 @@ public abstract class NotificationDeliveryStore_Tests<TStartupModule> : Notifica
             Name = name;
         }
 
-        public Task<NotificationDeliveryResult> DeliverAsync(NotificationDeliveryRequestedEto workItem)
+        public Task<NotificationDeliveryResult> DeliverAsync(
+            NotificationDeliveryRequestedEto workItem,
+            CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _invocationCount);
             return Task.FromResult(NotificationDeliveryResult.Succeeded());

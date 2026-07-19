@@ -1,3 +1,4 @@
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Dignite.Abp.Notifications.Emailing;
@@ -38,5 +39,7 @@ public interface IEmailNotificationAddressResolver
     int Order { get; }
 
     /// <summary>The address and optional culture to use, or null to pass the recipient to the next resolver.</summary>
-    Task<EmailNotificationAddress?> GetEmailOrNullAsync(EmailNotificationAddressResolveContext context);
+    Task<EmailNotificationAddress?> GetEmailOrNullAsync(
+        EmailNotificationAddressResolveContext context,
+        CancellationToken cancellationToken = default);
 }

@@ -102,7 +102,7 @@ public class Order : AggregateRoot<Guid>
 ### Domain Events
 - `AddLocalEvent()` - Handled within same transaction, can access full entity
 - `AddDistributedEvent()` - Handled asynchronously, use ETOs (Event Transfer Objects). This repo's
-  own cross-cutting event is `NotificationDeliveryEto` — see `notifications-invariants.md`.
+  own cross-cutting event is `NotificationDeliveryRequestedEto` — see `notifications-invariants.md`.
 
 ### Entity Best Practices
 - **Encapsulation**: Private/protected setters, public methods that enforce rules

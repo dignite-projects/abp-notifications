@@ -112,11 +112,11 @@ public class OrderCreatedEtoHandler : IDistributedEventHandler<OrderCreatedEto>,
 await _distributedEventBus.PublishAsync(new OrderCreatedEto { ... });
 ```
 
-**This repo's own distributed event is `NotificationDeliveryEto`** (`Dignite.Abp.Notifications.NotificationDelivery`)
-— the boundary between Core and every Notifier. Every Notifier is
-`IDistributedEventHandler<NotificationDeliveryEto>, ITransientDependency`. Before touching it, read
-`framework/common/notifications-invariants.md` §1 (serialization) and §4 (don't leak other
-recipients' `UserIds`).
+**This repo's own distributed event is `NotificationDeliveryRequestedEto`** (wire name
+`Dignite.Abp.Notifications.NotificationDeliveryWork`). Core's internal handler adapts transport to the canonical
+`INotificationNotifier.DeliverAsync` contract; channel plugins do not implement distributed event handlers. Before
+touching it, read `framework/common/notifications-invariants.md` §1 (serialization) and §4 (single-recipient and
+cancellation guarantees).
 
 ### When to Use Which
 - **Local**: Within same module/bounded context

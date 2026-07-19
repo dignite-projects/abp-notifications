@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Volo.Abp.DependencyInjection;
 
@@ -18,11 +19,14 @@ public class DefaultNotificationEmailBuilder : INotificationEmailBuilder, ITrans
             .ToList();
     }
 
-    public virtual async Task<NotificationEmail?> BuildAsync(NotificationEmailBuildContext context)
+    public virtual async Task<NotificationEmail?> BuildAsync(
+        NotificationEmailBuildContext context,
+        CancellationToken cancellationToken = default)
     {
         foreach (var provider in ContentProviders)
         {
-            var email = await provider.BuildOrNullAsync(context);
+            cancellationToken.ThrowIfCancellationRequested();
+            var email = await provider.BuildOrNullAsync(context, cancellationToken);
             if (email != null)
             {
                 return email;

@@ -53,9 +53,8 @@ changes.
   exponential retry with jitter, lease recovery, suppression, dead-lettering, metrics, and operator query/retry
   permissions and REST endpoints. Notification Center persists the ledger with equivalent EF Core and MongoDB
   indexes and behavior; Core-only applications retain a process-local in-memory implementation.
-- Added `INotificationDeliveryNotifier` and single-recipient/channel `NotificationDeliveryRequestedEto` contracts.
-  Work items carry a stable idempotency key for providers that support downstream deduplication, while legacy
-  `INotificationNotifier<NotificationDeliveryEto>` implementations remain callable through a singleton adapter.
+- Added the canonical `INotificationNotifier` and single-recipient/channel `NotificationDeliveryRequestedEto`
+  contracts. Requests carry a stable idempotency key for providers that support downstream deduplication.
 - Added MongoDB integration with ABP's distributed event outbox and inbox through
   `UseNotificationCenterMongoDbOutbox()`. The opt-in validates a MongoDB 4.0+ replica set with a real committed
   multi-collection transaction probe at host startup, exposes a reusable capability checker, uses ABP-compatible
@@ -80,6 +79,15 @@ changes.
   explicit batches.
 
 ### Changed
+
+- **Breaking notifier contract cleanup before 10.0.0 stable.** `INotificationNotifier` is now the sole channel
+  execution contract: it exposes `Name` plus cancellation-aware single-recipient `DeliverAsync`. The temporary
+  `INotificationDeliveryNotifier`, generic `INotificationNotifier<TEvent>`, aggregate `NotificationDeliveryEto`, and
+  processor compatibility branch are removed. Email address/content extension points now accept and observe the
+  same cancellation token; SignalR forwards it to `SendCoreAsync`, while ABP's `IEmailSender` is checked immediately
+  before its currently non-cancellable send boundary. Quiesce publication and drain the old
+  `Dignite.Abp.Notifications.NotificationDelivery` event before upgrading consumers; update custom notifiers to the
+  canonical contract before recompiling.
 
 - **Breaking public terminology cleanup before 10.0.0 stable.** `NullNotificationDeliveryStore` is now
   `InMemoryNotificationDeliveryStore`, `NullNotificationDeliveryPreferenceEvaluator` is now
@@ -120,10 +128,9 @@ changes.
   allow); DI and preference-aware callers use the new `INotificationDeliveryPreferenceEvaluator` overload.
 
 - **Breaking wire behavior for independently deployed event consumers.** The default distributor now publishes
-  `NotificationDeliveryRequestedEto` instead of batched `NotificationDeliveryEto`. Mixed versions cannot provide the new
-  reliability guarantee: quiesce publication, drain old aggregate events, upgrade consumer schemas/code, then
-  upgrade producers and resume. Existing notifier source contracts remain supported through a singleton adapter,
-  but old wire-event handlers retain their legacy partial-progress behavior.
+  `NotificationDeliveryRequestedEto` instead of the removed batched aggregate event. Mixed versions cannot provide
+  the new reliability guarantee: quiesce publication, drain old aggregate events, upgrade consumer schemas/code,
+  then upgrade producers and resume.
 - Notification Center hosts require a host-owned schema migration for the new `AbpNotificationDeliveries` table
   (or the equivalent MongoDB collection) and its unique identity/due-work indexes. Historical notifications need no
   backfill. Delivery state and its stable payload snapshot are consumer-owned; initial materialization and claim
@@ -231,7 +238,7 @@ changes.
 
 - Added `Dignite.Abp.Notifications.Emailing.Identity`, an optional ABP Identity-backed
   `IEmailNotificationAddressResolver` for the Emailing notifier.
-- `NotificationDeliveryEto` and `NotificationDelivery` now carry the notification's `EntityTypeName` and
+- `NotificationDeliveryRequestedEto` and `NotificationDelivery` now carry the notification's `EntityTypeName` and
   `EntityId`, so a notifier can identify the business entity a notification is about without depending on
   Core.
 - Added `NotificationEmailContentProvider<TData>`, a base class that narrows `NotificationData` once so an

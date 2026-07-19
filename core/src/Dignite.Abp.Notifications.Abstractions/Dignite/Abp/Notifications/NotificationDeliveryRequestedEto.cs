@@ -70,28 +70,4 @@ public class NotificationDeliveryRequestedEto : IEventDataMayHaveTenantId
         }
     }
 
-    /// <summary>
-    /// Adapts this request to the original aggregate event contract. Existing custom notifiers therefore keep
-    /// working, but receive a singleton recipient/channel event and are executed inside the reliable state machine.
-    /// </summary>
-    public NotificationDeliveryEto ToLegacyEto()
-    {
-        return new NotificationDeliveryEto(
-            NotificationId,
-            NotificationName,
-            Data,
-            Severity,
-            CreationTime,
-            new[] { UserId })
-        {
-            Channels = new[] { Channel },
-            TenantId = TenantId,
-            EntityTypeName = EntityTypeName,
-            EntityId = EntityId,
-            DeliveryId = DeliveryId,
-            IdempotencyKey = IdempotencyKey,
-            UserId = UserId,
-            Channel = Channel
-        };
-    }
 }

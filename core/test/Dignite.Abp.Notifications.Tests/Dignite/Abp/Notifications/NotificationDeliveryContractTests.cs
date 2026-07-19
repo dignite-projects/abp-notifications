@@ -13,6 +13,16 @@ public class NotificationDeliveryContractTests
             .ShouldBe("Dignite.Abp.Notifications.NotificationDeliveryWork");
     }
 
+    [Fact]
+    public void Legacy_notifier_and_aggregate_event_contracts_are_removed_before_stable()
+    {
+        var assembly = typeof(INotificationNotifier).Assembly;
+
+        assembly.GetType("Dignite.Abp.Notifications.INotificationDeliveryNotifier").ShouldBeNull();
+        assembly.GetType("Dignite.Abp.Notifications.NotificationDeliveryEto").ShouldBeNull();
+        typeof(INotificationNotifier).GetMethod(nameof(INotificationNotifier.DeliverAsync)).ShouldNotBeNull();
+    }
+
     [Theory]
     [InlineData(NotificationDeliveryState.Pending, 0)]
     [InlineData(NotificationDeliveryState.Processing, 1)]

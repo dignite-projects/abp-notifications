@@ -1,3 +1,4 @@
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Dignite.Abp.Notifications.Emailing;
@@ -21,5 +22,7 @@ public class NotificationEmail
 /// <summary>Turns a notification into an email. Business modules replace this to customize content.</summary>
 public interface INotificationEmailBuilder
 {
-    Task<NotificationEmail?> BuildAsync(NotificationEmailBuildContext context);
+    Task<NotificationEmail?> BuildAsync(
+        NotificationEmailBuildContext context,
+        CancellationToken cancellationToken = default);
 }

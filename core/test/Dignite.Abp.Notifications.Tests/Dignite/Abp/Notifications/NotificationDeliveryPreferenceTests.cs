@@ -154,7 +154,7 @@ public class NotificationDeliveryPreferenceTests
     }
 
     private static (NotificationDeliveryProcessor Processor, InMemoryNotificationDeliveryStore Store, IClock Clock)
-        CreateProcessor(DateTime now, INotificationDeliveryNotifier notifier)
+        CreateProcessor(DateTime now, INotificationNotifier notifier)
     {
         var options = Options.Create(new NotificationOptions
         {
@@ -168,7 +168,6 @@ public class NotificationDeliveryPreferenceTests
         return (new NotificationDeliveryProcessor(
             store,
             new[] { notifier },
-            Array.Empty<INotificationNotifier<NotificationDeliveryEto>>(),
             new NotificationDeliveryRetryPolicy(options),
             clock,
             new TestCurrentTenant(),
@@ -192,7 +191,7 @@ public class NotificationDeliveryPreferenceTests
         };
     }
 
-    private sealed class TestNotifier : INotificationDeliveryNotifier
+    private sealed class TestNotifier : INotificationNotifier
     {
         private readonly Func<NotificationDeliveryRequestedEto, Task<NotificationDeliveryResult>> _deliver;
 
@@ -206,7 +205,9 @@ public class NotificationDeliveryPreferenceTests
             _deliver = deliver;
         }
 
-        public Task<NotificationDeliveryResult> DeliverAsync(NotificationDeliveryRequestedEto workItem)
+        public Task<NotificationDeliveryResult> DeliverAsync(
+            NotificationDeliveryRequestedEto workItem,
+            CancellationToken cancellationToken = default)
         {
             return _deliver(workItem);
         }

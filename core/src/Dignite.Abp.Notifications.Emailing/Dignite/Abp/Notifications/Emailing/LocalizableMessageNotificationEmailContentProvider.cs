@@ -1,4 +1,5 @@
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Localization;
 using Volo.Abp;
@@ -23,7 +24,9 @@ public class LocalizableMessageNotificationEmailContentProvider
     }
 
     protected override Task<NotificationEmail?> BuildOrNullAsync(
-        NotificationEmailBuildContext context, LocalizableMessageNotificationData data)
+        NotificationEmailBuildContext context,
+        LocalizableMessageNotificationData data,
+        CancellationToken cancellationToken)
     {
         var localizer = data.ResourceName != null
             ? StringLocalizerFactory.CreateByResourceNameOrNull(data.ResourceName)

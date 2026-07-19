@@ -229,7 +229,7 @@ public class HostModule : AbpModule
     private void ConfigureNotificationCenterOutbox()
     {
         // Demo host uses the NotificationCenter EF Core DbContext as the ABP transactional outbox/inbox store so
-        // persisting notification rows and publishing NotificationDeliveryEto commit together.
+        // persisting notification rows and publishing NotificationDeliveryRequestedEto commit together.
         Configure<AbpDistributedEventBusOptions>(options => options.UseNotificationCenterEfCoreOutbox());
     }
     

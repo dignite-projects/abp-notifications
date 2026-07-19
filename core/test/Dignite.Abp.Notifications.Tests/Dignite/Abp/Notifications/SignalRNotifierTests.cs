@@ -1,6 +1,5 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Dignite.Abp.Notifications.SignalR;
 using Microsoft.AspNetCore.SignalR;
@@ -12,30 +11,36 @@ namespace Dignite.Abp.Notifications;
 public class SignalRNotifierTests
 {
     [Fact]
-    public async Task Pushes_a_trimmed_payload_to_all_target_users()
+    public async Task Pushes_one_trimmed_payload_to_the_requested_user_with_cancellation()
     {
-        var clientProxy = Substitute.For<INotificationsClient>();
-        var clients = Substitute.For<IHubClients<INotificationsClient>>();
-        clients.Users(Arg.Any<IReadOnlyList<string>>()).Returns(clientProxy);
-        var hubContext = Substitute.For<IHubContext<NotificationsHub, INotificationsClient>>();
+        var clientProxy = Substitute.For<IClientProxy>();
+        var clients = Substitute.For<IHubClients>();
+        clients.User(Arg.Any<string>()).Returns(clientProxy);
+        var hubContext = Substitute.For<IHubContext<NotificationsHub>>();
         hubContext.Clients.Returns(clients);
-
         var notifier = new SignalRNotifier(hubContext);
-
-        var u1 = Guid.NewGuid();
-        var u2 = Guid.NewGuid();
-        var eto = new NotificationDeliveryEto(
-            Guid.NewGuid(), "test", new MessageNotificationData("hi"),
-            NotificationSeverity.Info, DateTime.UtcNow, new[] { u1, u2 })
+        var cancellationToken = new CancellationTokenSource().Token;
+        var userId = Guid.NewGuid();
+        var request = new NotificationDeliveryRequestedEto
         {
-            Channels = new[] { SignalRNotifier.ChannelName }
+            NotificationId = Guid.NewGuid(),
+            NotificationName = "test",
+            Data = new MessageNotificationData("hi"),
+            Severity = NotificationSeverity.Info,
+            CreationTime = DateTime.UtcNow,
+            UserId = userId,
+            Channel = SignalRNotifier.ChannelName
         };
 
-        await notifier.HandleEventAsync(eto);
+        await notifier.DeliverAsync(request, cancellationToken);
 
-        clients.Received(1).Users(Arg.Is<IReadOnlyList<string>>(
-            l => l.Contains(u1.ToString()) && l.Contains(u2.ToString())));
-        await clientProxy.Received(1).ReceiveNotification(Arg.Is<NotificationDelivery>(
-            n => n.NotificationId == eto.NotificationId && n.NotificationName == "test"));
+        clients.Received(1).User(userId.ToString());
+        await clientProxy.Received(1).SendCoreAsync(
+            nameof(INotificationsClient.ReceiveNotification),
+            Arg.Is<object[]>(arguments =>
+                arguments.Length == 1
+                && arguments[0] != null
+                && ((NotificationDelivery)arguments[0]).NotificationId == request.NotificationId),
+            cancellationToken);
     }
 }

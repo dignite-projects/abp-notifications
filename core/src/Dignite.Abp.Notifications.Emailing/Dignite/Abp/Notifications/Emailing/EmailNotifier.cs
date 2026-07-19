@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -21,12 +22,9 @@ namespace Dignite.Abp.Notifications.Emailing;
 /// </summary>
 [ExposeServices(
     typeof(INotificationNotifier),
-    typeof(INotificationDeliveryNotifier),
-    typeof(INotificationNotifier<NotificationDeliveryEto>),
     typeof(EmailNotifier))]
 public class EmailNotifier :
-    INotificationNotifier<NotificationDeliveryEto>,
-    INotificationDeliveryNotifier,
+    INotificationNotifier,
     ITransientDependency
 {
     public const string ChannelName = "Email";
@@ -83,7 +81,7 @@ public class EmailNotifier :
 
         if (AddressResolvers.Count == 0)
         {
-            // This notifier is transient, so the chain is inspected once per delivered event rather than per recipient.
+            // This notifier is transient, so the chain is inspected once per notifier instance rather than per call.
             Logger.LogWarning(
                 "Notification emailing is installed but no {Resolver} is registered, so no notification emails will "
                 + "be sent. Install Dignite.Abp.Notifications.Emailing.Identity or register your own resolver.",
@@ -91,29 +89,9 @@ public class EmailNotifier :
         }
     }
 
-    public virtual async Task HandleEventAsync(NotificationDeliveryEto eventData)
-    {
-        // Legacy wire path only. Reliable work reaches DeliverAsync through NotificationDeliveryProcessor; an old
-        // producer's aggregate event retains its original partial-progress semantics during migration.
-        if (!NotificationChannels.IsAllowed(eventData.Channels, Name)
-            || eventData.UserIds == null
-            || eventData.UserIds.Length == 0)
-        {
-            return;
-        }
-
-        var notification = NotificationDelivery.FromEto(eventData);
-
-        // One email per recipient, even when two recipients resolve to the same mailbox: ASP.NET Core Identity's
-        // UserOptions.RequireUniqueEmail defaults to false, so a shared account is legitimate, and the body is built
-        // per recipient. Deduplicating by address would trade N loud duplicates for a silently dropped email.
-        foreach (var userId in eventData.UserIds.Distinct())
-        {
-            await DeliverToUserAsync(notification, userId, eventData.TenantId);
-        }
-    }
-
-    public virtual Task<NotificationDeliveryResult> DeliverAsync(NotificationDeliveryRequestedEto workItem)
+    public virtual Task<NotificationDeliveryResult> DeliverAsync(
+        NotificationDeliveryRequestedEto workItem,
+        CancellationToken cancellationToken = default)
     {
         if (!string.Equals(workItem.Channel, Name, StringComparison.OrdinalIgnoreCase))
         {
@@ -124,16 +102,19 @@ public class EmailNotifier :
         return DeliverToUserAsync(
             NotificationDelivery.FromWorkItem(workItem),
             workItem.UserId,
-            workItem.TenantId);
+            workItem.TenantId,
+            cancellationToken);
     }
 
     protected virtual async Task<NotificationDeliveryResult> DeliverToUserAsync(
         NotificationDelivery notification,
         Guid userId,
-        Guid? tenantId)
+        Guid? tenantId,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var context = new EmailNotificationAddressResolveContext(notification, userId, tenantId);
-        var address = await ResolveAddressOrNullAsync(context);
+        var address = await ResolveAddressOrNullAsync(context, cancellationToken);
         if (address == null)
         {
             return NotificationDeliveryResult.Suppressed("address-unavailable");
@@ -157,7 +138,8 @@ public class EmailNotifier :
                     userId,
                     address.Address,
                     tenantId,
-                    culture.Name));
+                    culture.Name),
+                cancellationToken);
         }
         finally
         {
@@ -174,17 +156,22 @@ public class EmailNotifier :
             return NotificationDeliveryResult.Suppressed("content-unavailable");
         }
 
+        // ABP's IEmailSender has no CancellationToken overload. Observe cancellation immediately before entering
+        // that non-cancellable provider boundary; a provider-specific sender can implement cancellation internally.
+        cancellationToken.ThrowIfCancellationRequested();
         await EmailSender.SendAsync(address.Address, email.Subject, email.Body, email.IsBodyHtml);
         return NotificationDeliveryResult.Succeeded();
     }
 
     /// <summary>Walks the resolver chain and takes the first non-null address result.</summary>
     protected virtual async Task<EmailNotificationAddress?> ResolveAddressOrNullAsync(
-        EmailNotificationAddressResolveContext context)
+        EmailNotificationAddressResolveContext context,
+        CancellationToken cancellationToken)
     {
         foreach (var resolver in AddressResolvers)
         {
-            var address = await resolver.GetEmailOrNullAsync(context);
+            cancellationToken.ThrowIfCancellationRequested();
+            var address = await resolver.GetEmailOrNullAsync(context, cancellationToken);
             if (address != null)
             {
                 return address;
