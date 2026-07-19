@@ -32,4 +32,11 @@ public class NotificationDeliveriesController : AbpControllerBase, INotification
     {
         return DeliveryAppService.RetryAsync(id);
     }
+
+    [HttpPost]
+    [Route("{id}/force-deliver")]
+    public virtual Task ForceDeliverAsync(Guid id)
+    {
+        return DeliveryAppService.ForceDeliverAsync(id);
+    }
 }

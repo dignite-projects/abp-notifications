@@ -309,35 +309,32 @@ public class NotificationDeliveryStore :
         }
     }
 
-    public virtual async Task<bool> RequeueAsync(
+    public virtual Task<bool> RetryAsync(
         Guid deliveryId,
         Guid? tenantId,
         DateTime now,
         CancellationToken cancellationToken = default)
     {
-        try
-        {
-            using var unitOfWork = UnitOfWorkManager.Begin(requiresNew: true, isTransactional: false);
-            using (DataFilter.Disable<IMultiTenant>())
-            {
-                var entity = await DeliveryRepository.FirstOrDefaultAsync(
-                    delivery => delivery.Id == deliveryId && delivery.TenantId == tenantId,
-                    cancellationToken: cancellationToken);
-                if (entity == null || !entity.Requeue(now))
-                {
-                    await unitOfWork.CompleteAsync(cancellationToken);
-                    return false;
-                }
+        return UpdateTerminalAsync(
+            deliveryId,
+            tenantId,
+            entity => entity.Retry(now),
+            cancellationToken);
+    }
 
-                await DeliveryRepository.UpdateAsync(entity, autoSave: true, cancellationToken: cancellationToken);
-                await unitOfWork.CompleteAsync(cancellationToken);
-                return true;
-            }
-        }
-        catch (AbpDbConcurrencyException)
-        {
-            return false;
-        }
+    public virtual Task<bool> ForceDeliverAsync(
+        Guid deliveryId,
+        Guid? tenantId,
+        Guid actorId,
+        DateTime now,
+        string reasonCode,
+        CancellationToken cancellationToken = default)
+    {
+        return UpdateTerminalAsync(
+            deliveryId,
+            tenantId,
+            entity => entity.ForceDeliver(actorId, now, reasonCode),
+            cancellationToken);
     }
 
     protected virtual NotificationData? DeserializeDurableData(string? json)

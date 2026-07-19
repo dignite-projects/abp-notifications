@@ -44,10 +44,10 @@ changes.
   A quiet-hours schedule whose stored time zone can no longer be resolved on the evaluating host fails open to
   immediate delivery (with a warning log) instead of failing the whole recipient batch, and deleting a stored
   preference rule does not require its notification definition to still exist.
-- Operator delivery queries (`NotificationDeliveryDto`, REST, Angular proxy) now expose the producer-resolved
-  `Intent`, `DeliveryNotBefore`, and `PreferenceReasonCode`. A manual operator retry deliberately clears
-  producer-resolved suppress/delay intent: requeued work is force-delivered as an explicit human override of the
-  stored preference — the exposed intent fields are what let an operator see that before retrying.
+- Operator delivery queries (`NotificationDeliveryDto`, REST, Angular proxy) expose producer-resolved intent and
+  preference diagnostics plus the latest force-delivery audit. Ordinary retry is restricted to failed or
+  dead-lettered work and preserves consent semantics; suppressed work requires the separate
+  `NotificationCenter.Deliveries.ForceDeliver` permission and `/force-deliver` endpoint.
 
 - Added a per-tenant/notification/user/channel delivery state machine with deterministic identities, atomic leases,
   exponential retry with jitter, lease recovery, suppression, dead-lettering, metrics, and operator query/retry
@@ -80,6 +80,11 @@ changes.
   explicit batches.
 
 ### Changed
+
+- **Breaking for delivery-store implementers.** The broad `INotificationDeliveryStore.RequeueAsync` operation is
+  replaced by preference-preserving `RetryAsync` and explicitly audited `ForceDeliverAsync`. Notification Center
+  hosts must generate a consuming-host migration for the four nullable `LastForceDelivery*` ledger columns; no
+  data backfill is required, and MongoDB accepts the additive fields without a document migration.
 
 - Notification Center inbox materialization is idempotent for already-persisted `(UserId, NotificationId)` rows.
   Retried prepared/audience broadcast pages skip existing inbox rows instead of failing on the unique index; no

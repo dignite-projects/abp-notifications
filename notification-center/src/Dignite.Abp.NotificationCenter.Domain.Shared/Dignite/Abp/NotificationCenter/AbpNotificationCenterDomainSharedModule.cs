@@ -1,4 +1,5 @@
 using Dignite.Abp.NotificationCenter.Localization;
+using Volo.Abp.Localization.ExceptionHandling;
 using Volo.Abp.Localization;
 using Volo.Abp.Modularity;
 using Volo.Abp.VirtualFileSystem;
@@ -22,6 +23,11 @@ public class AbpNotificationCenterDomainSharedModule : AbpModule
             options.Resources
                 .Add<NotificationCenterResource>("en")
                 .AddVirtualJson("/Dignite/Abp/NotificationCenter/Localization");
+        });
+
+        Configure<AbpExceptionLocalizationOptions>(options =>
+        {
+            options.MapCodeNamespace("NotificationCenter", typeof(NotificationCenterResource));
         });
     }
 }

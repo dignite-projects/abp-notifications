@@ -17,8 +17,8 @@ public class NotificationDeliveryDto
 
     public string IdempotencyKey { get; set; } = default!;
 
-    /// <summary>The producer-resolved delivery intent. Suppressed/delayed work reflects a user preference, so a
-    /// manual retry of it deliberately overrides that preference and forces a fresh delivery attempt.</summary>
+    /// <summary>The producer-resolved delivery intent. Only an explicit force-delivery operation may override a
+    /// suppressed intent; an ordinary retry preserves it.</summary>
     public NotificationDeliveryIntent Intent { get; set; }
 
     public DateTime? DeliveryNotBefore { get; set; }
@@ -42,6 +42,15 @@ public class NotificationDeliveryDto
 
     /// <summary>Sanitized diagnostic text; never contains exception messages or notification payload data.</summary>
     public string? LastFailureMessage { get; set; }
+
+    public Guid? LastForceDeliveryActorId { get; set; }
+
+    public DateTime? LastForceDeliveryTime { get; set; }
+
+    public NotificationDeliveryState? LastForceDeliveryPreviousState { get; set; }
+
+    /// <summary>Stable, non-sensitive audit reason for the latest explicit force-delivery override.</summary>
+    public string? LastForceDeliveryReasonCode { get; set; }
 
     public DateTime CreationTime { get; set; }
 }

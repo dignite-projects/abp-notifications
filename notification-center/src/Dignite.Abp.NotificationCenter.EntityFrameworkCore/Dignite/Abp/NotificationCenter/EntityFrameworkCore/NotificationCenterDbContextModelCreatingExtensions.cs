@@ -84,6 +84,8 @@ public static class NotificationCenterDbContextModelCreatingExtensions
                 .HasMaxLength(NotificationDeliveryPreferenceReasonCodes.MaxLength);
             b.Property(x => x.LastFailureCode).HasMaxLength(NotificationCenterConsts.MaxDeliveryFailureCodeLength);
             b.Property(x => x.LastFailureMessage).HasMaxLength(NotificationCenterConsts.MaxDeliveryFailureMessageLength);
+            b.Property(x => x.LastForceDeliveryReasonCode)
+                .HasMaxLength(NotificationDeliveryOverrideReasonCodes.MaxLength);
 
             b.HasIndex(x => new { x.TenantKey, x.NotificationId, x.UserId, x.ChannelKey }).IsUnique();
             // Base payload cleanup checks tenant-local delivery references before deleting a notification row.

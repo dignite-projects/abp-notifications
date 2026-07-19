@@ -104,7 +104,7 @@ public class NotificationDeliveryProcessorTests
     }
 
     [Fact]
-    public async Task Suppression_is_terminal_but_manual_requeue_starts_a_new_attempt_cycle()
+    public async Task Suppression_is_terminal_but_explicit_force_delivery_starts_a_new_attempt_cycle()
     {
         var now = DateTime.UtcNow;
         var callCount = 0;
@@ -120,7 +120,13 @@ public class NotificationDeliveryProcessorTests
         await processor.ProcessAsync(work);
         callCount.ShouldBe(1);
 
-        (await store.RequeueAsync(work.DeliveryId, work.TenantId, now)).ShouldBeTrue();
+        (await store.RetryAsync(work.DeliveryId, work.TenantId, now)).ShouldBeFalse();
+        (await store.ForceDeliverAsync(
+            work.DeliveryId,
+            work.TenantId,
+            Guid.NewGuid(),
+            now,
+            NotificationDeliveryOverrideReasonCodes.OperatorForceDelivery)).ShouldBeTrue();
         await processor.ProcessAsync(work);
         callCount.ShouldBe(2);
     }

@@ -69,10 +69,24 @@ public interface INotificationDeliveryStore
         int maxResultCount,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Requeues a failed, suppressed or dead-lettered delivery in the explicitly supplied tenant.</summary>
-    Task<bool> RequeueAsync(
+    /// <summary>
+    /// Requeues a failed or dead-lettered delivery in the explicitly supplied tenant without changing the
+    /// producer-resolved delivery intent or preference diagnostics.
+    /// </summary>
+    Task<bool> RetryAsync(
         Guid deliveryId,
         Guid? tenantId,
         DateTime now,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Explicitly overrides a suppressed delivery in the supplied tenant and records a non-sensitive audit entry.
+    /// </summary>
+    Task<bool> ForceDeliverAsync(
+        Guid deliveryId,
+        Guid? tenantId,
+        Guid actorId,
+        DateTime now,
+        string reasonCode,
         CancellationToken cancellationToken = default);
 }
