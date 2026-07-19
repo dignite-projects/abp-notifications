@@ -716,11 +716,11 @@ bounded stages:
 4. publish work events in bounded scheduling groups, one for every eligible recipient/channel pair; the process
    hosting that channel persists and claims its consumer-owned delivery state.
 
-The defaults are 256 candidates, 256 inbox rows, and 100 recipients converted to work records per scheduling
-operation. Each value must be between 1 and `NotificationOptions.MaxDistributionBatchSize` (10,000), and invalid
-configuration fails host startup. `DeliveryEventRecipientLimit` retains its existing name for configuration
-compatibility, but `NotificationDeliveryRequestedEto` always carries one recipient and channel. Notification data still
-has to fit the chosen transport's message-size limit.
+The defaults are 256 candidates, 256 inbox rows, and 100 single-recipient/channel work items per scheduling
+operation. Each value must be between 1 and `NotificationDistributionOptions.MaxBatchSize` (10,000), and invalid
+configuration fails host startup with the responsible option type and property. `DeliveryWorkItemBatchSize` limits
+work scheduled by one operation; every `NotificationDeliveryRequestedEto` still carries exactly one recipient and
+channel. Notification data still has to fit the chosen transport's message-size limit.
 
 Stable keyset paging and bounded inbox multi-inserts are canonical `INotificationStore` members. The built-in
 `NotificationStore` supplies equivalent EF Core and MongoDB behavior; `NullNotificationStore` implements the same
@@ -1008,17 +1008,25 @@ authoritative inbox source.
 ## Configuration
 
 ```csharp
-Configure<NotificationOptions>(options =>
+Configure<NotificationDefinitionOptions>(options =>
+{
+    // Provider types are normally convention-discovered; explicit registration is also supported.
+    options.DefinitionProviders.Add(typeof(MyNotificationDefinitionProvider));
+});
+
+Configure<NotificationDistributionOptions>(options =>
 {
     // Explicit recipients above this count distribute on a background job instead of inline. Default: 5.
     options.DirectDistributionUserThreshold = 10;
 
-    // Each value must be between 1 and NotificationOptions.MaxDistributionBatchSize (10,000).
+    // Each value must be between 1 and NotificationDistributionOptions.MaxBatchSize (10,000).
     options.RecipientBatchSize = 256;
     options.UserNotificationWriteBatchSize = 256;
-    // Compatibility name: recipients converted to single-recipient/channel work records per scheduling group.
-    options.DeliveryEventRecipientLimit = 100;
+    options.DeliveryWorkItemBatchSize = 100;
+});
 
+Configure<NotificationDeliveryOptions>(options =>
+{
     // Per-recipient/channel claim, retry, and dead-letter policy.
     options.DeliveryLeaseDuration = TimeSpan.FromMinutes(2);
     options.MaxDeliveryAttempts = 5;
@@ -1029,6 +1037,12 @@ Configure<NotificationOptions>(options =>
     options.DeliveryRetryWorkerPeriod = TimeSpan.FromSeconds(30);
     options.DeliveryRetryBatchSize = 100;
     options.IsDeliveryRetryWorkerEnabled = true;
+});
+
+Configure<NotificationAudienceBroadcastOptions>(options =>
+{
+    // Recipients requested from an audience source in one resumable page. Default: 256.
+    options.RecipientBatchSize = 256;
 });
 
 Configure<NotificationEmailOptions>(options =>

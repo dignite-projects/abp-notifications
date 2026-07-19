@@ -31,14 +31,10 @@ public class AbpNotificationsModule : AbpModule
 
     public override void ConfigureServices(ServiceConfigurationContext context)
     {
-        context.Services
-            .AddOptions<NotificationOptions>()
-            .Validate(options =>
-            {
-                options.ValidateDistributionBatching();
-                return true;
-            })
-            .ValidateOnStart();
+        AddValidatedOptions<NotificationDefinitionOptions>(context.Services, options => options.Validate());
+        AddValidatedOptions<NotificationDistributionOptions>(context.Services, options => options.Validate());
+        AddValidatedOptions<NotificationDeliveryOptions>(context.Services, options => options.Validate());
+        AddValidatedOptions<NotificationAudienceBroadcastOptions>(context.Services, options => options.Validate());
 
         context.Services.AddHostedService<NotificationDefinitionStartupService>();
         context.Services.AddHostedService<NotificationDeliveryRetryWorker>();
@@ -51,7 +47,7 @@ public class AbpNotificationsModule : AbpModule
 
     private static void AutoAddDefinitionProviders(IServiceCollection services)
     {
-        services.PostConfigure<NotificationOptions>(options =>
+        services.PostConfigure<NotificationDefinitionOptions>(options =>
         {
             var definitionProviders = services
                 .Where(descriptor => descriptor.ImplementationType != null &&
@@ -63,5 +59,20 @@ public class AbpNotificationsModule : AbpModule
 
             options.DefinitionProviders.AddIfNotContains(definitionProviders);
         });
+    }
+
+    private static void AddValidatedOptions<TOptions>(
+        IServiceCollection services,
+        Action<TOptions> validate)
+        where TOptions : class
+    {
+        services
+            .AddOptions<TOptions>()
+            .Validate(options =>
+            {
+                validate(options);
+                return true;
+            })
+            .ValidateOnStart();
     }
 }

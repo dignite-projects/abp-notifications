@@ -380,7 +380,7 @@ public class NotificationAudienceBroadcastTests
                 .UseChannels("Test"));
 
         return new DefaultNotificationAudienceBroadcaster(
-            Options.Create(new NotificationOptions()),
+            Options.Create(new NotificationAudienceBroadcastOptions()),
             distributor,
             backgroundJobManager,
             guidGenerator,
@@ -405,7 +405,7 @@ public class NotificationAudienceBroadcastTests
         var clock = Substitute.For<IClock>();
         clock.Now.Returns(_ => DateTime.UtcNow);
         return new NotificationAudienceBroadcastJob(
-            Options.Create(new NotificationOptions { RecipientBatchSize = recipientBatchSize }),
+            Options.Create(new NotificationAudienceBroadcastOptions { RecipientBatchSize = recipientBatchSize }),
             new[] { source },
             distributor,
             backgroundJobManager,

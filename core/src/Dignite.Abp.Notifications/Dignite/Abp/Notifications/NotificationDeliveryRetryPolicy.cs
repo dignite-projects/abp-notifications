@@ -6,9 +6,9 @@ namespace Dignite.Abp.Notifications;
 
 public class NotificationDeliveryRetryPolicy : INotificationDeliveryRetryPolicy, ITransientDependency
 {
-    protected NotificationOptions Options { get; }
+    protected NotificationDeliveryOptions Options { get; }
 
-    public NotificationDeliveryRetryPolicy(IOptions<NotificationOptions> options)
+    public NotificationDeliveryRetryPolicy(IOptions<NotificationDeliveryOptions> options)
     {
         Options = options.Value;
     }

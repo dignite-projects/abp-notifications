@@ -33,7 +33,7 @@ public class DefaultNotificationDistributor :
 
     protected INotificationDataTypeRegistry DataTypeRegistry { get; }
 
-    protected NotificationOptions Options { get; }
+    protected NotificationDistributionOptions Options { get; }
 
     /// <summary>
     /// Source-compatible constructor for applications/tests that instantiate the default distributor directly.
@@ -61,7 +61,7 @@ public class DefaultNotificationDistributor :
             logger,
             dataTypeRegistry,
             new AllowAllNotificationDeliveryPreferenceEvaluator(),
-            Microsoft.Extensions.Options.Options.Create(new NotificationOptions()))
+            Microsoft.Extensions.Options.Options.Create(new NotificationDistributionOptions()))
     {
     }
 
@@ -78,7 +78,7 @@ public class DefaultNotificationDistributor :
         ICurrentTenant currentTenant,
         ILogger<DefaultNotificationDistributor> logger,
         INotificationDataTypeRegistry dataTypeRegistry,
-        IOptions<NotificationOptions> options)
+        IOptions<NotificationDistributionOptions> options)
         : this(
             store,
             definitionManager,
@@ -101,7 +101,7 @@ public class DefaultNotificationDistributor :
         ILogger<DefaultNotificationDistributor> logger,
         INotificationDataTypeRegistry dataTypeRegistry,
         INotificationDeliveryPreferenceEvaluator deliveryPreferenceEvaluator,
-        IOptions<NotificationOptions> options)
+        IOptions<NotificationDistributionOptions> options)
     {
         Store = store;
         DefinitionManager = definitionManager;
@@ -112,7 +112,7 @@ public class DefaultNotificationDistributor :
         Logger = logger;
         DataTypeRegistry = dataTypeRegistry;
         Options = options.Value;
-        Options.ValidateDistributionBatching();
+        Options.Validate();
     }
 
     public virtual Task DistributeAsync(
@@ -183,7 +183,7 @@ public class DefaultNotificationDistributor :
         var outcome = "success";
         var stage = "validation";
         var state = new DistributionState(
-            Options.DeliveryEventRecipientLimit,
+            Options.DeliveryWorkItemBatchSize,
             notificationAlreadyPersisted);
 
         try
@@ -465,7 +465,7 @@ public class DefaultNotificationDistributor :
             foreach (var userId in writeBatch)
             {
                 state.DeliveryBuffer.Add(userId);
-                if (state.DeliveryBuffer.Count == Options.DeliveryEventRecipientLimit)
+                if (state.DeliveryBuffer.Count == Options.DeliveryWorkItemBatchSize)
                 {
                     setStage("delivery");
                     await PublishBufferedDeliveryAsync(

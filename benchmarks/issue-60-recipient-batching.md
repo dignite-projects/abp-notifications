@@ -94,8 +94,8 @@ flush-and-detach adapter.
 - `UserNotificationWriteBatchSize = 256` keeps a typical relational insert comfortably below common 2,100
   parameter limits even when an inbox row uses several bound values, while still mapping to one MongoDB
   `InsertMany` unit. Hosts with wider provider mappings can lower it independently.
-- `DeliveryEventRecipientLimit = 100` makes broker growth independent of database tuning. One hundred textual GUIDs
-  are roughly 3.6 KB before JSON framing and notification data, leaving useful headroom on common broker limits.
+- `DeliveryWorkItemBatchSize = 100` bounds the number of single-recipient/channel work items scheduled by one
+  operation independently from database tuning. Each broker event still carries exactly one recipient and channel.
 
 All three defaults are independent because database, policy, and transport constraints differ. The hard maximum
 of 10,000 prevents accidental configuration from recreating notification-wide units.

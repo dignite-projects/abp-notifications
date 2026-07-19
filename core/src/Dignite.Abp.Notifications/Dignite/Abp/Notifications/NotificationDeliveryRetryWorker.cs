@@ -13,12 +13,12 @@ namespace Dignite.Abp.Notifications;
 internal sealed class NotificationDeliveryRetryWorker : BackgroundService
 {
     private readonly IServiceScopeFactory _serviceScopeFactory;
-    private readonly IOptions<NotificationOptions> _options;
+    private readonly IOptions<NotificationDeliveryOptions> _options;
     private readonly ILogger<NotificationDeliveryRetryWorker> _logger;
 
     public NotificationDeliveryRetryWorker(
         IServiceScopeFactory serviceScopeFactory,
-        IOptions<NotificationOptions> options,
+        IOptions<NotificationDeliveryOptions> options,
         ILogger<NotificationDeliveryRetryWorker> logger)
     {
         _serviceScopeFactory = serviceScopeFactory;

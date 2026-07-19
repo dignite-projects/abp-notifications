@@ -285,8 +285,56 @@ public class NotificationRegistration_Tests
         var exception = await Should.ThrowAsync<Exception>(
             () => StartHostAsync<InvalidDistributionBatchStartupModule>());
 
-        exception.ToString().ShouldContain(nameof(NotificationOptions.DeliveryEventRecipientLimit));
-        exception.ToString().ShouldContain(NotificationOptions.MaxDistributionBatchSize.ToString());
+        exception.ToString().ShouldContain(nameof(NotificationDistributionOptions));
+        exception.ToString().ShouldContain(nameof(NotificationDistributionOptions.DeliveryWorkItemBatchSize));
+        exception.ToString().ShouldContain(NotificationDistributionOptions.MaxBatchSize.ToString());
+    }
+
+    [Fact]
+    public async Task Invalid_delivery_configuration_fails_host_start_with_its_option_group()
+    {
+        var exception = await Should.ThrowAsync<Exception>(
+            () => StartHostAsync<InvalidDeliveryOptionsStartupModule>());
+
+        exception.ToString().ShouldContain(nameof(NotificationDeliveryOptions));
+        exception.ToString().ShouldContain(nameof(NotificationDeliveryOptions.DeliveryLeaseDuration));
+    }
+
+    [Fact]
+    public async Task Invalid_audience_configuration_fails_host_start_with_its_option_group()
+    {
+        var exception = await Should.ThrowAsync<Exception>(
+            () => StartHostAsync<InvalidAudienceOptionsStartupModule>());
+
+        exception.ToString().ShouldContain(nameof(NotificationAudienceBroadcastOptions));
+        exception.ToString().ShouldContain(nameof(NotificationAudienceBroadcastOptions.RecipientBatchSize));
+    }
+
+    [Fact]
+    public void Split_option_groups_preserve_existing_defaults()
+    {
+        var distribution = new NotificationDistributionOptions();
+        distribution.DirectDistributionUserThreshold.ShouldBe(5);
+        distribution.RecipientBatchSize.ShouldBe(256);
+        distribution.UserNotificationWriteBatchSize.ShouldBe(256);
+        distribution.DeliveryWorkItemBatchSize.ShouldBe(100);
+
+        var delivery = new NotificationDeliveryOptions();
+        delivery.DeliveryLeaseDuration.ShouldBe(TimeSpan.FromMinutes(2));
+        delivery.MaxDeliveryAttempts.ShouldBe(5);
+        delivery.InitialDeliveryRetryDelay.ShouldBe(TimeSpan.FromSeconds(10));
+        delivery.MaxDeliveryRetryDelay.ShouldBe(TimeSpan.FromMinutes(15));
+        delivery.DeliveryRetryBackoffFactor.ShouldBe(2d);
+        delivery.DeliveryRetryJitterFactor.ShouldBe(0.2d);
+        delivery.DeliveryRetryWorkerPeriod.ShouldBe(TimeSpan.FromSeconds(30));
+        delivery.DeliveryRetryBatchSize.ShouldBe(100);
+        delivery.IsDeliveryRetryWorkerEnabled.ShouldBeTrue();
+
+        new NotificationAudienceBroadcastOptions().RecipientBatchSize.ShouldBe(256);
+        new NotificationDefinitionOptions().DefinitionProviders.ShouldBeEmpty();
+        NotificationDistributionOptions.MaxBatchSize.ShouldBe(10_000);
+        NotificationDeliveryOptions.MaxBatchSize.ShouldBe(10_000);
+        NotificationAudienceBroadcastOptions.MaxBatchSize.ShouldBe(10_000);
     }
 
     [Fact]
@@ -418,11 +466,11 @@ internal sealed class DefinitionContractProvider : INotificationDefinitionProvid
 
 internal sealed class ProviderDependencyDefinitionProvider : INotificationDefinitionProvider
 {
-    private readonly NotificationOptions _options;
+    private readonly NotificationDefinitionOptions _options;
     private readonly INotificationDefinitionManager _definitionManager;
 
     public ProviderDependencyDefinitionProvider(
-        IOptions<NotificationOptions> options,
+        IOptions<NotificationDefinitionOptions> options,
         INotificationDefinitionManager definitionManager)
     {
         _options = options.Value;
@@ -444,7 +492,7 @@ internal sealed class ProviderDependencyDefinitionProvider : INotificationDefini
 internal sealed class CustomNotificationDefinitionManager : NotificationDefinitionManager
 {
     public CustomNotificationDefinitionManager(
-        IOptions<NotificationOptions> options,
+        IOptions<NotificationDefinitionOptions> options,
         IServiceScopeFactory serviceScopeFactory)
         : base(options, serviceScopeFactory)
     {
@@ -531,7 +579,7 @@ public class UnregisteredPayloadContractStartupModule : AbpModule
     public override void ConfigureServices(ServiceConfigurationContext context)
     {
         context.Services.AddTransient<DefinitionContractProvider>();
-        Configure<NotificationOptions>(options =>
+        Configure<NotificationDefinitionOptions>(options =>
             options.DefinitionProviders.Add(typeof(DefinitionContractProvider)));
     }
 }
@@ -566,7 +614,7 @@ public class RegisteredPayloadContractStartupModule : AbpModule
     public override void ConfigureServices(ServiceConfigurationContext context)
     {
         context.Services.AddTransient<DefinitionContractProvider>();
-        Configure<NotificationOptions>(options =>
+        Configure<NotificationDefinitionOptions>(options =>
             options.DefinitionProviders.Add(typeof(DefinitionContractProvider)));
         Configure<NotificationDataOptions>(options => options.Add<DefinitionContractData>());
     }
@@ -578,7 +626,7 @@ public class GenericThenStringPayloadContractStartupModule : AbpModule
     public override void ConfigureServices(ServiceConfigurationContext context)
     {
         context.Services.AddTransient<GenericThenStringPayloadContractProvider>();
-        Configure<NotificationOptions>(options =>
+        Configure<NotificationDefinitionOptions>(options =>
             options.DefinitionProviders.Add(typeof(GenericThenStringPayloadContractProvider)));
         Configure<NotificationDataOptions>(options => options.Add<DefinitionContractAliasData>());
     }
@@ -590,7 +638,7 @@ public class StringThenGenericPayloadContractStartupModule : AbpModule
     public override void ConfigureServices(ServiceConfigurationContext context)
     {
         context.Services.AddTransient<StringThenGenericPayloadContractProvider>();
-        Configure<NotificationOptions>(options =>
+        Configure<NotificationDefinitionOptions>(options =>
             options.DefinitionProviders.Add(typeof(StringThenGenericPayloadContractProvider)));
         Configure<NotificationDataOptions>(options => options.Add<DefinitionContractAliasData>());
     }
@@ -642,8 +690,8 @@ public class InvalidDistributionBatchStartupModule : AbpModule
 {
     public override void ConfigureServices(ServiceConfigurationContext context)
     {
-        Configure<NotificationOptions>(options =>
-            options.DeliveryEventRecipientLimit = NotificationOptions.MaxDistributionBatchSize + 1);
+        Configure<NotificationDistributionOptions>(options =>
+            options.DeliveryWorkItemBatchSize = NotificationDistributionOptions.MaxBatchSize + 1);
     }
 }
 
@@ -658,8 +706,26 @@ public class ProviderDependencyStartupModule : AbpModule
     public override void ConfigureServices(ServiceConfigurationContext context)
     {
         context.Services.AddTransient<ProviderDependencyDefinitionProvider>();
-        Configure<NotificationOptions>(options =>
+        Configure<NotificationDefinitionOptions>(options =>
             options.DefinitionProviders.Add(typeof(ProviderDependencyDefinitionProvider)));
+    }
+}
+
+[DependsOn(typeof(AbpNotificationsModule))]
+public class InvalidDeliveryOptionsStartupModule : AbpModule
+{
+    public override void ConfigureServices(ServiceConfigurationContext context)
+    {
+        Configure<NotificationDeliveryOptions>(options => options.DeliveryLeaseDuration = TimeSpan.Zero);
+    }
+}
+
+[DependsOn(typeof(AbpNotificationsModule))]
+public class InvalidAudienceOptionsStartupModule : AbpModule
+{
+    public override void ConfigureServices(ServiceConfigurationContext context)
+    {
+        Configure<NotificationAudienceBroadcastOptions>(options => options.RecipientBatchSize = 0);
     }
 }
 

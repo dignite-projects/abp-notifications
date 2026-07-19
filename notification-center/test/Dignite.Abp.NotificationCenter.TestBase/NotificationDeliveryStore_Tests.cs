@@ -204,7 +204,7 @@ public abstract class NotificationDeliveryStore_Tests<TStartupModule> : Notifica
             tenantId: null,
             DateTime.UtcNow);
         var notifier = new RecordingDeliveryNotifier(work.Channel);
-        var deliveryOptions = Options.Create(new NotificationOptions
+        var deliveryOptions = Options.Create(new NotificationDeliveryOptions
         {
             IsDeliveryRetryWorkerEnabled = false,
             DeliveryRetryJitterFactor = 0

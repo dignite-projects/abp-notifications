@@ -17,7 +17,7 @@ namespace Dignite.Abp.Notifications;
 
 public class DefaultNotificationAudienceBroadcaster : INotificationAudienceBroadcaster, ITransientDependency
 {
-    protected NotificationOptions Options { get; }
+    protected NotificationAudienceBroadcastOptions Options { get; }
 
     protected INotificationDistributor Distributor { get; }
 
@@ -44,7 +44,7 @@ public class DefaultNotificationAudienceBroadcaster : INotificationAudienceBroad
     protected ILogger<DefaultNotificationAudienceBroadcaster> Logger { get; }
 
     public DefaultNotificationAudienceBroadcaster(
-        IOptions<NotificationOptions> options,
+        IOptions<NotificationAudienceBroadcastOptions> options,
         INotificationDistributor distributor,
         IBackgroundJobManager backgroundJobManager,
         IGuidGenerator guidGenerator,
@@ -59,7 +59,7 @@ public class DefaultNotificationAudienceBroadcaster : INotificationAudienceBroad
         ILogger<DefaultNotificationAudienceBroadcaster> logger)
     {
         Options = options.Value;
-        Options.ValidateDistributionBatching();
+        Options.Validate();
         Distributor = distributor;
         BackgroundJobManager = backgroundJobManager;
         GuidGenerator = guidGenerator;

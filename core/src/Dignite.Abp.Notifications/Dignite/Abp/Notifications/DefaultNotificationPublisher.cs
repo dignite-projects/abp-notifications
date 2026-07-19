@@ -13,7 +13,7 @@ namespace Dignite.Abp.Notifications;
 
 public class DefaultNotificationPublisher : INotificationPublisher, ITransientDependency
 {
-    protected NotificationOptions Options { get; }
+    protected NotificationDistributionOptions Options { get; }
 
     protected INotificationDistributor Distributor { get; }
 
@@ -32,7 +32,7 @@ public class DefaultNotificationPublisher : INotificationPublisher, ITransientDe
     protected INotificationStore Store { get; }
 
     public DefaultNotificationPublisher(
-        IOptions<NotificationOptions> options,
+        IOptions<NotificationDistributionOptions> options,
         INotificationDistributor distributor,
         IBackgroundJobManager backgroundJobManager,
         IGuidGenerator guidGenerator,
@@ -54,7 +54,7 @@ public class DefaultNotificationPublisher : INotificationPublisher, ITransientDe
     }
 
     public DefaultNotificationPublisher(
-        IOptions<NotificationOptions> options,
+        IOptions<NotificationDistributionOptions> options,
         INotificationDistributor distributor,
         IBackgroundJobManager backgroundJobManager,
         IGuidGenerator guidGenerator,
