@@ -130,5 +130,27 @@ public static class NotificationCenterDbContextModelCreatingExtensions
             // One cursor per cleanup scope and record kind lets bounded passes continue past retained prefixes.
             b.HasIndex(x => new { x.IsTenantScoped, x.TenantKey, x.RecordKind }).IsUnique();
         });
+
+        builder.Entity<NotificationAudienceBroadcastState>(b =>
+        {
+            b.ToTable(
+                NotificationCenterDbProperties.DbTablePrefix + "NotificationAudienceBroadcastStates",
+                NotificationCenterDbProperties.DbSchema);
+            b.ConfigureByConvention();
+
+            b.Property(x => x.NotificationName).IsRequired()
+                .HasMaxLength(NotificationCenterConsts.MaxNotificationNameLength);
+            b.Property(x => x.AudienceName).IsRequired()
+                .HasMaxLength(NotificationCenterConsts.MaxAudienceNameLength);
+            b.Property(x => x.ContinuationToken)
+                .HasMaxLength(NotificationCenterConsts.MaxBroadcastContinuationTokenLength);
+            b.Property(x => x.FailureCode)
+                .HasMaxLength(NotificationCenterConsts.MaxBroadcastFailureCodeLength);
+            b.Property(x => x.FailureMessage)
+                .HasMaxLength(NotificationCenterConsts.MaxBroadcastFailureMessageLength);
+
+            b.HasIndex(x => new { x.TenantKey, x.Status, x.CompletionTime });
+            b.HasIndex(x => new { x.Status, x.CompletionTime });
+        });
     }
 }

@@ -23,4 +23,12 @@ public static class NotificationCenterConsts
     public const int DeliveryPreferenceIdentityKeyLength = 64;
 
     public const int MaxTimeZoneIdLength = 256;
+
+    public const int MaxAudienceNameLength = 256;
+
+    public const int MaxBroadcastContinuationTokenLength = 2048;
+
+    public const int MaxBroadcastFailureCodeLength = 64;
+
+    public const int MaxBroadcastFailureMessageLength = 256;
 }

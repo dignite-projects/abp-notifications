@@ -32,6 +32,12 @@ public class NotificationRetentionOptions
     public TimeSpan? TerminalDeliveryRetention { get; set; } = TimeSpan.FromDays(90);
 
     /// <summary>
+    /// Completed or canceled audience-broadcast workflow state older than this value is eligible for deletion.
+    /// Non-terminal progress and cancellation requests are always retained.
+    /// </summary>
+    public TimeSpan? TerminalAudienceBroadcastRetention { get; set; } = TimeSpan.FromDays(90);
+
+    /// <summary>
     /// Base notification payload rows older than this value are eligible only after no retained inbox or delivery
     /// record in the same tenant references them.
     /// </summary>
@@ -59,6 +65,7 @@ public class NotificationRetentionOptions
 
         ValidateRetention(ReadUserNotificationRetention, nameof(ReadUserNotificationRetention));
         ValidateRetention(TerminalDeliveryRetention, nameof(TerminalDeliveryRetention));
+        ValidateRetention(TerminalAudienceBroadcastRetention, nameof(TerminalAudienceBroadcastRetention));
         ValidateRetention(OrphanNotificationRetention, nameof(OrphanNotificationRetention));
 
         if (NotificationDeletionQuarantineDuration < TimeSpan.Zero)

@@ -393,6 +393,7 @@ Configure<NotificationRetentionOptions>(options =>
     options.CleanupWorkerPeriod = TimeSpan.FromHours(6);
     options.ReadUserNotificationRetention = TimeSpan.FromDays(180);
     options.TerminalDeliveryRetention = TimeSpan.FromDays(30);
+    options.TerminalAudienceBroadcastRetention = TimeSpan.FromDays(30);
     options.OrphanNotificationRetention = TimeSpan.FromDays(30);
     options.NotificationDeletionQuarantineDuration = TimeSpan.FromMinutes(5);
 });
@@ -421,6 +422,7 @@ Retention ownership and deletion rules:
 | `UserNotification` inbox row | Notification Center / current user | User actions can delete any of their own rows. Retention cleanup only deletes `Read` rows older than `ReadUserNotificationRetention`; `Unread` rows are always retained. |
 | `Notification` base payload | Notification Center retention cleanup | First marked with `RetentionDeletionTime` after `OrphanNotificationRetention` and only when no same-tenant inbox row and no same-tenant delivery record still references it. Physical deletion happens after `NotificationDeletionQuarantineDuration` and a second reference check. New same-tenant inbox/delivery materialization cancels the marker; a cross-tenant row never retains or deletes another tenant's payload. |
 | `NotificationDeliveryRecord` | Channel consumer / Notification Center | Cleanup deletes only terminal `Succeeded`, `Suppressed`, or `DeadLettered` rows older than `TerminalDeliveryRetention`. `Pending`, retryable `RetryScheduled`, and leased `Processing` rows are active work and are never time-deleted. |
+| `NotificationAudienceBroadcastState` | Notification Center / broadcast workflow | Cleanup deletes only `Completed` or `Canceled` state older than `TerminalAudienceBroadcastRetention`. Enqueued, running, failed/retryable, and cancellation-requested workflows are retained. |
 | `NotificationSubscription` | User subscription settings | Not time-based. Delete only by the exact subscription identity through the subscription APIs. |
 | `NotificationDeliveryPreference` / `NotificationQuietHours` | User delivery settings | Not time-based. Delete only by user/settings APIs; absence means default allow/no quiet hours. |
 | `NotificationRetentionCleanupCursor` | Notification Center retention cleanup | Internal scan state. One cursor per cleanup scope and record kind records the last keyset position so bounded runs can resume after retained, vetoed, or failing prefixes. |
@@ -769,11 +771,25 @@ emitted from the `Dignite.Abp.Notifications.AudienceBroadcast` meter. Retried pa
 Notification Center `(UserId, NotificationId)` inbox identity.
 
 `INotificationAudienceBroadcaster.GetProgressAsync(...)` returns the current observable state for a tenant-or-host
-scoped broadcast, and `CancelAsync(...)` records a cancellation request. The default progress
-store is process-local and suitable for Core-only diagnostics; replace `INotificationAudienceBroadcastProgressStore`
-when cancellation/progress must survive process restarts or be queried by another service. A job checks the store
-before loading a page and before enqueueing the next continuation token, then marks the broadcast completed,
-canceled, or failed.
+scoped broadcast, and `CancelAsync(...)` records a cancellation request. Core-only uses the explicitly process-local
+`InMemoryNotificationAudienceBroadcastProgressStore`; it is suitable for single-instance diagnostics but loses
+state on restart and cannot coordinate API/worker instances. Installing Notification Center automatically replaces
+it with repository-backed `NotificationAudienceBroadcastProgressStore`, persisted equivalently by EF Core and
+MongoDB. Progress, sanitized failure diagnostics, replay protection, and cooperative cancellation then survive
+restart and are visible across instances. A job checks the authoritative store before loading a page and before
+enqueueing the next continuation token, then marks the broadcast completed, canceled, or failed.
+
+ABP Background Jobs still owns queue persistence, scheduling, retry, job identity, and clustered execution. The
+Notifications table/collection stores only broadcast business progress and cancellation; it does not modify or
+reuse `IBackgroundJobStore` / `AbpBackgroundJobs`, and deleting a Hangfire/Quartz/provider dashboard job is not a
+business cancellation. Use `CancelAsync(...)` for the provider-neutral cooperative boundary.
+
+**Broadcast-state database upgrade:** EF Core consuming hosts must generate a host-owned migration for
+`AbpNotificationAudienceBroadcastStates`, including notification/audience names, status, page/candidate counts,
+opaque next token, cancellation/failure/timestamp fields, `ConcurrencyStamp`, and the terminal-retention indexes
+configured by `ConfigureNotificationCenter()`. MongoDB contexts create the equivalent collection and indexes from
+`NotificationCenterMongoDbContext.CreateModel`; custom contexts must mirror them. The repository ships no migration
+and requires no backfill for broadcasts created before the upgrade.
 
 The EF Core package replaces the provider-neutral inbox writer with a flush-and-detach implementation. It saves
 only the configured write group and immediately detaches those `UserNotification` entities; a regression test

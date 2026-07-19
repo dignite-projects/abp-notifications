@@ -6,12 +6,17 @@ using Volo.Abp.DependencyInjection;
 
 namespace Dignite.Abp.Notifications;
 
+/// <summary>
+/// Process-local audience-broadcast workflow state for Core-only and single-instance diagnostics. This store is not
+/// durable and is not shared across application instances; Notification Center replaces it with persistent state.
+/// </summary>
 [ExposeServices(typeof(INotificationAudienceBroadcastProgressStore))]
 public class InMemoryNotificationAudienceBroadcastProgressStore :
     INotificationAudienceBroadcastProgressStore,
     ISingletonDependency
 {
     private readonly ConcurrentDictionary<string, NotificationAudienceBroadcastProgress> _progresses = new();
+    private readonly object _sync = new();
 
     public virtual Task<NotificationAudienceBroadcastProgress?> GetAsync(
         Guid notificationId,
@@ -19,10 +24,13 @@ public class InMemoryNotificationAudienceBroadcastProgressStore :
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult(
-            _progresses.TryGetValue(CreateKey(notificationId, tenantId), out var progress)
-                ? progress.Clone()
-                : null);
+        lock (_sync)
+        {
+            return Task.FromResult(
+                _progresses.TryGetValue(CreateKey(notificationId, tenantId), out var progress)
+                    ? progress.Clone()
+                    : null);
+        }
     }
 
     public virtual Task RecordStartedAsync(
@@ -33,23 +41,33 @@ public class InMemoryNotificationAudienceBroadcastProgressStore :
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        _progresses.AddOrUpdate(
-            CreateKey(notification.Id, tenantId),
-            _ => NewProgress(notification, audienceName, tenantId, NotificationAudienceBroadcastStatus.Enqueued, updateTime),
-            (_, existing) =>
-            {
-                if (IsTerminal(existing.Status))
+        lock (_sync)
+        {
+            _progresses.AddOrUpdate(
+                CreateKey(notification.Id, tenantId),
+                _ => NewProgress(notification, audienceName, tenantId, NotificationAudienceBroadcastStatus.Enqueued, updateTime),
+                (_, existing) =>
                 {
-                    return existing;
-                }
+                    if (IsTerminal(existing.Status))
+                    {
+                        return existing;
+                    }
 
-                existing.NotificationName = notification.NotificationName;
-                existing.AudienceName = audienceName;
-                existing.Status = NotificationAudienceBroadcastStatus.Enqueued;
-                existing.LastUpdatedTime = updateTime;
-                existing.ErrorMessage = null;
-                return existing;
-            });
+                    existing.NotificationName = notification.NotificationName;
+                    existing.AudienceName = audienceName;
+                    existing.Status = existing.IsCancellationRequested
+                        ? NotificationAudienceBroadcastStatus.CancellationRequested
+                        : existing.Status == NotificationAudienceBroadcastStatus.Failed
+                            ? NotificationAudienceBroadcastStatus.Enqueued
+                            : existing.Status;
+                    existing.FailureCode = null;
+                    existing.FailureMessage = null;
+                    existing.CompletionTime = null;
+                    Touch(existing, updateTime);
+                    return existing;
+                });
+        }
+
         return Task.CompletedTask;
     }
 
@@ -64,42 +82,47 @@ public class InMemoryNotificationAudienceBroadcastProgressStore :
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        _progresses.AddOrUpdate(
-            CreateKey(notification.Id, tenantId),
-            _ =>
-            {
-                var progress = NewProgress(
-                    notification,
-                    audienceName,
-                    tenantId,
-                    NotificationAudienceBroadcastStatus.Running,
-                    updateTime);
-                progress.CompletedPageCount = pageIndex + 1;
-                progress.CandidateCount = candidateCount;
-                progress.NextContinuationToken = nextContinuationToken;
-                return progress;
-            },
-            (_, existing) =>
-            {
-                if (IsTerminal(existing.Status) || pageIndex < existing.CompletedPageCount)
+        lock (_sync)
+        {
+            _progresses.AddOrUpdate(
+                CreateKey(notification.Id, tenantId),
+                _ =>
                 {
-                    return existing;
-                }
+                    var progress = NewProgress(
+                        notification,
+                        audienceName,
+                        tenantId,
+                        NotificationAudienceBroadcastStatus.Running,
+                        updateTime);
+                    if (pageIndex == 0)
+                    {
+                        progress.CompletedPageCount = 1;
+                        progress.CandidateCount = candidateCount;
+                        progress.NextContinuationToken = nextContinuationToken;
+                    }
 
-                if (pageIndex >= existing.CompletedPageCount)
+                    return progress;
+                },
+                (_, existing) =>
                 {
+                    if (IsTerminal(existing.Status) || pageIndex != existing.CompletedPageCount)
+                    {
+                        return existing;
+                    }
+
                     existing.CandidateCount += candidateCount;
-                    existing.CompletedPageCount = pageIndex + 1;
-                }
+                    existing.CompletedPageCount++;
+                    existing.Status = existing.IsCancellationRequested
+                        ? NotificationAudienceBroadcastStatus.CancellationRequested
+                        : NotificationAudienceBroadcastStatus.Running;
+                    existing.NextContinuationToken = nextContinuationToken;
+                    existing.FailureCode = null;
+                    existing.FailureMessage = null;
+                    Touch(existing, updateTime);
+                    return existing;
+                });
+        }
 
-                existing.Status = existing.IsCancellationRequested
-                    ? NotificationAudienceBroadcastStatus.CancellationRequested
-                    : NotificationAudienceBroadcastStatus.Running;
-                existing.NextContinuationToken = nextContinuationToken;
-                existing.LastUpdatedTime = updateTime;
-                existing.ErrorMessage = null;
-                return existing;
-            });
         return Task.CompletedTask;
     }
 
@@ -111,22 +134,35 @@ public class InMemoryNotificationAudienceBroadcastProgressStore :
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        _progresses.AddOrUpdate(
-            CreateKey(notification.Id, tenantId),
-            _ => NewProgress(notification, audienceName, tenantId, NotificationAudienceBroadcastStatus.Completed, updateTime),
-            (_, existing) =>
-            {
-                if (IsTerminal(existing.Status))
+        lock (_sync)
+        {
+            _progresses.AddOrUpdate(
+                CreateKey(notification.Id, tenantId),
+                _ => NewTerminalProgress(
+                    notification,
+                    audienceName,
+                    tenantId,
+                    NotificationAudienceBroadcastStatus.Completed,
+                    updateTime),
+                (_, existing) =>
                 {
-                    return existing;
-                }
+                    if (IsTerminal(existing.Status))
+                    {
+                        return existing;
+                    }
 
-                existing.Status = NotificationAudienceBroadcastStatus.Completed;
-                existing.NextContinuationToken = null;
-                existing.LastUpdatedTime = updateTime;
-                existing.ErrorMessage = null;
-                return existing;
-            });
+                    existing.Status = existing.IsCancellationRequested
+                        ? NotificationAudienceBroadcastStatus.Canceled
+                        : NotificationAudienceBroadcastStatus.Completed;
+                    existing.NextContinuationToken = null;
+                    existing.CompletionTime = updateTime;
+                    existing.FailureCode = null;
+                    existing.FailureMessage = null;
+                    Touch(existing, updateTime);
+                    return existing;
+                });
+        }
+
         return Task.CompletedTask;
     }
 
@@ -137,17 +173,20 @@ public class InMemoryNotificationAudienceBroadcastProgressStore :
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var key = CreateKey(notificationId, tenantId);
-        if (!_progresses.TryGetValue(key, out var existing) ||
-            IsTerminal(existing.Status))
+        lock (_sync)
         {
-            return Task.FromResult(false);
-        }
+            if (!_progresses.TryGetValue(CreateKey(notificationId, tenantId), out var existing) ||
+                IsTerminal(existing.Status))
+            {
+                return Task.FromResult(false);
+            }
 
-        existing.IsCancellationRequested = true;
-        existing.Status = NotificationAudienceBroadcastStatus.CancellationRequested;
-        existing.LastUpdatedTime = updateTime;
-        return Task.FromResult(true);
+            existing.IsCancellationRequested = true;
+            existing.CancellationRequestedTime ??= updateTime;
+            existing.Status = NotificationAudienceBroadcastStatus.CancellationRequested;
+            Touch(existing, updateTime);
+            return Task.FromResult(true);
+        }
     }
 
     public virtual Task<bool> IsCancellationRequestedAsync(
@@ -156,9 +195,12 @@ public class InMemoryNotificationAudienceBroadcastProgressStore :
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult(
-            _progresses.TryGetValue(CreateKey(notificationId, tenantId), out var existing) &&
-            existing.IsCancellationRequested);
+        lock (_sync)
+        {
+            return Task.FromResult(
+                _progresses.TryGetValue(CreateKey(notificationId, tenantId), out var existing) &&
+                existing.IsCancellationRequested);
+        }
     }
 
     public virtual Task RecordCanceledAsync(
@@ -169,22 +211,34 @@ public class InMemoryNotificationAudienceBroadcastProgressStore :
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        _progresses.AddOrUpdate(
-            CreateKey(notification.Id, tenantId),
-            _ => NewProgress(notification, audienceName, tenantId, NotificationAudienceBroadcastStatus.Canceled, updateTime),
-            (_, existing) =>
-            {
-                if (IsTerminal(existing.Status))
+        lock (_sync)
+        {
+            _progresses.AddOrUpdate(
+                CreateKey(notification.Id, tenantId),
+                _ => NewTerminalProgress(
+                    notification,
+                    audienceName,
+                    tenantId,
+                    NotificationAudienceBroadcastStatus.Canceled,
+                    updateTime,
+                    cancellationRequested: true),
+                (_, existing) =>
                 {
-                    return existing;
-                }
+                    if (IsTerminal(existing.Status))
+                    {
+                        return existing;
+                    }
 
-                existing.Status = NotificationAudienceBroadcastStatus.Canceled;
-                existing.IsCancellationRequested = true;
-                existing.NextContinuationToken = null;
-                existing.LastUpdatedTime = updateTime;
-                return existing;
-            });
+                    existing.Status = NotificationAudienceBroadcastStatus.Canceled;
+                    existing.IsCancellationRequested = true;
+                    existing.CancellationRequestedTime ??= updateTime;
+                    existing.NextContinuationToken = null;
+                    existing.CompletionTime = updateTime;
+                    Touch(existing, updateTime);
+                    return existing;
+                });
+        }
+
         return Task.CompletedTask;
     }
 
@@ -192,36 +246,43 @@ public class InMemoryNotificationAudienceBroadcastProgressStore :
         NotificationInfo notification,
         string audienceName,
         Guid? tenantId,
-        string errorMessage,
+        string failureCode,
+        string failureMessage,
         DateTime updateTime,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        _progresses.AddOrUpdate(
-            CreateKey(notification.Id, tenantId),
-            _ =>
-            {
-                var progress = NewProgress(
-                    notification,
-                    audienceName,
-                    tenantId,
-                    NotificationAudienceBroadcastStatus.Failed,
-                    updateTime);
-                progress.ErrorMessage = errorMessage;
-                return progress;
-            },
-            (_, existing) =>
-            {
-                if (IsTerminal(existing.Status))
+        lock (_sync)
+        {
+            _progresses.AddOrUpdate(
+                CreateKey(notification.Id, tenantId),
+                _ =>
                 {
-                    return existing;
-                }
+                    var progress = NewProgress(
+                        notification,
+                        audienceName,
+                        tenantId,
+                        NotificationAudienceBroadcastStatus.Failed,
+                        updateTime);
+                    progress.FailureCode = failureCode;
+                    progress.FailureMessage = failureMessage;
+                    return progress;
+                },
+                (_, existing) =>
+                {
+                    if (IsTerminal(existing.Status))
+                    {
+                        return existing;
+                    }
 
-                existing.Status = NotificationAudienceBroadcastStatus.Failed;
-                existing.ErrorMessage = errorMessage;
-                existing.LastUpdatedTime = updateTime;
-                return existing;
-            });
+                    existing.Status = NotificationAudienceBroadcastStatus.Failed;
+                    existing.FailureCode = failureCode;
+                    existing.FailureMessage = failureMessage;
+                    Touch(existing, updateTime);
+                    return existing;
+                });
+        }
+
         return Task.CompletedTask;
     }
 
@@ -239,8 +300,31 @@ public class InMemoryNotificationAudienceBroadcastProgressStore :
             NotificationName = notification.NotificationName,
             AudienceName = audienceName,
             Status = status,
-            LastUpdatedTime = updateTime
+            CreationTime = updateTime,
+            LastUpdatedTime = updateTime,
+            ConcurrencyStamp = Guid.NewGuid().ToString("N")
         };
+    }
+
+    private NotificationAudienceBroadcastProgress NewTerminalProgress(
+        NotificationInfo notification,
+        string audienceName,
+        Guid? tenantId,
+        NotificationAudienceBroadcastStatus status,
+        DateTime updateTime,
+        bool cancellationRequested = false)
+    {
+        var progress = NewProgress(notification, audienceName, tenantId, status, updateTime);
+        progress.CompletionTime = updateTime;
+        progress.IsCancellationRequested = cancellationRequested;
+        progress.CancellationRequestedTime = cancellationRequested ? updateTime : null;
+        return progress;
+    }
+
+    private static void Touch(NotificationAudienceBroadcastProgress progress, DateTime updateTime)
+    {
+        progress.LastUpdatedTime = updateTime;
+        progress.ConcurrencyStamp = Guid.NewGuid().ToString("N");
     }
 
     private static bool IsTerminal(NotificationAudienceBroadcastStatus status)

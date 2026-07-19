@@ -100,6 +100,31 @@ public class NotificationAudienceBroadcastTests
     }
 
     [Fact]
+    public async Task Enqueue_failure_records_sanitized_diagnosable_state()
+    {
+        var backgroundJobManager = new FakeBackgroundJobManager
+        {
+            EnqueueException = new InvalidOperationException("provider secret")
+        };
+        var progressStore = new InMemoryNotificationAudienceBroadcastProgressStore();
+        var broadcaster = CreateBroadcaster(
+            backgroundJobManager: backgroundJobManager,
+            progressStore: progressStore);
+
+        await Should.ThrowAsync<InvalidOperationException>(() => broadcaster.EnqueueAsync(
+            new NotificationAudienceBroadcastRequest(null, TestNotificationDefinitionProvider.Plain)));
+
+        var args = backgroundJobManager.EnqueuedArgs.ShouldHaveSingleItem()
+            .ShouldBeOfType<NotificationAudienceBroadcastJobArgs>();
+        var progress = await progressStore.GetAsync(args.Notification.Id, tenantId: null);
+        progress.ShouldNotBeNull();
+        progress.Status.ShouldBe(NotificationAudienceBroadcastStatus.Failed);
+        progress.FailureCode.ShouldBe("enqueue-failed");
+        progress.FailureMessage.ShouldBe("The audience broadcast could not be enqueued.");
+        progress.FailureMessage!.ShouldNotContain("provider secret");
+    }
+
+    [Fact]
     public async Task Enqueue_for_tenants_enqueues_isolated_jobs_and_records_failures()
     {
         var currentTenant = new TestCurrentTenant();
@@ -210,6 +235,34 @@ public class NotificationAudienceBroadcastTests
 
         source.Requests.ShouldBeEmpty();
         distributor.Calls.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Cancellation_at_page_boundary_prevents_scheduling_the_next_page()
+    {
+        var tenantId = Guid.NewGuid();
+        var users = new[] { Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid() };
+        var source = new TestAudienceRecipientSource(tenantId, users);
+        var distributor = new RecordingPreparedNotificationDistributor();
+        var backgroundJobManager = new FakeBackgroundJobManager();
+        var progressStore = new CancelAfterPageProgressStore();
+        var args = NewJobArgs(tenantId);
+
+        await CreateJob(
+                source,
+                distributor,
+                backgroundJobManager,
+                recipientBatchSize: 2,
+                progressStore)
+            .ExecuteAsync(args, CancellationToken.None);
+
+        distributor.Calls.ShouldHaveSingleItem();
+        backgroundJobManager.EnqueuedArgs.ShouldBeEmpty();
+        var progress = await progressStore.GetAsync(args.Notification.Id, tenantId);
+        progress.ShouldNotBeNull();
+        progress.Status.ShouldBe(NotificationAudienceBroadcastStatus.Canceled);
+        progress.CompletedPageCount.ShouldBe(1);
+        progress.IsCancellationRequested.ShouldBeTrue();
     }
 
     [Fact]
@@ -338,6 +391,7 @@ public class NotificationAudienceBroadcastTests
             args.Notification,
             args.AudienceName,
             tenantId,
+            "late-failure",
             "late failure",
             DateTime.UtcNow);
 
@@ -348,7 +402,8 @@ public class NotificationAudienceBroadcastTests
         progress.CandidateCount.ShouldBe(4);
         progress.HasMore.ShouldBeFalse();
         progress.NextContinuationToken.ShouldBeNull();
-        progress.ErrorMessage.ShouldBeNull();
+        progress.FailureCode.ShouldBeNull();
+        progress.FailureMessage.ShouldBeNull();
     }
 
     [Fact]
@@ -367,6 +422,7 @@ public class NotificationAudienceBroadcastTests
             args.Notification,
             args.AudienceName,
             tenantId,
+            "transient-failure",
             "transient failure",
             DateTime.UtcNow);
 
@@ -389,7 +445,8 @@ public class NotificationAudienceBroadcastTests
         progress.Status.ShouldBe(NotificationAudienceBroadcastStatus.Completed);
         progress.CompletedPageCount.ShouldBe(1);
         progress.CandidateCount.ShouldBe(2);
-        progress.ErrorMessage.ShouldBeNull();
+        progress.FailureCode.ShouldBeNull();
+        progress.FailureMessage.ShouldBeNull();
     }
 
     [Fact]
@@ -408,6 +465,7 @@ public class NotificationAudienceBroadcastTests
             args.Notification,
             args.AudienceName,
             tenantId,
+            "transient-failure",
             "transient failure",
             DateTime.UtcNow);
 
@@ -559,6 +617,31 @@ public class NotificationAudienceBroadcastTests
             return Task.FromResult(new NotificationAudienceRecipientPage(
                 page,
                 nextIndex < _userIds.Count ? nextIndex.ToString(CultureInfo.InvariantCulture) : null));
+        }
+    }
+
+    private sealed class CancelAfterPageProgressStore : InMemoryNotificationAudienceBroadcastProgressStore
+    {
+        public override async Task RecordPageCompletedAsync(
+            NotificationInfo notification,
+            string audienceName,
+            Guid? tenantId,
+            long pageIndex,
+            long candidateCount,
+            string? nextContinuationToken,
+            DateTime updateTime,
+            CancellationToken cancellationToken = default)
+        {
+            await base.RecordPageCompletedAsync(
+                notification,
+                audienceName,
+                tenantId,
+                pageIndex,
+                candidateCount,
+                nextContinuationToken,
+                updateTime,
+                cancellationToken);
+            await RequestCancellationAsync(notification.Id, tenantId, updateTime, cancellationToken);
         }
     }
 

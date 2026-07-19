@@ -10,10 +10,17 @@ public class FakeBackgroundJobManager : IBackgroundJobManager
 {
     public ConcurrentQueue<object> EnqueuedArgs { get; } = new();
 
+    public Exception? EnqueueException { get; set; }
+
     public Task<string> EnqueueAsync<TArgs>(
         TArgs args, BackgroundJobPriority priority = BackgroundJobPriority.Normal, TimeSpan? delay = null)
     {
         EnqueuedArgs.Enqueue(args!);
+        if (EnqueueException != null)
+        {
+            return Task.FromException<string>(EnqueueException);
+        }
+
         return Task.FromResult(Guid.NewGuid().ToString());
     }
 }
