@@ -8,5 +8,5 @@ namespace Dignite.Abp.Notifications;
 /// </summary>
 public interface INotificationDeliveryNotifier : INotificationNotifier
 {
-    Task<NotificationDeliveryResult> DeliverAsync(NotificationDeliveryWorkEto workItem);
+    Task<NotificationDeliveryResult> DeliverAsync(NotificationDeliveryRequestedEto workItem);
 }

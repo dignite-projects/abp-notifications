@@ -124,9 +124,9 @@ public class NotificationDeliveryRecord : BasicAggregateRoot<Guid>, IMultiTenant
     {
         return State == NotificationDeliveryState.Pending
                && (!NextAttemptTime.HasValue || NextAttemptTime <= now)
-               || State == NotificationDeliveryState.Failed
+               || State == NotificationDeliveryState.RetryScheduled
                && (!NextAttemptTime.HasValue || NextAttemptTime <= now)
-               || State == NotificationDeliveryState.Claimed
+               || State == NotificationDeliveryState.Processing
                && LeaseExpirationTime <= now;
     }
 
@@ -137,7 +137,7 @@ public class NotificationDeliveryRecord : BasicAggregateRoot<Guid>, IMultiTenant
             throw new InvalidOperationException($"Delivery in state '{State}' is not claimable.");
         }
 
-        State = NotificationDeliveryState.Claimed;
+        State = NotificationDeliveryState.Processing;
         AttemptCount++;
         LastAttemptTime = now;
         NextAttemptTime = null;
@@ -147,14 +147,14 @@ public class NotificationDeliveryRecord : BasicAggregateRoot<Guid>, IMultiTenant
         return new NotificationDeliveryClaim(leaseId, AttemptCount, LeaseExpirationTime.Value);
     }
 
-    public virtual void MarkAbandonedDeadLetter(DateTime now)
+    public virtual void MarkAbandonedAsDeadLettered(DateTime now)
     {
         if (!CanBeClaimed(now) || AttemptCount < 1)
         {
             throw new InvalidOperationException("Only due delivery work with previous attempts can exhaust its attempt limit.");
         }
 
-        State = NotificationDeliveryState.DeadLetter;
+        State = NotificationDeliveryState.DeadLettered;
         LeaseId = null;
         LeaseExpirationTime = null;
         NextAttemptTime = null;
@@ -205,7 +205,7 @@ public class NotificationDeliveryRecord : BasicAggregateRoot<Guid>, IMultiTenant
         }
 
         Complete(
-            nextAttemptTime.HasValue ? NotificationDeliveryState.Failed : NotificationDeliveryState.DeadLetter,
+            nextAttemptTime.HasValue ? NotificationDeliveryState.RetryScheduled : NotificationDeliveryState.DeadLettered,
             failedAt,
             failureCode,
             "The channel failed to deliver this notification.",
@@ -215,8 +215,8 @@ public class NotificationDeliveryRecord : BasicAggregateRoot<Guid>, IMultiTenant
 
     public virtual bool Retry(DateTime now)
     {
-        if (State != NotificationDeliveryState.Failed
-            && State != NotificationDeliveryState.DeadLetter)
+        if (State != NotificationDeliveryState.RetryScheduled
+            && State != NotificationDeliveryState.DeadLettered)
         {
             return false;
         }
@@ -269,7 +269,7 @@ public class NotificationDeliveryRecord : BasicAggregateRoot<Guid>, IMultiTenant
 
     private bool HasLease(Guid leaseId)
     {
-        return State == NotificationDeliveryState.Claimed && LeaseId == leaseId;
+        return State == NotificationDeliveryState.Processing && LeaseId == leaseId;
     }
 
     private void Complete(

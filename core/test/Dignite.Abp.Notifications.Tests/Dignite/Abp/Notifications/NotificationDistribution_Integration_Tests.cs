@@ -35,8 +35,8 @@ public class NotificationDistribution_Integration_Tests : DigniteAbpNotification
     public async Task Publishing_to_explicit_users_emits_a_delivery_eto_through_the_bus()
     {
         GetRequiredService<INotificationDeliveryStore>().ShouldNotBeNull();
-        GetRequiredService<IEnumerable<IDistributedEventHandler<NotificationDeliveryWorkEto>>>()
-            .ShouldContain(handler => handler is NotificationDeliveryWorkHandler);
+        GetRequiredService<IEnumerable<IDistributedEventHandler<NotificationDeliveryRequestedEto>>>()
+            .ShouldContain(handler => handler is NotificationDeliveryRequestedHandler);
 
         var u1 = Guid.NewGuid();
         var u2 = Guid.NewGuid();

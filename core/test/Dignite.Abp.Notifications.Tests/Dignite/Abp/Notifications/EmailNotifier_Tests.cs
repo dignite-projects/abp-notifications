@@ -43,7 +43,7 @@ public class EmailNotifier_Tests
             NullLogger<EmailNotifier>.Instance);
         var notificationId = Guid.NewGuid();
         var userId = Guid.NewGuid();
-        var workItem = new NotificationDeliveryWorkEto
+        var workItem = new NotificationDeliveryRequestedEto
         {
             DeliveryId = NotificationDeliveryIdentity.CreateId(null, notificationId, userId, EmailNotifier.ChannelName),
             IdempotencyKey = NotificationDeliveryIdentity.CreateIdempotencyKey(

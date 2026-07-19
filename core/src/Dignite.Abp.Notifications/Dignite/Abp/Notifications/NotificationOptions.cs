@@ -28,7 +28,7 @@ public class NotificationOptions
     public int UserNotificationWriteBatchSize { get; set; } = 256;
 
     /// <summary>
-    /// Maximum recipients converted to per-recipient/channel <see cref="NotificationDeliveryWorkEto"/> records in
+    /// Maximum recipients converted to per-recipient/channel <see cref="NotificationDeliveryRequestedEto"/> records in
     /// one scheduling operation. Each published work item still contains exactly one recipient and channel. The
     /// existing property name is retained for compatibility with hosts that configured the bounded pipeline.
     /// </summary>

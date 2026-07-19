@@ -344,7 +344,7 @@ public abstract class NotificationDeliveryStore_Tests<TStartupModule> : Notifica
             nextAttemptTime: null)).ShouldBeTrue();
 
         var record = (await GetRecordsAsync(work.TenantId, work.NotificationId)).Single();
-        record.State.ShouldBe(NotificationDeliveryState.DeadLetter);
+        record.State.ShouldBe(NotificationDeliveryState.DeadLettered);
         record.AttemptCount.ShouldBe(2);
         record.NextAttemptTime.ShouldBeNull();
         record.LastFailureCode.ShouldBe("channel-execution-failed");
@@ -593,7 +593,7 @@ public abstract class NotificationDeliveryStore_Tests<TStartupModule> : Notifica
             var page = await appService.GetListAsync(new GetNotificationDeliveryListInput
             {
                 NotificationId = work.NotificationId,
-                State = NotificationDeliveryState.DeadLetter,
+                State = NotificationDeliveryState.DeadLettered,
                 MaxResultCount = 10
             });
             page.TotalCount.ShouldBe(1);
@@ -609,7 +609,7 @@ public abstract class NotificationDeliveryStore_Tests<TStartupModule> : Notifica
         (await store.RetryAsync(work.DeliveryId, tenantId: null, now.AddHours(1))).ShouldBeFalse();
     }
 
-    private async Task<NotificationDeliveryWorkEto> CreateAndPersistWorkAsync(
+    private async Task<NotificationDeliveryRequestedEto> CreateAndPersistWorkAsync(
         Guid? tenantId = null,
         string channel = "Email",
         DateTime? now = null)
@@ -620,7 +620,7 @@ public abstract class NotificationDeliveryStore_Tests<TStartupModule> : Notifica
         return work;
     }
 
-    private async Task<NotificationDeliveryWorkEto> CreateWorkAsync(
+    private async Task<NotificationDeliveryRequestedEto> CreateWorkAsync(
         Guid? tenantId = null,
         string channel = "Email",
         DateTime? now = null)
@@ -645,14 +645,14 @@ public abstract class NotificationDeliveryStore_Tests<TStartupModule> : Notifica
         return CreateWork(notificationId, userId, channel, tenantId, creationTime);
     }
 
-    private static NotificationDeliveryWorkEto CreateWork(
+    private static NotificationDeliveryRequestedEto CreateWork(
         Guid notificationId,
         Guid userId,
         string channel,
         Guid? tenantId,
         DateTime creationTime)
     {
-        return new NotificationDeliveryWorkEto
+        return new NotificationDeliveryRequestedEto
         {
             DeliveryId = NotificationDeliveryIdentity.CreateId(tenantId, notificationId, userId, channel),
             IdempotencyKey = NotificationDeliveryIdentity.CreateIdempotencyKey(
@@ -672,7 +672,7 @@ public abstract class NotificationDeliveryStore_Tests<TStartupModule> : Notifica
     }
 
     private async Task<NotificationDeliveryClaim?> ClaimInScopeAsync(
-        NotificationDeliveryWorkEto work,
+        NotificationDeliveryRequestedEto work,
         DateTime now)
     {
         using var scope = GetRequiredService<IServiceScopeFactory>().CreateScope();
@@ -685,7 +685,7 @@ public abstract class NotificationDeliveryStore_Tests<TStartupModule> : Notifica
     }
 
     private async Task<NotificationDeliveryClaim?> MaterializeAndClaimInScopeAsync(
-        NotificationDeliveryWorkEto work,
+        NotificationDeliveryRequestedEto work,
         DateTime now,
         Barrier? beforeInsert = null)
     {
@@ -709,7 +709,7 @@ public abstract class NotificationDeliveryStore_Tests<TStartupModule> : Notifica
     }
 
     private async Task<bool> ForceDeliverInScopeAsync(
-        NotificationDeliveryWorkEto work,
+        NotificationDeliveryRequestedEto work,
         Guid actorId,
         DateTime now)
     {
@@ -748,7 +748,7 @@ public abstract class NotificationDeliveryStore_Tests<TStartupModule> : Notifica
             Name = name;
         }
 
-        public Task<NotificationDeliveryResult> DeliverAsync(NotificationDeliveryWorkEto workItem)
+        public Task<NotificationDeliveryResult> DeliverAsync(NotificationDeliveryRequestedEto workItem)
         {
             Interlocked.Increment(ref _invocationCount);
             return Task.FromResult(NotificationDeliveryResult.Succeeded());
@@ -778,7 +778,7 @@ public abstract class NotificationDeliveryStore_Tests<TStartupModule> : Notifica
             _beforeInsert = beforeInsert;
         }
 
-        protected override NotificationDeliveryRecord CreateRecord(NotificationDeliveryWorkEto workItem)
+        protected override NotificationDeliveryRecord CreateRecord(NotificationDeliveryRequestedEto workItem)
         {
             if (!_beforeInsert.SignalAndWait(TimeSpan.FromSeconds(15)))
             {
@@ -808,7 +808,7 @@ public abstract class NotificationDeliveryStore_Tests<TStartupModule> : Notifica
         {
         }
 
-        protected override Task<NotificationDeliveryRecord> UpdateClaimedDeliveryAsync(
+        protected override Task<NotificationDeliveryRecord> UpdateProcessingDeliveryAsync(
             NotificationDeliveryRecord delivery,
             System.Threading.CancellationToken cancellationToken)
         {

@@ -392,7 +392,7 @@ public class NotificationRetentionCleanupService :
                 .Where(delivery =>
                     (delivery.State == NotificationDeliveryState.Succeeded ||
                      delivery.State == NotificationDeliveryState.Suppressed ||
-                     delivery.State == NotificationDeliveryState.DeadLetter) &&
+                     delivery.State == NotificationDeliveryState.DeadLettered) &&
                     ((delivery.CompletedTime.HasValue && delivery.CompletedTime <= cutoff) ||
                      (!delivery.CompletedTime.HasValue && delivery.CreationTime <= cutoff)));
             query = ApplyCursor(query, afterCreationTime, afterId);
@@ -916,7 +916,7 @@ public class NotificationRetentionCleanupService :
     {
         return state == NotificationDeliveryState.Succeeded ||
                state == NotificationDeliveryState.Suppressed ||
-               state == NotificationDeliveryState.DeadLetter;
+               state == NotificationDeliveryState.DeadLettered;
     }
 
     private static void SetOldestRetainedTimestamp(

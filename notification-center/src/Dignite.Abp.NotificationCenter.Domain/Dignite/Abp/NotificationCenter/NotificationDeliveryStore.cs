@@ -68,7 +68,7 @@ public class NotificationDeliveryStore :
     }
 
     public virtual Task<NotificationDeliveryClaim?> EnsureCreatedAndTryClaimAsync(
-        NotificationDeliveryWorkEto workItem,
+        NotificationDeliveryRequestedEto workItem,
         DateTime now,
         TimeSpan leaseDuration,
         int maxAttempts,
@@ -86,7 +86,7 @@ public class NotificationDeliveryStore :
     }
 
     public virtual async Task EnsureCreatedAsync(
-        NotificationDeliveryWorkEto workItem,
+        NotificationDeliveryRequestedEto workItem,
         CancellationToken cancellationToken = default)
     {
         ValidateIdentity(workItem);
@@ -131,7 +131,7 @@ public class NotificationDeliveryStore :
     }
 
     private async Task<NotificationDeliveryClaim?> TryClaimCoreAsync(
-        NotificationDeliveryWorkEto? workItem,
+        NotificationDeliveryRequestedEto? workItem,
         Guid deliveryId,
         Guid? tenantId,
         DateTime now,
@@ -163,7 +163,7 @@ public class NotificationDeliveryStore :
 
                     entity = CreateRecord(workItem);
                     // Future quiet-hours work is independently committed as Pending and picked up by the retry
-                    // worker at DeliveryNotBefore. Immediate work retains the one-INSERT Claimed path.
+                    // worker at DeliveryNotBefore. Immediate work retains the one-INSERT Processing path.
                     var initialClaim = entity.CanBeClaimed(now)
                         ? entity.Claim(GuidGenerator.Create(), now, leaseDuration)
                         : null;
@@ -194,14 +194,14 @@ public class NotificationDeliveryStore :
 
                 if (entity.AttemptCount >= maxAttempts)
                 {
-                    entity.MarkAbandonedDeadLetter(now);
-                    await UpdateClaimedDeliveryAsync(entity, cancellationToken);
+                    entity.MarkAbandonedAsDeadLettered(now);
+                    await UpdateProcessingDeliveryAsync(entity, cancellationToken);
                     await unitOfWork.CompleteAsync(cancellationToken);
                     return null;
                 }
 
                 var claim = entity.Claim(GuidGenerator.Create(), now, leaseDuration);
-                await UpdateClaimedDeliveryAsync(entity, cancellationToken);
+                await UpdateProcessingDeliveryAsync(entity, cancellationToken);
                 await unitOfWork.CompleteAsync(cancellationToken);
                 return claim;
             }
@@ -277,7 +277,7 @@ public class NotificationDeliveryStore :
             cancellationToken);
     }
 
-    public virtual async Task<IReadOnlyList<NotificationDeliveryWorkEto>> GetDueWorkItemsAsync(
+    public virtual async Task<IReadOnlyList<NotificationDeliveryRequestedEto>> GetDueWorkItemsAsync(
         DateTime now,
         int maxResultCount,
         CancellationToken cancellationToken = default)
@@ -289,16 +289,16 @@ public class NotificationDeliveryStore :
             var deliveries = await AsyncExecuter.ToListAsync(deliveryQuery
                 .Where(delivery => delivery.State == NotificationDeliveryState.Pending
                                    && (!delivery.NextAttemptTime.HasValue || delivery.NextAttemptTime <= now)
-                                   || delivery.State == NotificationDeliveryState.Failed
+                                   || delivery.State == NotificationDeliveryState.RetryScheduled
                                    && (!delivery.NextAttemptTime.HasValue || delivery.NextAttemptTime <= now)
-                                   || delivery.State == NotificationDeliveryState.Claimed
+                                   || delivery.State == NotificationDeliveryState.Processing
                                    && delivery.LeaseExpirationTime <= now)
                 .OrderBy(delivery => delivery.CreationTime)
                 .Take(maxResultCount), cancellationToken);
             if (deliveries.Count == 0)
             {
                 await unitOfWork.CompleteAsync(cancellationToken);
-                return Array.Empty<NotificationDeliveryWorkEto>();
+                return Array.Empty<NotificationDeliveryRequestedEto>();
             }
 
             var items = deliveries
@@ -375,9 +375,9 @@ public class NotificationDeliveryStore :
         }
     }
 
-    private NotificationDeliveryWorkEto ToWorkItem(NotificationDeliveryRecord delivery)
+    private NotificationDeliveryRequestedEto ToWorkItem(NotificationDeliveryRecord delivery)
     {
-        return new NotificationDeliveryWorkEto
+        return new NotificationDeliveryRequestedEto
         {
             DeliveryId = delivery.Id,
             IdempotencyKey = delivery.IdempotencyKey,
@@ -397,7 +397,7 @@ public class NotificationDeliveryStore :
         };
     }
 
-    protected virtual NotificationDeliveryRecord CreateRecord(NotificationDeliveryWorkEto workItem)
+    protected virtual NotificationDeliveryRecord CreateRecord(NotificationDeliveryRequestedEto workItem)
     {
         return new NotificationDeliveryRecord(
             workItem.DeliveryId,
@@ -417,7 +417,7 @@ public class NotificationDeliveryStore :
             workItem.PreferenceReasonCode);
     }
 
-    protected virtual Task<NotificationDeliveryRecord> UpdateClaimedDeliveryAsync(
+    protected virtual Task<NotificationDeliveryRecord> UpdateProcessingDeliveryAsync(
         NotificationDeliveryRecord delivery,
         CancellationToken cancellationToken)
     {
@@ -450,7 +450,7 @@ public class NotificationDeliveryStore :
     }
 
     private async Task<bool> SameDeliveryWasCommittedByCompetitorAsync(
-        NotificationDeliveryWorkEto workItem,
+        NotificationDeliveryRequestedEto workItem,
         CancellationToken cancellationToken)
     {
         using var unitOfWork = UnitOfWorkManager.Begin(requiresNew: true, isTransactional: false);
@@ -471,7 +471,7 @@ public class NotificationDeliveryStore :
         }
     }
 
-    private static void ValidateIdentity(NotificationDeliveryWorkEto workItem)
+    private static void ValidateIdentity(NotificationDeliveryRequestedEto workItem)
     {
         workItem.ValidateIntent();
         if (workItem.DeliveryId != NotificationDeliveryIdentity.CreateId(
@@ -494,7 +494,7 @@ public class NotificationDeliveryStore :
 
     private static void EnsureSameIdentity(
         NotificationDeliveryRecord existing,
-        NotificationDeliveryWorkEto workItem)
+        NotificationDeliveryRequestedEto workItem)
     {
         if (existing.TenantId != workItem.TenantId
             || existing.NotificationId != workItem.NotificationId

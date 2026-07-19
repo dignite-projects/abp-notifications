@@ -95,9 +95,9 @@ public abstract class NotificationDeliveryPreference_Tests<TStartupModule> : Not
         });
 
         var eventBus = Substitute.For<IDistributedEventBus>();
-        var published = new List<NotificationDeliveryWorkEto>();
-        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryWorkEto>()))
-            .Do(call => published.Add(call.Arg<NotificationDeliveryWorkEto>()));
+        var published = new List<NotificationDeliveryRequestedEto>();
+        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryRequestedEto>()))
+            .Do(call => published.Add(call.Arg<NotificationDeliveryRequestedEto>()));
         var distributor = CreateDistributor(eventBus);
         var explicitNotification = NewPreferenceNotification(Guid.NewGuid());
         var subscriptionNotification = NewPreferenceNotification(Guid.NewGuid());

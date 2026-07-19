@@ -7842,11 +7842,11 @@
       "isEnum": true,
       "enumNames": [
         "Pending",
-        "Claimed",
+        "Processing",
         "Succeeded",
-        "Failed",
+        "RetryScheduled",
         "Suppressed",
-        "DeadLetter"
+        "DeadLettered"
       ],
       "enumValues": [
         0,

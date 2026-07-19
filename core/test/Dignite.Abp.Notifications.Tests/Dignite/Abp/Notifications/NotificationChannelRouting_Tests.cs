@@ -99,9 +99,9 @@ public class NotificationChannelRouting_Tests
                 .UseChannels(EmailNotifier.ChannelName, SignalRNotifier.ChannelName));
         definitionManager.IsAvailableAsync("test", Arg.Any<Guid>()).Returns(true);
 
-        var published = new List<NotificationDeliveryWorkEto>();
-        eventBus.WhenForAnyArgs(x => x.PublishAsync(Arg.Any<NotificationDeliveryWorkEto>()))
-            .Do(ci => published.Add(ci.Arg<NotificationDeliveryWorkEto>()));
+        var published = new List<NotificationDeliveryRequestedEto>();
+        eventBus.WhenForAnyArgs(x => x.PublishAsync(Arg.Any<NotificationDeliveryRequestedEto>()))
+            .Do(ci => published.Add(ci.Arg<NotificationDeliveryRequestedEto>()));
 
         var currentTenant = new TestCurrentTenant();
         var distributor = new DefaultNotificationDistributor(

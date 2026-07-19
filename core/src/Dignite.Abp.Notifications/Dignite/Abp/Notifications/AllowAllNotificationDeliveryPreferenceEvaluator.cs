@@ -8,8 +8,8 @@ using Volo.Abp.DependencyInjection;
 namespace Dignite.Abp.Notifications;
 
 /// <summary>Deterministic Core-only default: every eligible external-channel candidate is delivered immediately.</summary>
-[ExposeServices(typeof(INotificationDeliveryPreferenceEvaluator), typeof(NullNotificationDeliveryPreferenceEvaluator))]
-public class NullNotificationDeliveryPreferenceEvaluator :
+[ExposeServices(typeof(INotificationDeliveryPreferenceEvaluator), typeof(AllowAllNotificationDeliveryPreferenceEvaluator))]
+public class AllowAllNotificationDeliveryPreferenceEvaluator :
     INotificationDeliveryPreferenceEvaluator,
     ITransientDependency
 {

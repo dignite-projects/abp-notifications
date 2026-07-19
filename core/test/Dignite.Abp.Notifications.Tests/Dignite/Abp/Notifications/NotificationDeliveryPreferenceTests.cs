@@ -25,7 +25,7 @@ public class NotificationDeliveryPreferenceTests
             new NotificationDeliveryPreferenceCandidate(Guid.NewGuid(), "SignalR")
         };
 
-        var decisions = await new NullNotificationDeliveryPreferenceEvaluator().EvaluateAsync(
+        var decisions = await new AllowAllNotificationDeliveryPreferenceEvaluator().EvaluateAsync(
             "test",
             Guid.NewGuid(),
             candidates,
@@ -67,9 +67,9 @@ public class NotificationDeliveryPreferenceTests
                     NotificationDeliveryPreferenceReasonCodes.UserOptOut)
             });
         var eventBus = Substitute.For<IDistributedEventBus>();
-        NotificationDeliveryWorkEto? published = null;
-        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryWorkEto>()))
-            .Do(call => published = call.Arg<NotificationDeliveryWorkEto>());
+        NotificationDeliveryRequestedEto? published = null;
+        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryRequestedEto>()))
+            .Do(call => published = call.Arg<NotificationDeliveryRequestedEto>());
         var distributor = new DefaultNotificationDistributor(
             store,
             definitions,
@@ -153,7 +153,7 @@ public class NotificationDeliveryPreferenceTests
         definition.DeliveryPreferenceBehavior.ShouldBe(NotificationDeliveryPreferenceBehavior.Mandatory);
     }
 
-    private static (NotificationDeliveryProcessor Processor, NullNotificationDeliveryStore Store, IClock Clock)
+    private static (NotificationDeliveryProcessor Processor, InMemoryNotificationDeliveryStore Store, IClock Clock)
         CreateProcessor(DateTime now, INotificationDeliveryNotifier notifier)
     {
         var options = Options.Create(new NotificationOptions
@@ -162,7 +162,7 @@ public class NotificationDeliveryPreferenceTests
             InitialDeliveryRetryDelay = TimeSpan.Zero,
             MaxDeliveryRetryDelay = TimeSpan.Zero
         });
-        var store = new NullNotificationDeliveryStore();
+        var store = new InMemoryNotificationDeliveryStore();
         var clock = Substitute.For<IClock>();
         clock.Now.Returns(now);
         return (new NotificationDeliveryProcessor(
@@ -176,11 +176,11 @@ public class NotificationDeliveryPreferenceTests
             NullLogger<NotificationDeliveryProcessor>.Instance), store, clock);
     }
 
-    private static NotificationDeliveryWorkEto CreateWork(string channel)
+    private static NotificationDeliveryRequestedEto CreateWork(string channel)
     {
         var notificationId = Guid.NewGuid();
         var userId = Guid.NewGuid();
-        return new NotificationDeliveryWorkEto
+        return new NotificationDeliveryRequestedEto
         {
             DeliveryId = NotificationDeliveryIdentity.CreateId(null, notificationId, userId, channel),
             IdempotencyKey = NotificationDeliveryIdentity.CreateIdempotencyKey(null, notificationId, userId, channel),
@@ -194,19 +194,19 @@ public class NotificationDeliveryPreferenceTests
 
     private sealed class TestNotifier : INotificationDeliveryNotifier
     {
-        private readonly Func<NotificationDeliveryWorkEto, Task<NotificationDeliveryResult>> _deliver;
+        private readonly Func<NotificationDeliveryRequestedEto, Task<NotificationDeliveryResult>> _deliver;
 
         public string Name { get; }
 
         public TestNotifier(
             string name,
-            Func<NotificationDeliveryWorkEto, Task<NotificationDeliveryResult>> deliver)
+            Func<NotificationDeliveryRequestedEto, Task<NotificationDeliveryResult>> deliver)
         {
             Name = name;
             _deliver = deliver;
         }
 
-        public Task<NotificationDeliveryResult> DeliverAsync(NotificationDeliveryWorkEto workItem)
+        public Task<NotificationDeliveryResult> DeliverAsync(NotificationDeliveryRequestedEto workItem)
         {
             return _deliver(workItem);
         }

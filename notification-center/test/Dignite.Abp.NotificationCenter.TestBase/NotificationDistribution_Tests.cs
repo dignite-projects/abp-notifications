@@ -110,9 +110,9 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
         await InsertSubscriptionAsync(subscriber);
 
         var eventBus = Substitute.For<IDistributedEventBus>();
-        NotificationDeliveryWorkEto? published = null;
-        eventBus.WhenForAnyArgs(x => x.PublishAsync(Arg.Any<NotificationDeliveryWorkEto>()))
-            .Do(call => published = call.Arg<NotificationDeliveryWorkEto>());
+        NotificationDeliveryRequestedEto? published = null;
+        eventBus.WhenForAnyArgs(x => x.PublishAsync(Arg.Any<NotificationDeliveryRequestedEto>()))
+            .Do(call => published = call.Arg<NotificationDeliveryRequestedEto>());
 
         await DistributeAsync(background, CreateDistributor(eventBus), NewNotification(notificationId), null);
 
@@ -123,7 +123,7 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
         });
         published.ShouldNotBeNull();
         published!.UserId.ShouldBe(subscriber);
-        await eventBus.Received(1).PublishAsync(Arg.Any<NotificationDeliveryWorkEto>());
+        await eventBus.Received(1).PublishAsync(Arg.Any<NotificationDeliveryRequestedEto>());
     }
 
     [Theory]
@@ -149,7 +149,7 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
             (await GetRequiredService<INotificationStore>()
                 .GetUserNotificationCountAsync(subscriber)).ShouldBe(0);
         });
-        await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<NotificationDeliveryWorkEto>());
+        await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<NotificationDeliveryRequestedEto>());
     }
 
     [Theory]
@@ -161,9 +161,9 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
         var u2 = Guid.NewGuid();
         var notificationId = Guid.NewGuid();
         var eventBus = Substitute.For<IDistributedEventBus>();
-        var published = new List<NotificationDeliveryWorkEto>();
-        eventBus.WhenForAnyArgs(x => x.PublishAsync(Arg.Any<NotificationDeliveryWorkEto>()))
-            .Do(call => published.Add(call.Arg<NotificationDeliveryWorkEto>()));
+        var published = new List<NotificationDeliveryRequestedEto>();
+        eventBus.WhenForAnyArgs(x => x.PublishAsync(Arg.Any<NotificationDeliveryRequestedEto>()))
+            .Do(call => published.Add(call.Arg<NotificationDeliveryRequestedEto>()));
 
         await DistributeAsync(
             background,
@@ -179,7 +179,7 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
         });
         published.Select(item => item.UserId).ShouldBe(new[] { u1, u2 }, ignoreOrder: true);
         published.Select(item => item.UserId).Distinct().Count().ShouldBe(2);
-        await eventBus.Received(2).PublishAsync(Arg.Any<NotificationDeliveryWorkEto>());
+        await eventBus.Received(2).PublishAsync(Arg.Any<NotificationDeliveryRequestedEto>());
     }
 
     [Theory]
@@ -199,9 +199,9 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
         await InsertSubscriptionAsync(both, "Demo.Order", "42");
 
         var eventBus = Substitute.For<IDistributedEventBus>();
-        var published = new List<NotificationDeliveryWorkEto>();
-        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryWorkEto>()))
-            .Do(call => published.Add(call.Arg<NotificationDeliveryWorkEto>()));
+        var published = new List<NotificationDeliveryRequestedEto>();
+        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryRequestedEto>()))
+            .Do(call => published.Add(call.Arg<NotificationDeliveryRequestedEto>()));
 
         await DistributeAsync(
             background,
@@ -243,9 +243,9 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
         }
 
         var eventBus = Substitute.For<IDistributedEventBus>();
-        NotificationDeliveryWorkEto? published = null;
-        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryWorkEto>()))
-            .Do(call => published = call.Arg<NotificationDeliveryWorkEto>());
+        NotificationDeliveryRequestedEto? published = null;
+        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryRequestedEto>()))
+            .Do(call => published = call.Arg<NotificationDeliveryRequestedEto>());
         var notification = NewNotification(Guid.NewGuid());
         notification.TenantId = notificationTenantId;
 
@@ -298,7 +298,7 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
             (await GetRequiredService<IRepository<Notification, Guid>>()
                 .FindAsync(notificationId)).ShouldBeNull();
         });
-        await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<NotificationDeliveryWorkEto>());
+        await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<NotificationDeliveryRequestedEto>());
     }
 
     [Fact]
@@ -333,9 +333,9 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
         });
 
         var eventBus = Substitute.For<IDistributedEventBus>();
-        var deliveryWorkItems = new List<NotificationDeliveryWorkEto>();
-        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryWorkEto>()))
-            .Do(call => deliveryWorkItems.Add(call.Arg<NotificationDeliveryWorkEto>()));
+        var deliveryWorkItems = new List<NotificationDeliveryRequestedEto>();
+        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryRequestedEto>()))
+            .Do(call => deliveryWorkItems.Add(call.Arg<NotificationDeliveryRequestedEto>()));
         var notificationId = Guid.NewGuid();
         var distributor = CreateDistributor(eventBus, new NotificationOptions
         {
@@ -370,7 +370,7 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
         var eventBus = Substitute.For<IDistributedEventBus>();
         using var cancellation = new CancellationTokenSource();
         var publishedBatches = 0;
-        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryWorkEto>()))
+        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryRequestedEto>()))
             .Do(_ =>
             {
                 publishedBatches++;
@@ -413,9 +413,9 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
             DeliveryEventRecipientLimit = 100
         };
         var eventBus = Substitute.For<IDistributedEventBus>();
-        var deliveries = new List<NotificationDeliveryWorkEto>();
-        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryWorkEto>()))
-            .Do(call => deliveries.Add(call.Arg<NotificationDeliveryWorkEto>()));
+        var deliveries = new List<NotificationDeliveryRequestedEto>();
+        eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryRequestedEto>()))
+            .Do(call => deliveries.Add(call.Arg<NotificationDeliveryRequestedEto>()));
         var distributor = CreateDistributor(eventBus, options);
         var backgroundJobManager = Substitute.For<IBackgroundJobManager>();
         var publisher = new DefaultNotificationPublisher(

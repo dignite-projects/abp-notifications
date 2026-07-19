@@ -113,7 +113,7 @@ public class EmailNotifier :
         }
     }
 
-    public virtual Task<NotificationDeliveryResult> DeliverAsync(NotificationDeliveryWorkEto workItem)
+    public virtual Task<NotificationDeliveryResult> DeliverAsync(NotificationDeliveryRequestedEto workItem)
     {
         if (!string.Equals(workItem.Channel, Name, StringComparison.OrdinalIgnoreCase))
         {

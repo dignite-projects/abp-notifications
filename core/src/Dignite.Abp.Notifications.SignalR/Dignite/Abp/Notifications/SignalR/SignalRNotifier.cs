@@ -50,7 +50,7 @@ public class SignalRNotifier :
         return HubContext.Clients.Users(userIds).ReceiveNotification(payload);
     }
 
-    public virtual async Task<NotificationDeliveryResult> DeliverAsync(NotificationDeliveryWorkEto workItem)
+    public virtual async Task<NotificationDeliveryResult> DeliverAsync(NotificationDeliveryRequestedEto workItem)
     {
         if (!string.Equals(workItem.Channel, Name, StringComparison.OrdinalIgnoreCase))
         {

@@ -224,7 +224,7 @@ public class NotificationDeliveryProcessorTests
             Arg.Any<int>(),
             Arg.Any<System.Threading.CancellationToken>());
         await store.DidNotReceive().EnsureCreatedAsync(
-            Arg.Any<NotificationDeliveryWorkEto>(),
+            Arg.Any<NotificationDeliveryRequestedEto>(),
             Arg.Any<System.Threading.CancellationToken>());
         await store.DidNotReceive().TryClaimAsync(
             Arg.Any<Guid>(),
@@ -235,7 +235,7 @@ public class NotificationDeliveryProcessorTests
             Arg.Any<System.Threading.CancellationToken>());
     }
 
-    private static (NotificationDeliveryProcessor Processor, NullNotificationDeliveryStore Store) CreateProcessor(
+    private static (NotificationDeliveryProcessor Processor, InMemoryNotificationDeliveryStore Store) CreateProcessor(
         DateTime now,
         INotificationDeliveryNotifier[] reliableNotifiers,
         NotificationOptions? options = null,
@@ -245,7 +245,7 @@ public class NotificationDeliveryProcessorTests
         var optionWrapper = Options.Create(options);
         var clock = Substitute.For<IClock>();
         clock.Now.Returns(_ => now);
-        var store = new NullNotificationDeliveryStore();
+        var store = new InMemoryNotificationDeliveryStore();
         return (new NotificationDeliveryProcessor(
             store,
             reliableNotifiers,
@@ -269,12 +269,12 @@ public class NotificationDeliveryProcessorTests
         };
     }
 
-    private static NotificationDeliveryWorkEto CreateWork(
+    private static NotificationDeliveryRequestedEto CreateWork(
         Guid notificationId,
         Guid userId,
         string channel)
     {
-        return new NotificationDeliveryWorkEto
+        return new NotificationDeliveryRequestedEto
         {
             DeliveryId = NotificationDeliveryIdentity.CreateId(null, notificationId, userId, channel),
             IdempotencyKey = NotificationDeliveryIdentity.CreateIdempotencyKey(
@@ -292,19 +292,19 @@ public class NotificationDeliveryProcessorTests
 
     private sealed class TestReliableNotifier : INotificationDeliveryNotifier
     {
-        private readonly Func<NotificationDeliveryWorkEto, Task<NotificationDeliveryResult>> _deliver;
+        private readonly Func<NotificationDeliveryRequestedEto, Task<NotificationDeliveryResult>> _deliver;
 
         public string Name { get; }
 
         public TestReliableNotifier(
             string name,
-            Func<NotificationDeliveryWorkEto, Task<NotificationDeliveryResult>> deliver)
+            Func<NotificationDeliveryRequestedEto, Task<NotificationDeliveryResult>> deliver)
         {
             Name = name;
             _deliver = deliver;
         }
 
-        public Task<NotificationDeliveryResult> DeliverAsync(NotificationDeliveryWorkEto workItem)
+        public Task<NotificationDeliveryResult> DeliverAsync(NotificationDeliveryRequestedEto workItem)
         {
             return _deliver(workItem);
         }

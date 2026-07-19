@@ -45,7 +45,7 @@ public class AbpNotificationsModule : AbpModule
 
         Configure<AbpDistributedEventBusOptions>(options =>
         {
-            options.Handlers.Add<NotificationDeliveryWorkHandler>();
+            options.Handlers.Add<NotificationDeliveryRequestedHandler>();
         });
     }
 
