@@ -33,8 +33,7 @@ public class AbpNotificationsAbstractionsModule : AbpModule
             .AddOptions<AbpSystemTextJsonSerializerOptions>()
             .Configure<INotificationDataTypeRegistry>((options, registry) =>
             {
-                options.JsonSerializerOptions.Converters.Add(
-                    new NotificationDataJsonConverter(registry, NotificationDataReadMode.Tolerant));
+                options.JsonSerializerOptions.Converters.Add(new NotificationDataJsonConverter(registry));
             });
     }
 }

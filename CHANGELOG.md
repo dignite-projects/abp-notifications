@@ -28,9 +28,11 @@ changes.
 - Scoped subscription application/REST contracts that round-trip the stable entity type and ID, while retaining the
   name-only methods as definition-wide compatibility wrappers. MVC and Angular subscription UIs submit the complete
   scope.
-- A tolerant notification-data read mode: `INotificationDataSerializer.Deserialize(json, readMode)` returns a safe
+- Tolerant notification-data reads: `INotificationDataSerializer.Deserialize(json)` returns a safe
   `UnsupportedNotificationData` placeholder for unknown or malformed payloads instead of throwing, so one bad
-  historical row cannot fail a whole inbox page. MVC and Angular render it with a localized fallback.
+  historical row cannot fail a whole inbox page. MVC and Angular render it with a localized fallback. (A
+  strict-vs-tolerant read-mode switch existed briefly pre-release; it was cut because every real read boundary
+  already chose tolerant, so strict mode had no caller. Not documented as removed below, per the note above.)
 - Opt-in Notification Center retention cleanup (`NotificationRetentionOptions` + a default-disabled ABP periodic
   worker, or a direct `NotificationRetentionManager.CleanupAsync` call). Cleanup deletes aged read inbox rows and
   orphaned payload rows in bounded batches.

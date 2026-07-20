@@ -43,32 +43,13 @@ public class EmailNotifier :
         IEmailSender emailSender,
         IEnumerable<IEmailNotificationAddressResolver> addressResolvers,
         INotificationEmailBuilder emailBuilder,
-        ILogger<EmailNotifier> logger)
-        : this(emailSender, addressResolvers, emailBuilder, logger, new NotificationEmailOptions())
-    {
-    }
-
-    public EmailNotifier(
-        IEmailSender emailSender,
-        IEnumerable<IEmailNotificationAddressResolver> addressResolvers,
-        INotificationEmailBuilder emailBuilder,
         ILogger<EmailNotifier> logger,
         IOptions<NotificationEmailOptions> emailOptions)
-        : this(emailSender, addressResolvers, emailBuilder, logger, emailOptions.Value)
-    {
-    }
-
-    private EmailNotifier(
-        IEmailSender emailSender,
-        IEnumerable<IEmailNotificationAddressResolver> addressResolvers,
-        INotificationEmailBuilder emailBuilder,
-        ILogger<EmailNotifier> logger,
-        NotificationEmailOptions emailOptions)
     {
         EmailSender = emailSender;
         EmailBuilder = emailBuilder;
         Logger = logger;
-        EmailOptions = emailOptions;
+        EmailOptions = emailOptions.Value;
 
         // Same Order-then-FullName-Ordinal tiebreak DefaultNotificationEmailBuilder uses for content providers, so
         // which address a user receives never depends on DI registration order.

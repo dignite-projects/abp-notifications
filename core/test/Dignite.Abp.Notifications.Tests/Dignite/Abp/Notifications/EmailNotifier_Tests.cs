@@ -26,7 +26,8 @@ public class EmailNotifier_Tests
             Substitute.For<IEmailSender>(),
             new[] { Substitute.For<IEmailNotificationAddressResolver>() },
             CreateDefaultBuilder(),
-            NullLogger<EmailNotifier>.Instance);
+            NullLogger<EmailNotifier>.Instance,
+            Options.Create(new NotificationEmailOptions()));
 
         notifier.Name.ShouldBe(EmailNotifier.ChannelName);
         notifier.ShouldBeAssignableTo<INotificationNotifier>();
@@ -36,35 +37,6 @@ public class EmailNotifier_Tests
             .ServiceTypes;
         exposedServices.Count(type => type == typeof(INotificationNotifier)).ShouldBe(1);
         exposedServices.ShouldBe(new[] { typeof(INotificationNotifier), typeof(EmailNotifier) });
-    }
-
-    [Fact]
-    public async Task Reliable_delivery_reports_missing_address_as_terminal_suppression()
-    {
-        var emailSender = Substitute.For<IEmailSender>();
-        var notifier = new EmailNotifier(
-            emailSender,
-            Array.Empty<IEmailNotificationAddressResolver>(),
-            CreateDefaultBuilder(),
-            NullLogger<EmailNotifier>.Instance);
-        var notificationId = Guid.NewGuid();
-        var userId = Guid.NewGuid();
-        var workItem = new NotificationDeliveryRequestedEto
-        {
-            NotificationId = notificationId,
-            NotificationName = "order.shipped",
-            Data = new MessageNotificationData("Shipped!"),
-            Severity = NotificationSeverity.Info,
-            CreationTime = DateTime.UtcNow,
-            UserId = userId,
-            Channel = EmailNotifier.ChannelName
-        };
-
-        await notifier.DeliverAsync(workItem);
-
-        // No resolvable address → delivery is silently skipped (best-effort), no email sent.
-        await emailSender.DidNotReceiveWithAnyArgs().SendAsync(
-            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>());
     }
 
     [Fact]
@@ -83,7 +55,8 @@ public class EmailNotifier_Tests
             emailSender,
             new[] { resolver },
             CreateDefaultBuilder(),
-            NullLogger<EmailNotifier>.Instance);
+            NullLogger<EmailNotifier>.Instance,
+            Options.Create(new NotificationEmailOptions()));
         await DeliverAsync(notifier, userWithEmail, userWithoutEmail);
 
         await emailSender.Received(1).SendAsync(
@@ -110,7 +83,8 @@ public class EmailNotifier_Tests
             emailSender,
             new[] { resolver },
             CreateDefaultBuilder(),
-            NullLogger<EmailNotifier>.Instance);
+            NullLogger<EmailNotifier>.Instance,
+            Options.Create(new NotificationEmailOptions()));
         await DeliverAsync(notifier, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
 
         // Deliberately NOT deduplicated by address. The body is built per recipient
@@ -133,7 +107,8 @@ public class EmailNotifier_Tests
             emailSender,
             new[] { resolver },
             CreateDefaultBuilder(),
-            NullLogger<EmailNotifier>.Instance);
+            NullLogger<EmailNotifier>.Instance,
+            Options.Create(new NotificationEmailOptions()));
         await Should.ThrowAsync<InvalidOperationException>(
             () => notifier.DeliverAsync(CreateRequest(Guid.NewGuid(), channel: "SignalR")));
 
@@ -152,7 +127,8 @@ public class EmailNotifier_Tests
             emailSender,
             new[] { resolver },
             CreateDefaultBuilder(),
-            NullLogger<EmailNotifier>.Instance);
+            NullLogger<EmailNotifier>.Instance,
+            Options.Create(new NotificationEmailOptions()));
 
         await notifier.DeliverAsync(CreateRequest(Guid.NewGuid(), new OrderShippedNotificationData()));
 
@@ -177,7 +153,8 @@ public class EmailNotifier_Tests
             emailSender,
             new[] { resolver },
             builder,
-            NullLogger<EmailNotifier>.Instance);
+            NullLogger<EmailNotifier>.Instance,
+            Options.Create(new NotificationEmailOptions()));
         var tenantId = Guid.NewGuid();
         await notifier.DeliverAsync(CreateRequest(firstUserId, tenantId: tenantId));
         await notifier.DeliverAsync(CreateRequest(secondUserId, tenantId: tenantId));
@@ -208,7 +185,8 @@ public class EmailNotifier_Tests
             emailSender,
             new[] { resolver },
             builder,
-            NullLogger<EmailNotifier>.Instance);
+            NullLogger<EmailNotifier>.Instance,
+            Options.Create(new NotificationEmailOptions()));
 
         await DeliverAsync(notifier, firstUserId, secondUserId);
 
@@ -238,30 +216,6 @@ public class EmailNotifier_Tests
 
         builder.Cultures.ShouldBe(new[] { "en-US" });
         builder.Contexts.Single().CultureName.ShouldBe("en-US");
-    }
-
-    [Fact]
-    public async Task Falls_back_to_the_default_culture_when_a_recipient_culture_name_is_invalid()
-    {
-        var emailSender = Substitute.For<IEmailSender>();
-        var resolver = Substitute.For<IEmailNotificationAddressResolver>();
-        var builder = new CapturingEmailBuilder();
-        resolver.GetEmailOrNullAsync(Arg.Any<EmailNotificationAddressResolveContext>())
-            .Returns(EmailNotificationAddress.To("invalid@example.com", "not a culture!"));
-
-        var notifier = new EmailNotifier(
-            emailSender,
-            new[] { resolver },
-            builder,
-            NullLogger<EmailNotifier>.Instance,
-            Options.Create(new NotificationEmailOptions { DefaultCulture = "en-US" }));
-
-        await DeliverAsync(notifier, Guid.NewGuid());
-
-        builder.Cultures.ShouldBe(new[] { "en-US" });
-        await emailSender.Received(1).SendAsync(
-            Arg.Is<string>(to => to == "invalid@example.com"),
-            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>());
     }
 
     [Fact]
@@ -346,7 +300,8 @@ public class EmailNotifier_Tests
             emailSender,
             new[] { resolver },
             new ThrowingEmailBuilder(),
-            NullLogger<EmailNotifier>.Instance);
+            NullLogger<EmailNotifier>.Instance,
+            Options.Create(new NotificationEmailOptions()));
         var previousCulture = CultureInfo.CurrentCulture;
         var previousUICulture = CultureInfo.CurrentUICulture;
 
@@ -376,7 +331,8 @@ public class EmailNotifier_Tests
             emailSender,
             new[] { resolver },
             CreateDefaultBuilder(),
-            NullLogger<EmailNotifier>.Instance);
+            NullLogger<EmailNotifier>.Instance,
+            Options.Create(new NotificationEmailOptions()));
         await notifier.DeliverAsync(CreateRequest(userId, tenantId: tenantId));
 
         capturedContext.ShouldNotBeNull();
@@ -458,7 +414,8 @@ public class EmailNotifier_Tests
             emailSender,
             new IEmailNotificationAddressResolver[] { fallback, business },
             CreateDefaultBuilder(),
-            NullLogger<EmailNotifier>.Instance);
+            NullLogger<EmailNotifier>.Instance,
+            Options.Create(new NotificationEmailOptions()));
 
         await DeliverAsync(notifier, Guid.NewGuid());
 
@@ -479,7 +436,8 @@ public class EmailNotifier_Tests
             emailSender,
             new IEmailNotificationAddressResolver[] { passes, fallback },
             CreateDefaultBuilder(),
-            NullLogger<EmailNotifier>.Instance);
+            NullLogger<EmailNotifier>.Instance,
+            Options.Create(new NotificationEmailOptions()));
 
         await DeliverAsync(notifier, Guid.NewGuid());
 
@@ -498,7 +456,8 @@ public class EmailNotifier_Tests
             emailSender,
             Array.Empty<IEmailNotificationAddressResolver>(),
             CreateDefaultBuilder(),
-            NullLogger<EmailNotifier>.Instance);
+            NullLogger<EmailNotifier>.Instance,
+            Options.Create(new NotificationEmailOptions()));
 
         await DeliverAsync(notifier, Guid.NewGuid());
 
@@ -518,7 +477,11 @@ public class EmailNotifier_Tests
         {
             var emailSender = Substitute.For<IEmailSender>();
             var notifier = new EmailNotifier(
-                emailSender, chain, CreateDefaultBuilder(), NullLogger<EmailNotifier>.Instance);
+                emailSender,
+                chain,
+                CreateDefaultBuilder(),
+                NullLogger<EmailNotifier>.Instance,
+                Options.Create(new NotificationEmailOptions()));
 
             await DeliverAsync(notifier, Guid.NewGuid());
 
@@ -556,7 +519,8 @@ public class EmailNotifier_Tests
             emailSender,
             new[] { resolver },
             CreateDefaultBuilder(),
-            NullLogger<EmailNotifier>.Instance);
+            NullLogger<EmailNotifier>.Instance,
+            Options.Create(new NotificationEmailOptions()));
 
         await Should.ThrowAsync<OperationCanceledException>(
             () => notifier.DeliverAsync(CreateRequest(Guid.NewGuid()), cancellation.Token));

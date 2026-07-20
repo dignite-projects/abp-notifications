@@ -7,6 +7,9 @@ public interface INotificationDataSerializer
 {
     string? Serialize(NotificationData? data);
 
-    /// <summary>Reads JSON using the explicitly selected strict or tolerant failure policy.</summary>
-    NotificationData? Deserialize(string? json, NotificationDataReadMode readMode);
+    /// <summary>
+    /// Reads JSON tolerantly: an unknown discriminator or a malformed known payload becomes
+    /// <see cref="UnsupportedNotificationData"/> instead of throwing.
+    /// </summary>
+    NotificationData? Deserialize(string? json);
 }

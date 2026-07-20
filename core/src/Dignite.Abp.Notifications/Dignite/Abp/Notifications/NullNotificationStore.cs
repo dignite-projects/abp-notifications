@@ -16,7 +16,6 @@ public class NullNotificationStore : INotificationStore, ISingletonDependency
         NotificationSubscriptionInfo subscription,
         CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
         return Task.CompletedTask;
     }
 
@@ -27,7 +26,6 @@ public class NullNotificationStore : INotificationStore, ISingletonDependency
         string? entityId,
         CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
         return Task.CompletedTask;
     }
 
@@ -38,7 +36,6 @@ public class NullNotificationStore : INotificationStore, ISingletonDependency
         string? entityId,
         CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult(false);
     }
 
@@ -48,7 +45,6 @@ public class NullNotificationStore : INotificationStore, ISingletonDependency
         string? entityId,
         CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult(new List<NotificationSubscriptionInfo>());
     }
 
@@ -60,7 +56,6 @@ public class NullNotificationStore : INotificationStore, ISingletonDependency
         int maxResultCount,
         CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult(new List<Guid>());
     }
 
@@ -68,7 +63,6 @@ public class NullNotificationStore : INotificationStore, ISingletonDependency
         Guid userId,
         CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult(new List<NotificationSubscriptionInfo>());
     }
 
@@ -76,7 +70,6 @@ public class NullNotificationStore : INotificationStore, ISingletonDependency
         NotificationInfo notification,
         CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
         return Task.CompletedTask;
     }
 
@@ -84,7 +77,6 @@ public class NullNotificationStore : INotificationStore, ISingletonDependency
         UserNotificationInfo userNotification,
         CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
         return Task.CompletedTask;
     }
 
@@ -92,7 +84,6 @@ public class NullNotificationStore : INotificationStore, ISingletonDependency
         IReadOnlyCollection<UserNotificationInfo> userNotifications,
         CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
         return Task.CompletedTask;
     }
 
@@ -102,7 +93,6 @@ public class NullNotificationStore : INotificationStore, ISingletonDependency
         UserNotificationState state,
         CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
         return Task.CompletedTask;
     }
 
@@ -111,7 +101,6 @@ public class NullNotificationStore : INotificationStore, ISingletonDependency
         UserNotificationState state,
         CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
         return Task.CompletedTask;
     }
 
@@ -120,7 +109,6 @@ public class NullNotificationStore : INotificationStore, ISingletonDependency
         Guid notificationId,
         CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
         return Task.CompletedTask;
     }
 
@@ -131,7 +119,6 @@ public class NullNotificationStore : INotificationStore, ISingletonDependency
         DateTime? endDate = null,
         CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
         return Task.CompletedTask;
     }
 
@@ -144,7 +131,6 @@ public class NullNotificationStore : INotificationStore, ISingletonDependency
         DateTime? endDate = null,
         CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult(new List<UserNotificationWithNotification>());
     }
 
@@ -155,7 +141,6 @@ public class NullNotificationStore : INotificationStore, ISingletonDependency
         DateTime? endDate = null,
         CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult(0);
     }
 }
