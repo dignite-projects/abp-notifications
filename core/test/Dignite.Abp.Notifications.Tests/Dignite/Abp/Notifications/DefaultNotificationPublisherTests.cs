@@ -24,7 +24,6 @@ public class DefaultNotificationPublisherTests
     private readonly IBackgroundJobManager _backgroundJobManager = Substitute.For<IBackgroundJobManager>();
     private readonly INotificationDefinitionManager _definitionManager =
         Substitute.For<INotificationDefinitionManager>();
-    private readonly INotificationDataTypeRegistry _dataTypeRegistry;
 
     public DefaultNotificationPublisherTests()
     {
@@ -32,11 +31,6 @@ public class DefaultNotificationPublisherTests
             new NotificationDefinition(
                 call.Arg<string>(),
                 new FixedLocalizableString(call.Arg<string>())));
-
-        var dataOptions = new NotificationDataOptions();
-        dataOptions.Add<MessageNotificationData>();
-        dataOptions.Add<LocalizableMessageNotificationData>();
-        _dataTypeRegistry = new NotificationDataTypeRegistry(Options.Create(dataOptions));
     }
 
     private DefaultNotificationPublisher CreatePublisher(int threshold, Guid? tenantId = null)
@@ -62,8 +56,7 @@ public class DefaultNotificationPublisherTests
             guidGenerator,
             clock,
             currentTenant,
-            _definitionManager,
-            _dataTypeRegistry);
+            _definitionManager);
     }
 
     [Fact]
@@ -84,38 +77,26 @@ public class DefaultNotificationPublisherTests
     }
 
     [Fact]
-    public async Task Named_bypass_uses_the_explicit_recipient_bypass_inline()
-    {
-        var publisher = CreatePublisher(threshold: 3);
-        var users = new[] { Guid.NewGuid(), Guid.NewGuid() };
-
-        await publisher.PublishToExplicitRecipientsWithoutEligibilityChecksAsync("test", users);
-
-        await _distributor.Received(1).DistributeToExplicitRecipientsWithoutEligibilityChecksAsync(
-            Arg.Any<NotificationInfo>(),
-            Arg.Is<Guid[]>(actual => actual.SequenceEqual(users)),
-            null);
-        await _distributor.DidNotReceiveWithAnyArgs().DistributeAsync(default!, default, default);
-    }
-
-    [Fact]
-    public async Task Named_bypass_requires_an_explicit_recipient_array()
-    {
-        var publisher = CreatePublisher(threshold: 3);
-
-        await Should.ThrowAsync<ArgumentNullException>(() =>
-            publisher.PublishToExplicitRecipientsWithoutEligibilityChecksAsync("test", null!));
-
-        await _distributor.DidNotReceiveWithAnyArgs()
-            .DistributeToExplicitRecipientsWithoutEligibilityChecksAsync(default!, default!, default);
-    }
-
-    [Fact]
     public async Task Empty_explicit_recipient_list_is_a_no_op()
     {
         var publisher = CreatePublisher(threshold: 3);
 
         await publisher.PublishAsync("test", userIds: Array.Empty<Guid>());
+
+        await _distributor.DidNotReceiveWithAnyArgs().DistributeAsync(default!, default, default);
+        await _backgroundJobManager.DidNotReceiveWithAnyArgs()
+            .EnqueueAsync(Arg.Any<NotificationDistributionJobArgs>());
+    }
+
+    [Fact]
+    public async Task Undefined_notification_name_fails_before_any_side_effect()
+    {
+        _definitionManager.Get("missing").Returns(_ => throw new AbpException("Undefined notification: missing"));
+        var publisher = CreatePublisher(threshold: 3);
+
+        await Should.ThrowAsync<AbpException>(() => publisher.PublishAsync(
+            "missing",
+            userIds: new[] { Guid.NewGuid() }));
 
         await _distributor.DidNotReceiveWithAnyArgs().DistributeAsync(default!, default, default);
         await _backgroundJobManager.DidNotReceiveWithAnyArgs()
@@ -129,14 +110,31 @@ public class DefaultNotificationPublisherTests
         var u1 = Guid.NewGuid();
         var u2 = Guid.NewGuid();
 
+        // 3 entries but only 2 distinct users: stays inline. The distributor owns final deduplication.
         await publisher.PublishAsync("test", userIds: new[] { u1, u1, u2 });
 
         await _distributor.Received(1).DistributeAsync(
             Arg.Any<NotificationInfo>(),
-            Arg.Is<Guid[]>(users => users.Length == 2 && users[0] == u1 && users[1] == u2),
+            Arg.Any<Guid[]?>(),
             Arg.Any<Guid[]?>());
         await _backgroundJobManager.DidNotReceiveWithAnyArgs()
             .EnqueueAsync(Arg.Any<NotificationDistributionJobArgs>());
+    }
+
+    [Fact]
+    public async Task Duplicate_recipients_do_not_force_a_small_fan_out_into_the_background()
+    {
+        var publisher = CreatePublisher(threshold: 1);
+        var u1 = Guid.NewGuid();
+        var u2 = Guid.NewGuid();
+
+        // 2 distinct users over a threshold of 1: goes to the background job with the caller's array.
+        await publisher.PublishAsync("test", userIds: new[] { u1, u1, u2, u2 });
+
+        await _backgroundJobManager.Received(1).EnqueueAsync(
+            Arg.Is<NotificationDistributionJobArgs>(args =>
+                args.UserIds != null && args.UserIds.Length == 4));
+        await _distributor.DidNotReceiveWithAnyArgs().DistributeAsync(default!, default, default);
     }
 
     [Fact]
@@ -159,99 +157,23 @@ public class DefaultNotificationPublisherTests
     }
 
     [Fact]
-    public async Task Enqueues_background_job_when_above_threshold()
+    public async Task Enqueues_a_single_background_job_when_above_threshold()
     {
         var tenantId = Guid.NewGuid();
         var publisher = CreatePublisher(threshold: 2, tenantId);
-        var users = new[] { Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid() };
-
-        await publisher.PublishAsync("test", userIds: users);
-
-        await _backgroundJobManager.Received(1).EnqueueAsync(
-            Arg.Is<NotificationDistributionJobArgs>(args => args.Notification.TenantId == tenantId));
-        await _distributor.DidNotReceiveWithAnyArgs().DistributeAsync(default!, default, default);
-    }
-
-    [Fact]
-    public async Task Canonical_contracts_prepare_once_and_enqueue_only_bounded_explicit_recipient_jobs()
-    {
-        var distributor = Substitute.For<INotificationDistributor>();
-        var store = Substitute.For<INotificationStore>();
-        var options = Options.Create(new NotificationDistributionOptions
-        {
-            DirectDistributionUserThreshold = 1,
-            RecipientBatchSize = 2
-        });
-        var guidGenerator = Substitute.For<IGuidGenerator>();
-        guidGenerator.Create().Returns(_ => Guid.NewGuid());
-        var clock = Substitute.For<IClock>();
-        clock.Now.Returns(DateTime.UtcNow);
-        var currentTenant = Substitute.For<ICurrentTenant>();
-        var publisher = new DefaultNotificationPublisher(
-            options,
-            distributor,
-            _backgroundJobManager,
-            guidGenerator,
-            clock,
-            currentTenant,
-            _definitionManager,
-            _dataTypeRegistry,
-            store);
         var users = Enumerable.Range(0, 6).Select(_ => Guid.NewGuid()).ToArray();
+        var excluded = new[] { users[^1] };
 
-        await publisher.PublishAsync(
-            "test",
-            userIds: users,
-            excludedUserIds: new[] { users[^1] });
+        await publisher.PublishAsync("test", userIds: users, excludedUserIds: excluded);
 
-        await store.Received(1).InsertNotificationAsync(
-            Arg.Any<NotificationInfo>(),
-            CancellationToken.None);
-        var jobs = _backgroundJobManager.ReceivedCalls()
-            .Where(call => call.GetMethodInfo().Name == nameof(IBackgroundJobManager.EnqueueAsync))
-            .Select(call => call.GetArguments().OfType<NotificationDistributionJobArgs>().Single())
-            .ToList();
-        jobs.Count.ShouldBe(3);
-        jobs.Sum(job => job.UserIds!.Length).ShouldBe(5);
-        jobs.ShouldAllBe(job => job.UserIds!.Length <= 2);
-        jobs.ShouldAllBe(job =>
-            job.NotificationAlreadyPersisted &&
-            job.ExcludedUserIds == null &&
-            job.Notification.Id == jobs[0].Notification.Id);
-        jobs.SelectMany(job => job.UserIds!).ShouldBe(users.Take(5), ignoreOrder: true);
-    }
-
-    [Fact]
-    public async Task Named_bypass_is_preserved_in_background_job_args()
-    {
-        var publisher = CreatePublisher(threshold: 1);
-        var users = new[] { Guid.NewGuid(), Guid.NewGuid() };
-
-        await publisher.PublishToExplicitRecipientsWithoutEligibilityChecksAsync("test", users);
-
+        // One job carries the whole explicit fan-out; the distributor batches recipients internally.
         await _backgroundJobManager.Received(1).EnqueueAsync(
             Arg.Is<NotificationDistributionJobArgs>(args =>
-                args.RecipientEligibilityMode ==
-                NotificationRecipientEligibilityMode.BypassDefinitionRequirements
+                args.Notification.TenantId == tenantId
                 && args.UserIds != null
-                && args.UserIds.SequenceEqual(users)));
-    }
-
-    [Fact]
-    public async Task Duplicate_recipients_are_normalized_before_the_background_threshold_is_evaluated()
-    {
-        var publisher = CreatePublisher(threshold: 1);
-        var u1 = Guid.NewGuid();
-        var u2 = Guid.NewGuid();
-
-        await publisher.PublishAsync("test", userIds: new[] { u1, u1, u2, u2 });
-
-        await _backgroundJobManager.Received(1).EnqueueAsync(
-            Arg.Is<NotificationDistributionJobArgs>(args =>
-                args.UserIds != null
-                && args.UserIds.Length == 2
-                && args.UserIds[0] == u1
-                && args.UserIds[1] == u2));
+                && args.UserIds.SequenceEqual(users)
+                && args.ExcludedUserIds != null
+                && args.ExcludedUserIds.SequenceEqual(excluded)));
         await _distributor.DidNotReceiveWithAnyArgs().DistributeAsync(default!, default, default);
     }
 
@@ -265,178 +187,6 @@ public class DefaultNotificationPublisherTests
         await _backgroundJobManager.Received(1).EnqueueAsync(
             Arg.Is<NotificationDistributionJobArgs>(args => args.UserIds == null));
         await _distributor.DidNotReceiveWithAnyArgs().DistributeAsync(default!, default, default);
-    }
-
-    [Fact]
-    public async Task Matching_payload_and_required_entity_contract_publish_normally()
-    {
-        var definition = new NotificationDefinition("typed", new FixedLocalizableString("Typed"))
-            .WithPayload<MessageNotificationData>()
-            .WithEntityContract(NotificationEntityRequirement.Required, "Demo.Order");
-        _definitionManager.Get("typed").Returns(definition);
-        var publisher = CreatePublisher(threshold: 3);
-
-        await publisher.PublishAsync(
-            "typed",
-            new MessageNotificationData("ok"),
-            new NotificationEntityIdentifier("Demo.Order", "42"),
-            userIds: new[] { Guid.NewGuid() });
-
-        await _distributor.Received(1).DistributeAsync(
-            Arg.Is<NotificationInfo>(notification =>
-                notification.Data is MessageNotificationData &&
-                notification.EntityTypeName == "Demo.Order" &&
-                notification.EntityId == "42"),
-            Arg.Any<Guid[]?>(),
-            Arg.Any<Guid[]?>());
-        await _backgroundJobManager.DidNotReceiveWithAnyArgs()
-            .EnqueueAsync(Arg.Any<NotificationDistributionJobArgs>());
-    }
-
-    [Fact]
-    public async Task Mismatched_payload_discriminator_fails_before_any_side_effect()
-    {
-        _definitionManager.Get("typed").Returns(
-            new NotificationDefinition("typed", new FixedLocalizableString("Typed"))
-                .WithPayload<MessageNotificationData>());
-        var publisher = CreatePublisher(threshold: 3);
-
-        var exception = await Should.ThrowAsync<AbpException>(() => publisher.PublishAsync(
-            "typed",
-            new LocalizableMessageNotificationData("Test", "Wrong"),
-            userIds: new[] { Guid.NewGuid() }));
-
-        exception.Message.ShouldContain("Dignite.Message");
-        exception.Message.ShouldContain("Dignite.LocalizableMessage");
-        await ShouldHaveNoPublishSideEffectsAsync();
-    }
-
-    [Fact]
-    public async Task Missing_required_payload_fails_before_background_enqueue()
-    {
-        _definitionManager.Get("typed").Returns(
-            new NotificationDefinition("typed", new FixedLocalizableString("Typed"))
-                .WithPayload<MessageNotificationData>());
-        var publisher = CreatePublisher(threshold: 0);
-
-        var exception = await Should.ThrowAsync<AbpException>(() => publisher.PublishAsync(
-            "typed",
-            userIds: new[] { Guid.NewGuid() }));
-
-        exception.Message.ShouldContain("no payload");
-        await ShouldHaveNoPublishSideEffectsAsync();
-    }
-
-    [Fact]
-    public async Task Required_entity_must_be_present_before_publish()
-    {
-        _definitionManager.Get("entity.required").Returns(
-            new NotificationDefinition("entity.required", new FixedLocalizableString("Required"))
-                .WithEntityContract(NotificationEntityRequirement.Required, "Demo.Order"));
-        var publisher = CreatePublisher(threshold: 3);
-
-        var exception = await Should.ThrowAsync<AbpException>(() => publisher.PublishAsync(
-            "entity.required",
-            userIds: new[] { Guid.NewGuid() }));
-
-        exception.Message.ShouldContain("requires an entity identity");
-        await ShouldHaveNoPublishSideEffectsAsync();
-    }
-
-    [Fact]
-    public async Task Forbidden_entity_must_be_absent_before_publish()
-    {
-        _definitionManager.Get("entity.forbidden").Returns(
-            new NotificationDefinition("entity.forbidden", new FixedLocalizableString("Forbidden"))
-                .WithEntityContract(NotificationEntityRequirement.Forbidden));
-        var publisher = CreatePublisher(threshold: 3);
-
-        var exception = await Should.ThrowAsync<AbpException>(() => publisher.PublishAsync(
-            "entity.forbidden",
-            entityIdentifier: new NotificationEntityIdentifier("Demo.Order", "42"),
-            userIds: new[] { Guid.NewGuid() }));
-
-        exception.Message.ShouldContain("forbids an entity identity");
-        await ShouldHaveNoPublishSideEffectsAsync();
-    }
-
-    [Fact]
-    public async Task Optional_entity_may_be_absent()
-    {
-        _definitionManager.Get("entity.optional").Returns(
-            new NotificationDefinition("entity.optional", new FixedLocalizableString("Optional"))
-                .WithEntityContract(NotificationEntityRequirement.Optional, "Demo.Order"));
-        var publisher = CreatePublisher(threshold: 3);
-
-        await publisher.PublishAsync("entity.optional", userIds: new[] { Guid.NewGuid() });
-
-        await _distributor.Received(1).DistributeAsync(
-            Arg.Is<NotificationInfo>(notification =>
-                notification.EntityTypeName == null && notification.EntityId == null),
-            Arg.Any<Guid[]?>(),
-            Arg.Any<Guid[]?>());
-    }
-
-    [Fact]
-    public async Task Entity_type_name_constraint_is_ordinal_and_fails_before_publish()
-    {
-        _definitionManager.Get("entity.typed").Returns(
-            new NotificationDefinition("entity.typed", new FixedLocalizableString("Entity typed"))
-                .WithEntityContract(NotificationEntityRequirement.Optional, "Demo.Order"));
-        var publisher = CreatePublisher(threshold: 3);
-
-        var exception = await Should.ThrowAsync<AbpException>(() => publisher.PublishAsync(
-            "entity.typed",
-            entityIdentifier: new NotificationEntityIdentifier("demo.order", "42"),
-            userIds: new[] { Guid.NewGuid() }));
-
-        exception.Message.ShouldContain("Demo.Order");
-        exception.Message.ShouldContain("demo.order");
-        await ShouldHaveNoPublishSideEffectsAsync();
-    }
-
-    [Fact]
-    public async Task Legacy_definition_without_contract_remains_permissive()
-    {
-        var publisher = CreatePublisher(threshold: 3);
-
-        await publisher.PublishAsync(
-            "legacy",
-            new LocalizableMessageNotificationData("Test", "AnyPayload"),
-            new NotificationEntityIdentifier("Any.Entity", "42"),
-            userIds: new[] { Guid.NewGuid() });
-
-        await _distributor.Received(1).DistributeAsync(
-            Arg.Is<NotificationInfo>(notification =>
-                notification.Data is LocalizableMessageNotificationData &&
-                notification.EntityTypeName == "Any.Entity"),
-            Arg.Any<Guid[]?>(),
-            Arg.Any<Guid[]?>());
-    }
-
-    [Fact]
-    public async Task Trusted_recipient_bypass_does_not_bypass_definition_contracts()
-    {
-        _definitionManager.Get("typed").Returns(
-            new NotificationDefinition("typed", new FixedLocalizableString("Typed"))
-                .WithPayload<MessageNotificationData>());
-        var publisher = CreatePublisher(threshold: 3);
-
-        await Should.ThrowAsync<AbpException>(() =>
-            publisher.PublishToExplicitRecipientsWithoutEligibilityChecksAsync(
-                "typed",
-                new[] { Guid.NewGuid() }));
-
-        await ShouldHaveNoPublishSideEffectsAsync();
-    }
-
-    private async Task ShouldHaveNoPublishSideEffectsAsync()
-    {
-        await _distributor.DidNotReceiveWithAnyArgs().DistributeAsync(default!, default, default);
-        await _distributor.DidNotReceiveWithAnyArgs()
-            .DistributeToExplicitRecipientsWithoutEligibilityChecksAsync(default!, default!, default);
-        await _backgroundJobManager.DidNotReceiveWithAnyArgs()
-            .EnqueueAsync(Arg.Any<NotificationDistributionJobArgs>());
     }
 
     /// <summary>
@@ -461,13 +211,6 @@ public class DefaultNotificationPublisherTests
             var definitionManager = Substitute.For<INotificationDefinitionManager>();
             definitionManager.Get("test")
                 .Returns(new NotificationDefinition("test", new FixedLocalizableString("Test")).UseChannels("Test"));
-
-            var subscribedUser = Guid.NewGuid();
-            Store.GetSubscriptionsAsync("test", null, null).Returns(new List<NotificationSubscriptionInfo>
-            {
-                new() { UserId = subscribedUser, NotificationName = "test" }
-            });
-            definitionManager.IsAvailableAsync("test", subscribedUser).Returns(true);
             definitionManager.IsAvailableAsync("test", Arg.Any<Guid>()).Returns(true);
 
             Store.When(x => x.InsertNotificationAsync(Arg.Any<NotificationInfo>()))
@@ -488,13 +231,9 @@ public class DefaultNotificationPublisherTests
                     Store,
                     definitionManager,
                     EventBus,
-                    new DefaultNotificationRecipientEligibilityEvaluator(
-                        definitionManager,
-                        CurrentTenant,
-                        NullLogger<DefaultNotificationRecipientEligibilityEvaluator>.Instance),
                     CurrentTenant,
                     NullLogger<DefaultNotificationDistributor>.Instance,
-                    new NotificationDataTypeRegistry(Options.Create(new NotificationDataOptions()))),
+                    Options.Create(new NotificationDistributionOptions())),
                 CurrentTenant);
         }
 
@@ -558,39 +297,8 @@ public class DefaultNotificationPublisherTests
 
         pipeline.StoreWasCalled.ShouldBeFalse();
         pipeline.Published.ShouldBeNull();
-        await pipeline.Store.DidNotReceiveWithAnyArgs().GetSubscriptionsAsync(default!, default, default);
-    }
-
-    [Fact]
-    public async Task Distribution_job_invokes_the_bypass_only_for_explicit_recipients_in_the_notification_tenant()
-    {
-        var distributor = Substitute.For<INotificationDistributor>();
-        var currentTenant = new TestCurrentTenant();
-        var tenantId = Guid.NewGuid();
-        var userIds = new[] { Guid.NewGuid() };
-        Guid? tenantSeen = null;
-        distributor.When(service => service.DistributeToExplicitRecipientsWithoutEligibilityChecksAsync(
-                Arg.Any<NotificationInfo>(),
-                Arg.Any<Guid[]>(),
-                Arg.Any<Guid[]?>()))
-            .Do(_ => tenantSeen = currentTenant.Id);
-        var job = new NotificationDistributionJob(distributor, currentTenant);
-
-        await job.ExecuteAsync(new NotificationDistributionJobArgs(
-            new NotificationInfo
-            {
-                Id = Guid.NewGuid(),
-                NotificationName = "test",
-                TenantId = tenantId
-            },
-            userIds,
-            null,
-            NotificationRecipientEligibilityMode.BypassDefinitionRequirements));
-
-        tenantSeen.ShouldBe(tenantId);
-        await distributor.Received(1).DistributeToExplicitRecipientsWithoutEligibilityChecksAsync(
-            Arg.Any<NotificationInfo>(), userIds, null);
-        currentTenant.Id.ShouldBeNull();
+        await pipeline.Store.DidNotReceiveWithAnyArgs().GetSubscriptionUserIdsAsync(
+            default!, default, default, default, default, default);
     }
 
     [Fact]
@@ -618,61 +326,5 @@ public class DefaultNotificationPublisherTests
             null,
             cancellation.Token);
         currentTenant.Id.ShouldBeNull();
-    }
-
-    [Fact]
-    public void Distribution_job_args_retains_the_four_parameter_constructor()
-    {
-        typeof(NotificationDistributionJobArgs).GetConstructor(new[]
-        {
-            typeof(NotificationInfo),
-            typeof(Guid[]),
-            typeof(Guid[]),
-            typeof(NotificationRecipientEligibilityMode)
-        }).ShouldNotBeNull();
-    }
-
-    [Fact]
-    public async Task Distribution_job_routes_a_prepared_batch_without_reinserting_the_notification()
-    {
-        var distributor = Substitute.For<INotificationDistributor>();
-        var currentTenant = new TestCurrentTenant();
-        var notification = new NotificationInfo
-        {
-            Id = Guid.NewGuid(),
-            NotificationName = "test",
-            TenantId = Guid.NewGuid()
-        };
-        var userIds = new[] { Guid.NewGuid(), Guid.NewGuid() };
-        var job = new NotificationDistributionJob(distributor, currentTenant);
-
-        await job.ExecuteAsync(new NotificationDistributionJobArgs(
-            notification,
-            userIds,
-            excludedUserIds: null,
-            NotificationRecipientEligibilityMode.EnforceDefinitionRequirements,
-            notificationAlreadyPersisted: true));
-
-        await distributor.Received(1).DistributePreparedAsync(
-            notification,
-            userIds,
-            NotificationRecipientEligibilityMode.EnforceDefinitionRequirements,
-            Arg.Any<CancellationToken>());
-        await distributor.DidNotReceiveWithAnyArgs().DistributeAsync(default!, default, default);
-        currentTenant.Id.ShouldBeNull();
-    }
-
-    [Fact]
-    public async Task Distribution_job_rejects_a_subscription_bypass()
-    {
-        var job = new NotificationDistributionJob(
-            Substitute.For<INotificationDistributor>(),
-            new TestCurrentTenant());
-
-        await Should.ThrowAsync<ArgumentException>(() => job.ExecuteAsync(new NotificationDistributionJobArgs(
-            new NotificationInfo { Id = Guid.NewGuid(), NotificationName = "test" },
-            null,
-            null,
-            NotificationRecipientEligibilityMode.BypassDefinitionRequirements)));
     }
 }

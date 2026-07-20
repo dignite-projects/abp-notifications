@@ -16,9 +16,7 @@ namespace Dignite.Abp.Notifications.Emailing;
 /// Relays notifications to email — the second notifier that stress-tests the framework's event contract. Unlike
 /// SignalR (which addresses users directly), email needs a UserId → address mapping, supplied by the
 /// <see cref="IEmailNotificationAddressResolver"/> chain. Honors channel routing via <see cref="NotificationChannels"/>.
-/// Reliable work items are tracked before this notifier runs. The supplied idempotency key can be forwarded by a
-/// custom sender/provider integration; the base ABP email sender has no idempotency-key parameter, so an ambiguous
-/// provider timeout can still produce a duplicate external email.
+/// Delivery is best-effort: a recipient without a resolvable address or email content is skipped with a log entry.
 /// </summary>
 [ExposeServices(
     typeof(INotificationNotifier),
@@ -89,7 +87,7 @@ public class EmailNotifier :
         }
     }
 
-    public virtual Task<NotificationDeliveryResult> DeliverAsync(
+    public virtual Task DeliverAsync(
         NotificationDeliveryRequestedEto workItem,
         CancellationToken cancellationToken = default)
     {
@@ -106,7 +104,7 @@ public class EmailNotifier :
             cancellationToken);
     }
 
-    protected virtual async Task<NotificationDeliveryResult> DeliverToUserAsync(
+    protected virtual async Task DeliverToUserAsync(
         NotificationDelivery notification,
         Guid userId,
         Guid? tenantId,
@@ -117,7 +115,11 @@ public class EmailNotifier :
         var address = await ResolveAddressOrNullAsync(context, cancellationToken);
         if (address == null)
         {
-            return NotificationDeliveryResult.Suppressed("address-unavailable");
+            Logger.LogDebug(
+                "No email address resolved for notification '{NotificationName}' and user '{UserId}'; skipping email delivery.",
+                notification.NotificationName,
+                userId);
+            return;
         }
 
         var culture = ResolveCulture(address.CultureName);
@@ -153,14 +155,13 @@ public class EmailNotifier :
                 "No email content provider produced content for notification '{NotificationName}' and user '{UserId}'.",
                 notification.NotificationName,
                 userId);
-            return NotificationDeliveryResult.Suppressed("content-unavailable");
+            return;
         }
 
         // ABP's IEmailSender has no CancellationToken overload. Observe cancellation immediately before entering
         // that non-cancellable provider boundary; a provider-specific sender can implement cancellation internally.
         cancellationToken.ThrowIfCancellationRequested();
         await EmailSender.SendAsync(address.Address, email.Subject, email.Body, email.IsBodyHtml);
-        return NotificationDeliveryResult.Succeeded();
     }
 
     /// <summary>Walks the resolver chain and takes the first non-null address result.</summary>
@@ -184,9 +185,8 @@ public class EmailNotifier :
     /// <summary>
     /// Falls back rather than throws. The culture name is untrusted input — a value out of the setting store, or
     /// whatever an application resolver returned — and <see cref="CultureInfo.GetCultureInfo(string)"/> throws for a
-    /// name that is not well-formed, or for every real culture under invariant globalization. Letting that escape
-    /// would abort the whole event: the recipients after this one get no email, and a redelivery re-mails the ones
-    /// before it, because the transactional inbox deduplicates event delivery, not partial progress through the loop.
+    /// name that is not well-formed, or for every real culture under invariant globalization. A bad stored culture
+    /// name should downgrade this recipient's email to the default culture, not fail the delivery.
     /// </summary>
     protected virtual CultureInfo ResolveCulture(string? cultureName)
     {

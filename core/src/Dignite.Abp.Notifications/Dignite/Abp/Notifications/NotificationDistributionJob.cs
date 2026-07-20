@@ -1,4 +1,3 @@
-using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
@@ -62,53 +61,11 @@ public class NotificationDistributionJob : AsyncBackgroundJob<NotificationDistri
         // and ABP's event bus re-enters the tenant from the event itself before invoking them.
         using (CurrentTenant.Change(args.Notification.TenantId, null))
         {
-            if (args.NotificationAlreadyPersisted)
-            {
-                if (args.UserIds == null)
-                {
-                    throw new ArgumentException(
-                        "Prepared distribution is only valid for explicit recipients.",
-                        nameof(args));
-                }
-
-                await Distributor.DistributePreparedAsync(
-                    args.Notification,
-                    args.UserIds,
-                    args.RecipientEligibilityMode,
-                    cancellationToken);
-                return;
-            }
-
-            if (args.RecipientEligibilityMode == NotificationRecipientEligibilityMode.BypassDefinitionRequirements)
-            {
-                if (args.UserIds == null)
-                {
-                    throw new ArgumentException(
-                        "Definition requirements can only be bypassed for explicit recipients.",
-                        nameof(args));
-                }
-
-                await Distributor.DistributeToExplicitRecipientsWithoutEligibilityChecksAsync(
-                    args.Notification,
-                    args.UserIds,
-                    args.ExcludedUserIds,
-                    cancellationToken);
-            }
-            else if (args.RecipientEligibilityMode == NotificationRecipientEligibilityMode.EnforceDefinitionRequirements)
-            {
-                await Distributor.DistributeAsync(
-                    args.Notification,
-                    args.UserIds,
-                    args.ExcludedUserIds,
-                    cancellationToken);
-            }
-            else
-            {
-                throw new ArgumentOutOfRangeException(
-                    nameof(args),
-                    args.RecipientEligibilityMode,
-                    "Unknown recipient eligibility mode.");
-            }
+            await Distributor.DistributeAsync(
+                args.Notification,
+                args.UserIds,
+                args.ExcludedUserIds,
+                cancellationToken);
         }
     }
 }

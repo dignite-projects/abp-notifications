@@ -60,10 +60,9 @@ public class EmailNotifier_Tests
             Channel = EmailNotifier.ChannelName
         };
 
-        var result = await notifier.DeliverAsync(workItem);
+        await notifier.DeliverAsync(workItem);
 
-        result.IsSuppressed.ShouldBeTrue();
-        result.ReasonCode.ShouldBe("address-unavailable");
+        // No resolvable address → delivery is silently skipped (best-effort), no email sent.
         await emailSender.DidNotReceiveWithAnyArgs().SendAsync(
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>());
     }

@@ -10,265 +10,76 @@ changes.
 
 ## [Unreleased]
 
+> This pre-stable line explored a much larger feature surface (per-recipient delivery reliability with leases /
+> retries / dead-lettering / force-delivery, per-user delivery preferences + quiet hours, large-audience broadcast
+> orchestration, payload schema-versioning + upcasters, opt-in definition payload/entity contracts, a replaceable
+> batch eligibility evaluator + trusted-recipient bypass API, distribution metrics, and a prepared multi-job
+> fan-out) and then **cut all of it before release** as over-engineering for a best-effort in-app notification
+> module. None of it shipped, so it is not documented as removed below. The module's positioning is deliberately
+> "best-effort in-app notifications": delivery is fire-once (the inbox row is authoritative), and distributed-systems
+> machinery (delivery reliability/retries, broadcast jobs, schema-evolution upcasters) is intentionally absent.
+
 ### Added
 
-- Centralized realtime Notification Center connection management for both UI libraries. Angular now exposes
-  `NotificationRealtimeService` plus configurable `NotificationCenterRealtimeOptions`, and the bell shares one
-  application-scoped SignalR connection with reference-counted component lifetimes, reconnect resync, token-renewal
-  reconnect, tenant/account context reconnect, logout cleanup, and duplicate-handler prevention. The MVC bundle now
-  uses a shared `dignite.notificationCenter.realtime` manager with the same refresh-on-receive/reconnect contract.
-- Added tenant-safe large-audience broadcast orchestration through `INotificationAudienceBroadcaster`,
-  `INotificationAudienceRecipientSource`, and resumable `NotificationAudienceBroadcastJob` page args. Broadcasts
-  require an explicit tenant-or-host scope, enqueue one bounded recipient page at a time, hand every page into the
-  normal prepared distribution pipeline for feature/permission/preference/inbox/delivery processing, and expose
-  progress through stable notification id + tenant id + page index/continuation-token logs and
-  `NotificationAudienceBroadcastMetrics`. Broadcast progress and cancellation are exposed through
-  `INotificationAudienceBroadcaster` and the replaceable `INotificationAudienceBroadcastProgressStore`. Core-only
-  uses an explicitly process-local in-memory implementation; installing Notification Center automatically replaces
-  it with durable, optimistic-concurrency state shared by EF Core and MongoDB. Cancellation, replay-safe page counts,
-  sanitized failure diagnostics, restart-style reload, tenant isolation, and terminal-state retention have shared
-  provider-parity tests. ABP Background Jobs continues to own queueing/retries and is not used as business-progress
-  storage. `Dignite.Abp.Notifications.Identity` now contributes the `all-active-users` source, which pages ABP
-  Identity users by keyset and includes only active, not-leaved, not-deleted users in the requested tenant-or-host
-  scope. Multi-tenant broadcasts take an explicit tenant list, exclude host users, and enqueue each tenant inside
-  an independent ABP unit of work so a tenant failure does not mix or block other tenant jobs.
-- Added opt-in Notification Center retention cleanup with `NotificationRetentionOptions`, a default-disabled
-  ABP periodic worker, manual dry-run/reporting through `NotificationRetentionManager`, metrics, and
-  `INotificationRetentionDeletionContributor` hooks for archive/veto behavior. Cleanup deletes only expired read
-  inbox rows, expired terminal delivery rows, and tenant-local orphan payload rows; base payload deletion is
-  two-phase through `RetentionDeletionTime` so unread inbox rows, active delivery work, and concurrently
-  materialized retained references protect the base notification. Bounded cleanup passes persist
-  `NotificationRetentionCleanupCursor` scan state so retained or vetoed prefixes do not starve later candidates.
-- Added per-user permanent delivery preferences with explicit
-  notification+channel > notification > channel > global > default-allow precedence, plus separate time-zone-aware
-  quiet hours. Explicit and subscription recipients share the same post-inbox policy, Core-only mode defaults to
-  immediate delivery, mandatory definitions can explicitly bypass preference/quiet-hours checks, and producer-
-  resolved `Deliver`/`Suppress`/`Delay` intent travels with remote channel work. Notification Center provides
-  tenant-safe EF Core/MongoDB persistence, current-user REST/Angular proxy contracts, and provider-parity tests.
-  A quiet-hours schedule whose stored time zone can no longer be resolved on the evaluating host fails open to
-  immediate delivery (with a warning log) instead of failing the whole recipient batch, and deleting a stored
-  preference rule does not require its notification definition to still exist.
-- Operator delivery queries (`NotificationDeliveryDto`, REST, Angular proxy) expose producer-resolved intent and
-  preference diagnostics plus the latest force-delivery audit. Ordinary retry is restricted to failed or
-  dead-lettered work and preserves consent semantics; suppressed work requires the separate
-  `NotificationCenter.Deliveries.ForceDeliver` permission and `/force-deliver` endpoint.
-
-- Added a per-tenant/notification/user/channel delivery state machine with deterministic identities, atomic leases,
-  exponential retry with jitter, lease recovery, suppression, dead-lettering, metrics, and operator query/retry
-  permissions and REST endpoints. Notification Center persists the ledger with equivalent EF Core and MongoDB
-  indexes and behavior; Core-only applications retain a process-local in-memory implementation.
-- Added the canonical `INotificationNotifier` and single-recipient/channel `NotificationDeliveryRequestedEto`
-  contracts. Requests carry a stable idempotency key for providers that support downstream deduplication.
-- Added MongoDB integration with ABP's distributed event outbox and inbox through
-  `UseNotificationCenterMongoDbOutbox()`. The opt-in validates a MongoDB 4.0+ replica set with a real committed
-  multi-collection transaction probe at host startup, exposes a reusable capability checker, uses ABP-compatible
-  event-box collections with query indexes, and shares atomic commit/rollback tests with EF Core. Standalone and
-  currently untested sharded topologies are rejected rather than receiving a false guarantee.
-- Added scoped subscription application/REST contracts that round-trip the stable entity type and ID,
-  while retaining the name-only methods as definition-wide compatibility wrappers for callers. MVC and
-  Angular subscription UIs now submit the complete scope.
-- Added a replaceable, batch-shaped `INotificationRecipientEligibilityEvaluator` shared by explicit and
-  subscription-derived recipients, plus a narrowly named and warning-logged trusted-system bypass that is
-  restricted to explicit recipients.
-- Added opt-in notification-definition contracts for stable payload discriminators and forbidden/optional/required
-  entity identity, including optional stable entity type constraints and startup validation of referenced payloads.
-- Added explicit notification payload schema versions, deterministic consecutive JSON upcasters with startup chain
-  validation, typed strict-read failures, and a safe `UnsupportedNotificationData` tolerant-read representation.
-  MVC and Angular now render unsupported payloads with a localized fallback.
-- Added a configurable bounded recipient pipeline for candidate resolution, eligibility, inbox multi-inserts, and
-  delivery-event publication. Stable paging and batch persistence are canonical `INotificationStore` operations;
-  cancellation and prepared distribution are canonical `INotificationDistributor` operations.
-  `NotificationDistributionMetrics`
-  publishes stable candidate/eligible/filtered/batch/duration/failure instruments. Shared EF Core/MongoDB tests
-  cover 2,001 recipients, duplicate scopes, keyset changes, exact limits, cancellation, and independently scheduled
-  explicit batches.
+- MongoDB integration with ABP's distributed event outbox and inbox through `UseNotificationCenterMongoDbOutbox()`,
+  using ABP-compatible event-box collections with query indexes and sharing atomic commit/rollback tests with EF
+  Core. The transactional outbox requires a transaction-capable MongoDB 4.0+ replica set and transactional ABP
+  units of work.
+- Scoped subscription application/REST contracts that round-trip the stable entity type and ID, while retaining the
+  name-only methods as definition-wide compatibility wrappers. MVC and Angular subscription UIs submit the complete
+  scope.
+- A tolerant notification-data read mode: `INotificationDataSerializer.Deserialize(json, readMode)` returns a safe
+  `UnsupportedNotificationData` placeholder for unknown or malformed payloads instead of throwing, so one bad
+  historical row cannot fail a whole inbox page. MVC and Angular render it with a localized fallback.
+- Opt-in Notification Center retention cleanup (`NotificationRetentionOptions` + a default-disabled ABP periodic
+  worker, or a direct `NotificationRetentionManager.CleanupAsync` call). Cleanup deletes aged read inbox rows and
+  orphaned payload rows in bounded batches.
+- A bounded recipient pipeline: `INotificationStore.GetSubscriptionUserIdsAsync` keyset paging plus bounded inbox
+  multi-insert. Explicit fan-outs above `NotificationDistributionOptions.DirectDistributionUserThreshold` run on a
+  single background job whose distributor batches recipients internally (`RecipientBatchSize`).
 
 ### Changed
 
 - **Breaking application/domain API alignment before 10.0.0 stable.** Current-user inbox services are now
-  `IUserNotificationAppService` / `UserNotificationAppService`, and `GetCountAsync` is
-  `GetNotificationCountAsync`. Preference mutation is `SetPreferenceAsync`, and `IsEnabled` is
-  `IsDeliveryEnabled` across the entity, DTO, request, JSON, and generated Angular proxy. Pass-through manager
-  interfaces and `UserNotificationManager` were removed; application reads now use stores/repositories while
-  concrete subscription/preference managers own validation and mutation only. Retention orchestration is the
-  concrete `NotificationRetentionManager`. REST routes are unchanged. Existing EF Core/MongoDB preference data
-  requires a consuming-host field rename as documented in the README.
-
-- Delivery retry and retention cleanup scanners now use ABP's periodic background-worker lifecycle and a stable,
-  configurable `IAbpDistributedLock` per scanner. Competing instances skip a locked cycle without failure;
-  shutdown cancellation flows through scans and publication waits, scoped services are resolved per cycle, and
-  exceptions leave the next period runnable. The abstraction package's default lock is process-local, so clustered
-  hosts must configure a real distributed-lock provider and a shared application-specific key prefix. Worker cycle
-  metrics expose `completed`, `lock_miss`, and `failed` outcomes. No database migration is required.
-
-- **Notification Center schema addition for durable audience-broadcast state.** EF Core consuming hosts must add a
-  host-owned `AbpNotificationAudienceBroadcastStates` migration with the mappings and indexes from
-  `ConfigureNotificationCenter()`; MongoDB creates the equivalent collection/indexes from `CreateModel`. Terminal
-  state participates in `NotificationRetentionOptions.TerminalAudienceBroadcastRetention` (90 days by default when
-  cleanup is enabled). `NotificationAudienceBroadcastProgress.ErrorMessage` is replaced by stable `FailureCode` and
-  sanitized `FailureMessage`, with creation/cancellation/completion timestamps and `ConcurrencyStamp`; custom
-  `INotificationAudienceBroadcastProgressStore` implementations must accept both failure values. No existing row
-  backfill is required, and Core retains its non-durable in-memory store.
-
-- **Breaking audience-broadcast terminology cleanup before 10.0.0 stable.** Scope APIs now describe their actual
-  behavior: `EnqueueTenantBroadcastAsync` is `EnqueueAsync`, `EnqueueHostBroadcastAsync` is
-  `EnqueueForTenantsAsync`, while `GetTenantBroadcastProgressAsync` / `CancelTenantBroadcastAsync` become
-  `GetProgressAsync` / `CancelAsync`. `NotificationAudienceTenantBroadcastRequest`,
-  `NotificationAudienceHostBroadcastRequest`, `NotificationAudienceBroadcastTenantResult`, and
-  `NotificationAudienceBroadcastResult` become `NotificationAudienceBroadcastRequest`,
-  `NotificationAudienceMultiTenantBroadcastRequest`, `NotificationAudienceBroadcastEnqueueResult`, and
-  `NotificationAudienceMultiTenantBroadcastResult`, respectively; the multi-tenant result collection is now
-  `Results` instead of `Tenants`. Public audience paging and job state use
-  `ContinuationToken` / `NextContinuationToken` instead of cursor names; `NotificationAudienceRecipientPage.HasMore`
-  is derived from the presence of its opaque next token. Multi-tenant orchestration remains host-authorized and
-  explicitly excludes host users. No persistence migration is needed.
-
+  `IUserNotificationAppService` / `UserNotificationAppService`, and `GetCountAsync` is `GetNotificationCountAsync`.
+  Pass-through manager interfaces and `UserNotificationManager` were removed; application reads now use
+  `INotificationStore` while the concrete `NotificationSubscriptionManager` owns validated subscription mutation,
+  and `NotificationRetentionManager` owns cleanup. REST routes are unchanged.
 - **Breaking options split before 10.0.0 stable.** The catch-all `NotificationOptions` type was replaced by
-  `NotificationDefinitionOptions`, `NotificationDistributionOptions`, `NotificationDeliveryOptions`, and
-  `NotificationAudienceBroadcastOptions`. Move each existing configuration assignment to the matching group;
-  provider registration is now independent from runtime tuning. `DeliveryEventRecipientLimit` is renamed to
-  `NotificationDistributionOptions.DeliveryWorkItemBatchSize`, which limits single-recipient/channel work items
-  scheduled by one operation rather than recipients inside an event. Existing defaults and behavior are unchanged.
-  Distribution, delivery-retry, and audience batch sizes retain a 10,000 hard maximum exposed as `MaxBatchSize` on
-  their owning option type, and every group is validated on startup. Custom constructors and `IOptions<T>` consumers
-  must adopt the responsible option type and be recompiled; no data or consuming-host database migration is needed.
-
-- **Breaking notification metadata and data-read cleanup before 10.0.0 stable.** The unused
-  `NotificationDefinition.EntityType` property and constructor `Type` parameter were removed; declare entity
-  requirements with `WithEntityContract(..., stableEntityTypeName)`. Definition names now reject empty or
-  whitespace values immediately. `INotificationDataTolerantReader` was removed: all reads now call
-  `INotificationDataSerializer.Deserialize(json, NotificationDataReadMode.Strict|Tolerant)` explicitly.
-  `INotificationDataEvolutionRegistry` was also folded into canonical `INotificationDataTypeRegistry`; custom
-  registries must implement current-version lookup and upcasting, and custom serializers/registries must be
-  recompiled. Persisted payloads, stable discriminators, entity type names, and JSON envelopes require no migration.
-
-- **Breaking notifier contract cleanup before 10.0.0 stable.** `INotificationNotifier` is now the sole channel
-  execution contract: it exposes `Name` plus cancellation-aware single-recipient `DeliverAsync`. The temporary
-  `INotificationDeliveryNotifier`, generic `INotificationNotifier<TEvent>`, aggregate `NotificationDeliveryEto`, and
-  processor compatibility branch are removed. Email address/content extension points now accept and observe the
-  same cancellation token; SignalR forwards it to `SendCoreAsync`, while ABP's `IEmailSender` is checked immediately
-  before its currently non-cancellable send boundary. Quiesce publication and drain the old
-  `Dignite.Abp.Notifications.NotificationDelivery` event before upgrading consumers; update custom notifiers to the
-  canonical contract before recompiling.
-
-- **Breaking public terminology cleanup before 10.0.0 stable.** `NullNotificationDeliveryStore` is now
-  `InMemoryNotificationDeliveryStore`, `NullNotificationDeliveryPreferenceEvaluator` is now
-  `AllowAllNotificationDeliveryPreferenceEvaluator`, and `NotificationDeliveryWorkEto` is now
-  `NotificationDeliveryRequestedEto`. Delivery states are renamed to `Processing`, `RetryScheduled`, and
-  `DeadLettered` while retaining numeric values 1, 3, and 5, so existing EF Core and MongoDB state values need no
-  migration. The CLR ETO rename intentionally keeps the distributed event name
-  `Dignite.Abp.Notifications.NotificationDeliveryWork`; mixed-version producers and consumers therefore use the
-  same wire name and require no drain solely for this terminology change. Custom source code must adopt the new
-  CLR names before recompiling. Delivery metrics now report the matching `retry_scheduled` and `dead_lettered`
-  outcome tags, so dashboards filtering the former `failed` or `dead_letter` values must be updated.
-
-- **Breaking for delivery-store implementers.** The broad `INotificationDeliveryStore.RequeueAsync` operation is
-  replaced by preference-preserving `RetryAsync` and explicitly audited `ForceDeliverAsync`. Notification Center
-  hosts must generate a consuming-host migration for the four nullable `LastForceDelivery*` ledger columns; no
-  data backfill is required, and MongoDB accepts the additive fields without a document migration.
-
-- Notification Center inbox materialization is idempotent for already-persisted `(UserId, NotificationId)` rows.
-  Retried prepared/audience broadcast pages skip existing inbox rows instead of failing on the unique index; no
-  schema migration is required.
-- Notification Center database models add `RetentionDeletionTime` and a concurrency stamp to base notifications,
-  plus retention query indexes for old payload scans, old read inbox scans, tenant-local payload-reference checks,
-  terminal delivery cleanup, and `AbpNotificationRetentionCleanupCursors` scan-state storage with a unique
-  scope/kind cursor index. EF Core consumers should generate a host-owned migration before enabling destructive
-  cleanup; MongoDB contexts create the equivalent collection and indexes from model initialization.
-- Notification Center database models add `AbpNotificationDeliveryPreferences`, `AbpNotificationQuietHours`, and
-  delivery-ledger intent/not-before/reason fields. Consumer-owned EF Core migrations and MongoDB collection/index
-  upgrades are required; no preference backfill is needed because missing rows mean allow/no quiet hours. Upgrade
-  channel consumers before producers: old consumers ignore the additive intent fields and can violate an opt-out.
-- **Breaking for Angular consumers with custom renderers.** The generated `NotificationData` proxy interface no
-  longer carries the hand-maintained `type` field and structural index signature (they were lost on every proxy
-  regeneration by design of that workaround). Custom notification-data renderer components should type their
-  input as `NotificationDataPayload` (exported from the package root), which restores both members on top of the
-  generated interface.
-- **Breaking for implementers.** Custom `INotificationCenterDbContext` and `INotificationCenterMongoDbContext`
-  implementations must expose the two preference collections plus the retention cleanup cursor collection/DbSet.
-  Custom `DefaultNotificationDistributor` construction can keep using the compatibility constructors (default
-  allow); DI and preference-aware callers use the new `INotificationDeliveryPreferenceEvaluator` overload.
-
-- **Breaking wire behavior for independently deployed event consumers.** The default distributor now publishes
-  `NotificationDeliveryRequestedEto` instead of the removed batched aggregate event. Mixed versions cannot provide
-  the new reliability guarantee: quiesce publication, drain old aggregate events, upgrade consumer schemas/code,
-  then upgrade producers and resume.
-- Notification Center hosts require a host-owned schema migration for the new `AbpNotificationDeliveries` table
-  (or the equivalent MongoDB collection) and its unique identity/due-work indexes. Historical notifications need no
-  backfill. Delivery state and its stable payload snapshot are consumer-owned; initial materialization and claim
-  commit as one consumer-side operation, so independently deployed channel services can retry without the
-  producer's Notification row or visibility into an ambient inbox transaction. Internal scheduling is at least
-  once; exactly-once external effects require the downstream provider to honor the supplied idempotency key.
-- **Breaking for implementers.** `INotificationCenterMongoDbContext` now extends ABP's `IHasEventInbox` and
-  `IHasEventOutbox`. Consumer-owned implementations must expose and model the two ABP event collections and
-  configure both boxes against their custom context. MongoDB's `MessageId` inbox index is now unique; existing
-  duplicate event records must be reconciled before model initialization creates the index. Notification business
-  records require no backfill or collection rename.
-- **Breaking for implementers.** `IUserNotificationAppService` includes scoped subscribe/unsubscribe members;
-  custom implementations and replacements must implement these methods and be recompiled. Existing
-  callers of the name-only members remain source-compatible.
-- Subscription-driven distribution now treats a definition-wide subscription as a fallback for every
-  entity and combines it with an exact entity subscription without delivering twice to the same user.
-- Notification subscription uniqueness now uses non-null, ordinal identity keys across EF Core and
-  MongoDB. Existing databases require a host-owned backfill and index migration as documented in the
-  README; this repository does not ship consumer migrations.
-- **Breaking behavior for callers.** Explicit `userIds` no longer bypass a notification definition's
-  permission and feature requirements: `PublishAsync` now filters explicit and subscription-derived
-  recipients through the same policy in the notification's tenant or host context. Call the named
-  `PublishToExplicitRecipientsWithoutEligibilityChecksAsync` API only for mandatory trusted-system delivery.
-- **Breaking contract consolidation before 10.0.0 stable.** `IBatchedNotificationStore`,
-  `ICancellableNotificationDistributor`, and `IPreparedNotificationDistributor` were removed. Custom stores must
-  implement stable `GetSubscriptionUserIdsAsync` paging, bounded `InsertUserNotificationsAsync`, and the
-  cancellation-aware canonical `INotificationStore` members. Custom distributors must implement the
-  cancellation-aware canonical methods plus `DistributePreparedAsync`. Recompile every implementation; there is
-  no runtime capability probe or materializing/per-row fallback. `NullNotificationStore` remains the Core-only,
-  non-persistent implementation.
-- **Breaking for `DefaultNotificationDistributor` subclasses.** The legacy protected
-  `GetTargetUserIdsAsync`, `SaveUserNotificationsAsync`, and `PublishNotificationDeliveryAsync` extension hooks
-  were removed. Move recipient persistence to `INotificationStore`, policy filtering to
-  `INotificationRecipientEligibilityEvaluator`, or implement the canonical distributor contract.
-- **Breaking for implementers.** `INotificationPublisher` and `INotificationDistributor` gained the named
-  explicit-recipient bypass members. Custom implementations must add them and be recompiled. Existing
-  `DefaultNotificationDistributor` subclasses should use `INotificationStore` and
-  `INotificationRecipientEligibilityEvaluator` extension points.
-- **Breaking for manual construction.** The three-argument `DefaultNotificationDistributor` constructor was
-  removed because it could neither establish the notification's tenant/host context nor guarantee bypass audit
-  logging. Manual callers must now supply `INotificationRecipientEligibilityEvaluator`, `ICurrentTenant`, and
-  `ILogger<DefaultNotificationDistributor>`; normal dependency-injection resolution requires no changes.
-- **Breaking behavior for direct distributor callers.** `NotificationInfo.TenantId` is now authoritative for
-  subscription lookup, eligibility, persistence, and event/outbox publication. `null` always means host and no
-  longer falls back to an ambient tenant, so tenant-side callers of `INotificationDistributor` must set it explicitly.
-- **Breaking for manual construction.** `DefaultNotificationPublisher` now requires
-  `INotificationDefinitionManager` and `INotificationDataTypeRegistry`, and `DefaultNotificationDistributor` also
-  requires `INotificationDataTypeRegistry`, so both the pre-enqueue and persistence/event boundaries validate
-  definition contracts. Normal dependency-injection resolution requires no changes. Definitions without
-  payload/entity contracts retain their previous permissive behavior and can migrate independently.
-- Newly serialized notification payloads always include `schemaVersion`; versionless historical JSON is read as
-  schema v1 and upgraded lazily without a database migration or eager row rewrite. Notification Center store
-  queries and distributed-event/HTTP converters now tolerate unknown, future, malformed, and failed-upcast payloads
-  by returning safe placeholder data through the canonical explicit tolerant read mode.
-- Distribution can now schedule delivery work in multiple bounded groups for one notification. Built-in EF Core,
-  MongoDB, and null stores use keyset pages and bounded writes; large explicit fan-outs prepare the notification once
-  and enqueue bounded recipient jobs. Explicit normalization uses bounded keyset windows rather than a
-  notification-wide duplicate set, and the inline threshold now shares the 10,000 hard maximum. EF Core flushes and
-  detaches each inbox group while retaining an ambient transaction when one exists. Existing custom
-  `INotificationStore` implementations remain compatible through the legacy materializing/per-row path and should
-  add the new capabilities before large fan-outs. The original four-parameter `NotificationDistributionJobArgs`
-  constructor remains available for binary compatibility. Delivery events are now expanded into independently
-  claimable recipient/channel work items by the delivery reliability pipeline.
-- **Breaking behavior for payload authors.** Per-instance assignments to `NotificationData.SchemaVersion` no longer
-  select the wire version. The converter now writes the current version declared by
-  `[NotificationDataType("...", version)]`; move shape changes to that declaration and registered upcasters.
+  `NotificationDefinitionOptions` (provider registration) and `NotificationDistributionOptions` (inline/background
+  threshold + `RecipientBatchSize`, capped by `MaxBatchSize` = 10,000, validated on startup). Custom constructors
+  and `IOptions<T>` consumers must adopt the responsible option type and be recompiled; no database migration.
+- **Breaking notifier contract.** `INotificationNotifier` is the sole channel execution contract: `Name` plus
+  cancellation-aware single-recipient `DeliverAsync`. Delivery is best-effort — `DeliverAsync` returns `Task`
+  (no result type); a notifier skips a recipient by returning, and a throw is logged and dropped by the Core
+  handler, not retried. The Core-owned distributed-event handler adapts transport, so channel plugins do not
+  implement an event-handler interface.
+- **Breaking distributed-event contract.** The default distributor publishes single-recipient/channel
+  `NotificationDeliveryRequestedEto` (wire name `Dignite.Abp.Notifications.NotificationDeliveryWork`) instead of the
+  legacy batched aggregate event. Quiesce publication, drain old aggregate events, upgrade consumers, then producers.
+- **Breaking for MongoDB context implementers.** `INotificationCenterMongoDbContext` extends ABP's `IHasEventInbox`
+  and `IHasEventOutbox`. Consumer-owned implementations must expose and model the two ABP event collections and
+  configure both boxes against their custom context. Notification business records require no backfill or rename.
+- **Breaking behavior for callers.** An explicit `userIds` array no longer bypasses a notification definition's
+  permission and feature requirements: `PublishAsync` filters explicit and subscription-derived recipients through
+  the same `INotificationDefinitionManager.IsAvailableAsync` check, in the notification's tenant or host context.
+- **Breaking behavior for direct distributor callers.** `NotificationInfo.TenantId` is authoritative for
+  subscription lookup, eligibility, persistence, and event/outbox publication. `null` always means host and never
+  falls back to an ambient tenant, so tenant-side callers of `INotificationDistributor` must set it explicitly.
+- Subscription-driven distribution treats a definition-wide subscription as a fallback for every entity and combines
+  it with an exact entity subscription without delivering twice to the same user. Subscription uniqueness uses
+  non-null, ordinal identity keys across EF Core and MongoDB; existing databases need a host-owned backfill and
+  index migration as documented in the README.
 
 ### Fixed
 
-- Notification definition names and `NotificationData` discriminators now use explicit ordinal,
-  case-sensitive registration and lookup. Conflicting registrations fail during application startup
-  with both providers or CLR mappings identified instead of silently replacing an earlier value. Definition
-  providers are discovered across module assemblies and duplicate registrations of the same provider execute once.
-- Defined consistent explicit-recipient semantics across inline and background distribution: `null`
-  resolves subscriptions, an empty list is a no-op, and duplicate explicit user IDs are normalized
-  before threshold selection, persistence, and channel delivery.
+- Notification definition names and `NotificationData` discriminators use explicit ordinal, case-sensitive
+  registration and lookup. Conflicting registrations fail during application startup with both providers or CLR
+  mappings identified instead of silently replacing an earlier value. Definition providers are discovered across
+  module assemblies and duplicate registrations of the same provider execute once.
+- Consistent explicit-recipient semantics across inline and background distribution: `null` resolves subscriptions,
+  an empty list is a no-op, and duplicate explicit user IDs are normalized before threshold selection, persistence,
+  and channel delivery.
 
 ## [10.0.0-rc.2] - 2026-07-16
 

@@ -23,30 +23,10 @@ public interface INotificationDistributor
     /// both explicit and subscription-derived candidates.
     /// </param>
     /// <param name="excludedUserIds">Optional user IDs to remove from the resolved recipient set.</param>
-    /// <param name="cancellationToken">Cancellation observed between bounded pipeline operations.</param>
+    /// <param name="cancellationToken">Cancellation observed between bounded recipient batches.</param>
     Task DistributeAsync(
         NotificationInfo notification,
         Guid[]? userIds = null,
         Guid[]? excludedUserIds = null,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Distributes to explicit trusted-system recipients without definition eligibility checks. The bypass is
-    /// warning-logged by the distributor and cannot resolve recipients from subscriptions.
-    /// </summary>
-    Task DistributeToExplicitRecipientsWithoutEligibilityChecksAsync(
-        NotificationInfo notification,
-        Guid[] userIds,
-        Guid[]? excludedUserIds = null,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Distributes an already-persisted notification to one bounded explicit-recipient batch. Publisher and audience
-    /// jobs use this supported extension point so the shared notification record is prepared exactly once.
-    /// </summary>
-    Task DistributePreparedAsync(
-        NotificationInfo notification,
-        Guid[] userIds,
-        NotificationRecipientEligibilityMode recipientEligibilityMode,
         CancellationToken cancellationToken = default);
 }

@@ -1,6 +1,5 @@
 using System;
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Options;
 using Volo.Abp.BackgroundJobs;
@@ -27,10 +26,6 @@ public class DefaultNotificationPublisher : INotificationPublisher, ITransientDe
 
     protected INotificationDefinitionManager DefinitionManager { get; }
 
-    protected INotificationDataTypeRegistry DataTypeRegistry { get; }
-
-    protected INotificationStore Store { get; }
-
     public DefaultNotificationPublisher(
         IOptions<NotificationDistributionOptions> options,
         INotificationDistributor distributor,
@@ -38,31 +33,7 @@ public class DefaultNotificationPublisher : INotificationPublisher, ITransientDe
         IGuidGenerator guidGenerator,
         IClock clock,
         ICurrentTenant currentTenant,
-        INotificationDefinitionManager definitionManager,
-        INotificationDataTypeRegistry dataTypeRegistry)
-        : this(
-            options,
-            distributor,
-            backgroundJobManager,
-            guidGenerator,
-            clock,
-            currentTenant,
-            definitionManager,
-            dataTypeRegistry,
-            store: null)
-    {
-    }
-
-    public DefaultNotificationPublisher(
-        IOptions<NotificationDistributionOptions> options,
-        INotificationDistributor distributor,
-        IBackgroundJobManager backgroundJobManager,
-        IGuidGenerator guidGenerator,
-        IClock clock,
-        ICurrentTenant currentTenant,
-        INotificationDefinitionManager definitionManager,
-        INotificationDataTypeRegistry dataTypeRegistry,
-        INotificationStore? store)
+        INotificationDefinitionManager definitionManager)
     {
         Options = options.Value;
         Distributor = distributor;
@@ -71,11 +42,9 @@ public class DefaultNotificationPublisher : INotificationPublisher, ITransientDe
         Clock = clock;
         CurrentTenant = currentTenant;
         DefinitionManager = definitionManager;
-        DataTypeRegistry = dataTypeRegistry;
-        Store = store ?? new NullNotificationStore();
     }
 
-    public virtual Task PublishAsync(
+    public virtual async Task PublishAsync(
         string notificationName,
         NotificationData? data = null,
         NotificationEntityIdentifier? entityIdentifier = null,
@@ -83,62 +52,14 @@ public class DefaultNotificationPublisher : INotificationPublisher, ITransientDe
         Guid[]? userIds = null,
         Guid[]? excludedUserIds = null)
     {
-        return PublishAsyncInternal(
-            notificationName,
-            data,
-            entityIdentifier,
-            severity,
-            userIds,
-            excludedUserIds,
-            NotificationRecipientEligibilityMode.EnforceDefinitionRequirements);
-    }
-
-    public virtual Task PublishToExplicitRecipientsWithoutEligibilityChecksAsync(
-        string notificationName,
-        Guid[] userIds,
-        NotificationData? data = null,
-        NotificationEntityIdentifier? entityIdentifier = null,
-        NotificationSeverity severity = NotificationSeverity.Info,
-        Guid[]? excludedUserIds = null)
-    {
-        ArgumentNullException.ThrowIfNull(userIds);
-
-        return PublishAsyncInternal(
-            notificationName,
-            data,
-            entityIdentifier,
-            severity,
-            userIds,
-            excludedUserIds,
-            NotificationRecipientEligibilityMode.BypassDefinitionRequirements);
-    }
-
-    protected virtual async Task PublishAsyncInternal(
-        string notificationName,
-        NotificationData? data,
-        NotificationEntityIdentifier? entityIdentifier,
-        NotificationSeverity severity,
-        Guid[]? userIds,
-        Guid[]? excludedUserIds,
-        NotificationRecipientEligibilityMode recipientEligibilityMode)
-    {
         if (userIds is { Length: 0 })
         {
             return;
         }
 
-        Guid[]? normalizedUserIds = null;
-        var fitsInlineThreshold = userIds == null || BoundedRecipientBatcher.TryNormalizeWithinLimit(
-            userIds,
-            Options.DirectDistributionUserThreshold,
-            out normalizedUserIds);
-
-        var definition = DefinitionManager.Get(notificationName);
-        NotificationDefinitionContractValidator.ValidatePublish(
-            definition,
-            data,
-            entityIdentifier,
-            DataTypeRegistry);
+        // Fail fast on undefined notification names while the caller is still on the line, instead of
+        // inside a background job.
+        DefinitionManager.Get(notificationName);
 
         var notification = new NotificationInfo
         {
@@ -152,58 +73,15 @@ public class DefaultNotificationPublisher : INotificationPublisher, ITransientDe
             TenantId = CurrentTenant.Id
         };
 
-        if (userIds != null && fitsInlineThreshold)
+        if (userIds != null && userIds.Distinct().Count() <= Options.DirectDistributionUserThreshold)
         {
-            if (recipientEligibilityMode == NotificationRecipientEligibilityMode.BypassDefinitionRequirements)
-            {
-                await Distributor.DistributeToExplicitRecipientsWithoutEligibilityChecksAsync(
-                    notification,
-                    normalizedUserIds!,
-                    excludedUserIds);
-            }
-            else
-            {
-                await Distributor.DistributeAsync(notification, normalizedUserIds, excludedUserIds);
-            }
+            await Distributor.DistributeAsync(notification, userIds, excludedUserIds);
+            return;
         }
-        else if (userIds != null)
-        {
-            var notificationPrepared = false;
-            foreach (var normalizedBatch in BoundedRecipientBatcher.GetDistinctBatches(
-                         userIds!,
-                         Options.RecipientBatchSize))
-            {
-                var recipientBatch = BoundedRecipientBatcher.RemoveExcludedRecipients(
-                    normalizedBatch,
-                    excludedUserIds);
-                if (recipientBatch.Length == 0)
-                {
-                    continue;
-                }
 
-                if (!notificationPrepared)
-                {
-                    await Store.InsertNotificationAsync(notification, CancellationToken.None);
-                    notificationPrepared = true;
-                }
-
-                await BackgroundJobManager.EnqueueAsync(
-                    new NotificationDistributionJobArgs(
-                        notification,
-                        recipientBatch,
-                        excludedUserIds: null,
-                        recipientEligibilityMode,
-                        notificationAlreadyPersisted: true));
-            }
-        }
-        else
-        {
-            await BackgroundJobManager.EnqueueAsync(
-                new NotificationDistributionJobArgs(
-                    notification,
-                    userIds: null,
-                    excludedUserIds,
-                    recipientEligibilityMode));
-        }
+        // Subscription resolution and large explicit fan-outs run off the request thread; the distributor
+        // batches recipients internally.
+        await BackgroundJobManager.EnqueueAsync(
+            new NotificationDistributionJobArgs(notification, userIds, excludedUserIds));
     }
 }

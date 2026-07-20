@@ -77,21 +77,30 @@ Core and MongoDB. `notification-center/test` is therefore three projects, not on
 
 | Project | Role |
 |---|---|
-| `Dignite.Abp.NotificationCenter.TestBase` | Shared, provider-independent. Holds `AbpNotificationCenterTestBaseModule`, the generic `NotificationCenterTestBase<TStartupModule>`, test objects (`OrderShippedNotificationData`, `TestNotificationDefinitionProvider`), and the **abstract** scenario classes `NotificationStore_Tests<TStartupModule>` / `NotificationAppService_Tests<TStartupModule>`. Marked `<IsTestProject>false</IsTestProject>` — it has no runner, so `dotnet test` on the solution must not try to execute it. |
-| `Dignite.Abp.NotificationCenter.Tests` | EF Core / in-memory Sqlite provider. Thin subclasses bound to `AbpNotificationCenterEntityFrameworkCoreTestModule`, plus the **EF-only** `Notification_Outbox_Tests` (the MongoDB provider doesn't wire the transactional outbox). |
-| `Dignite.Abp.NotificationCenter.MongoDB.Tests` | MongoDB provider. Thin subclasses bound to `AbpNotificationCenterMongoDbTestModule`, tagged `[Collection(MongoTestCollection.Name)]`. |
+| `Dignite.Abp.NotificationCenter.TestBase` | Shared, provider-independent. Holds `AbpNotificationCenterTestBaseModule`, the generic `NotificationCenterTestBase<TStartupModule>`, test objects (`OrderShippedNotificationData`, `TestNotificationDefinitionProvider`, the embedded `HistoricalPayloadFixtures` used by tolerant-read tests), and the **abstract** scenario classes — `NotificationStore_Tests<T>`, `UserNotificationAppService_Tests<T>`, `NotificationDistribution_Tests<T>`, `NotificationPeriodicWorker_Tests<T>`, and `Notification_Outbox_Tests<T>`. Marked `<IsTestProject>false</IsTestProject>` — it has no runner, so `dotnet test` on the solution must not try to execute it. |
+| `Dignite.Abp.NotificationCenter.Tests` | EF Core / in-memory Sqlite provider. Thin subclasses of every abstract scenario, bound to `AbpNotificationCenterEntityFrameworkCoreTestModule`. |
+| `Dignite.Abp.NotificationCenter.MongoDB.Tests` | MongoDB provider. Thin subclasses of every abstract scenario, tagged `[Collection(MongoTestCollection.Name)]`. Most bind to `AbpNotificationCenterMongoDbTestModule`; the outbox scenario binds to the separate `AbpNotificationCenterMongoDbOutboxTestModule` and adds MongoDB-specific facts (both event boxes configured, ABP collection names + the unique `MessageId` index, concurrent inbox redelivery collapsing to one record). |
+
+**Both providers run the transactional outbox contract.** `Notification_Outbox_Tests<T>` is a shared
+scenario, not an EF-only one: MongoDB wires the outbox through `UseNotificationCenterMongoDbOutbox()`.
+The two MongoDB modules differ deliberately — the regular one sets
+`UnitOfWorkTransactionBehavior.Disabled` (single-document store/app-service tests don't need
+transactions), while the outbox module sets `Enabled`, because the contract asserts that the
+notification row and the outgoing event record commit or roll back together. It also turns off outbox
+sending and inbox processing so the background workers can't drain the boxes mid-assertion.
 
 **Adding a store/app-service scenario:** put the `[Fact]` on the abstract
 `*_Tests<TStartupModule>` in `TestBase` so it runs on both providers automatically — don't add it
 to only one provider project. Add a provider-specific concrete test only when the behavior is
-genuinely provider-specific (as the outbox test is for EF).
+genuinely provider-specific — for example MongoDB's unique `MessageId` inbox index and its
+concurrent-redelivery semantics, which EF Core does not share.
 
 **The MongoDB fixture** follows ABP v10's own pattern (mirrors `Volo.Abp.Identity.MongoDB.Tests`):
 a static `MongoDbFixture` boots one embedded mongod for the session via `MongoRunner.Run(new
 MongoRunnerOptions { UseSingleNodeReplicaSet = true })`; each run gets a random database name; test
-classes share it through `[CollectionDefinition]`/`[Collection]`. The Mongo test module sets the
-connection string from the fixture and disables UoW transactions
-(`UnitOfWorkTransactionBehavior.Disabled`). Packages (`MongoSandbox.Core` + the OS-conditioned
+classes share it through `[CollectionDefinition]`/`[Collection]`. Both Mongo test modules set the
+connection string from the fixture; only the outbox module enables UoW transactions (see above).
+Packages (`MongoSandbox.Core` + the OS-conditioned
 `MongoSandbox8.runtime.*`) are pinned in `Directory.Packages.props`. MongoSandbox is the maintained
 successor of EphemeralMongo — don't reintroduce `EphemeralMongo*` packages.
 

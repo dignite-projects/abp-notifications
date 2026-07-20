@@ -223,22 +223,20 @@ backfill before deploying the new unique index.
 
 Distributing a notification writes the per-user inbox rows and publishes one `NotificationDeliveryRequestedEto` per
 tenant/notification/user/channel. Those writes and outgoing event records commit together only when the host
-enables ABP's transactional outbox. The process that actually hosts the selected channel consumes the work event,
-atomically materializes its self-contained payload snapshot directly in a claimed lease state through an
-independently committed store operation. This avoids relying on visibility of an uncommitted row from the ambient
-event-inbox transaction. Processes that do not host that channel ignore the event without creating or failing
-state. The EF Core writer flushes and detaches each inbox batch so its change tracker stays bounded. Atomic rollback
-therefore requires an ambient
-**transactional** ABP unit of work; an outbox cannot make a non-transactional unit of work atomic.
+enables ABP's transactional outbox. The process that actually hosts the selected channel consumes the work event
+and calls the channel notifier once; processes that do not host that channel ignore the event. Delivery is
+best-effort — there is no per-recipient delivery record, lease, or retry (see invariant §4) — so the inbox row is
+the authoritative record. Atomic rollback of the inbox writes requires an ambient **transactional** ABP unit of
+work; an outbox cannot make a non-transactional unit of work atomic.
 
-| Setup | Inbox batch behavior | Persist + publish atomic | Failure/cancellation after a completed batch |
-|---|---|---|---|
-| EF Core, outbox + transactional UoW | each batch is flushed and detached inside the ambient transaction | yes, within one distributor/job invocation | the transaction rolls back inbox and outbox records |
-| EF Core, no outbox + transactional UoW | each batch is flushed and detached inside the ambient transaction | no | inbox writes roll back, but an already published external event may have escaped |
-| EF Core, non-transactional UoW | each flushed batch is durable | no | completed inbox batches and already published events can remain |
-| MongoDB, outbox + transactional UoW on a supported topology | each batch participates in the ambient MongoDB transaction | yes, within one distributor/job invocation | the transaction rolls back inbox and outbox records |
-| MongoDB, no outbox or non-transactional UoW | each completed provider batch is durable | no | completed inbox batches and already published events can remain |
-| Core-only channel consumer | process-local delivery state; no inbox | not durable across process exit | completed external sends remain; pending/retry state is lost on restart |
+| Setup | Persist + publish atomic | Failure/cancellation after a completed batch |
+|---|---|---|
+| EF Core, outbox + transactional UoW | yes, within one distributor/job invocation | the transaction rolls back inbox and outbox records |
+| EF Core, no outbox + transactional UoW | no | inbox writes roll back, but an already published external event may have escaped |
+| EF Core, non-transactional UoW | no | completed inbox batches and already published events can remain |
+| MongoDB, outbox + transactional UoW on a supported topology | yes, within one distributor/job invocation | the transaction rolls back inbox and outbox records |
+| MongoDB, no outbox or non-transactional UoW | no | completed inbox batches and already published events can remain |
+| Core-only channel consumer | no inbox | the channel event is fire-once; nothing is retained across process exit |
 
 If you use the shipped `NotificationCenterDbContext`, one line enables both:
 
@@ -280,20 +278,13 @@ The shipped MongoDB context has an equivalent one-line opt-in; it configures bot
 Configure<AbpDistributedEventBusOptions>(options => options.UseNotificationCenterMongoDbOutbox());
 ```
 
-This opt-in registers a host-lifecycle validator that fails startup unless the active Notification Center connection
-is a transaction-capable replica set running MongoDB 4.0 or later with logical sessions. It does not infer the
-guarantee from topology metadata alone: the validator commits an insert-and-delete transaction spanning
-`AbpEventOutbox` and `AbpEventInbox`, leaving no probe rows. Standalone servers are rejected. Sharded clusters are
-diagnosed but currently rejected because this package does not run a real sharded-cluster integration suite and
-therefore does not advertise an unverified guarantee. The host must also use transactional ABP units of work; do
-not set `AbpUnitOfWorkDefaultOptions.TransactionBehavior` to `Disabled`. For production with more than one
-application instance, configure an ABP distributed-lock provider for the outbox sender and inbox processor.
-
-`INotificationCenterMongoDbOutboxCapabilityChecker` exposes the same diagnostic used at startup. The automatic
-check runs against the host/default connection. Applications that resolve a different connection per tenant must
-run the checker inside every tenant context before enabling traffic and ensure every tenant deployment satisfies
-the same topology requirement; the background event-box workers also need an application-specific strategy for
-visiting those databases. The one-line setup assumes the usual shared Notification Center database.
+The transactional outbox requires a transaction-capable MongoDB deployment: a replica set running MongoDB 4.0 or
+later with logical sessions. Standalone servers cannot commit the outbox transaction. The host must also use
+transactional ABP units of work; do not set `AbpUnitOfWorkDefaultOptions.TransactionBehavior` to `Disabled`. For
+production with more than one application instance, configure an ABP distributed-lock provider for the outbox
+sender and inbox processor. (An earlier release shipped a startup self-probe that opened a throwaway transaction to
+verify this; it was removed as over-engineering — it duplicated ABP/driver transaction-capability detection. Rely
+on your deployment topology instead.)
 
 #### MongoDB upgrade, collections, indexes, and cleanup
 
@@ -304,8 +295,8 @@ Existing MongoDB hosts should upgrade in this order:
 3. inspect existing `AbpEventInbox` records and collapse duplicate non-empty `MessageId` values before the new
    unique index is created (retain the processed/discarded record when one exists, otherwise the oldest pending row);
 4. deploy the new provider package and add `UseNotificationCenterMongoDbOutbox()`;
-5. keep notification distribution inside transactional units of work, then monitor the startup capability log and
-   ABP outbox/inbox workers before enabling traffic.
+5. keep notification distribution inside transactional units of work, then monitor the ABP outbox/inbox workers
+   before enabling traffic.
 
 Notification business data needs no backfill and no collection is renamed. The provider uses ABP's conventional `AbpEventOutbox` and
 `AbpEventInbox` names and creates indexes matching the EF Core query shapes: `CreationTime` for outbox sending,
@@ -330,9 +321,7 @@ Configure<AbpDistributedEventBusOptions>(options =>
 });
 ```
 
-That custom route does not activate the shipped-context hosted validator. Run an equivalent committed transaction
-probe for every resolved database during the host lifecycle before accepting traffic; merely checking `setName`,
-logical sessions, or wire version is not sufficient.
+Ensure every resolved database is a transaction-capable replica set before accepting traffic.
 
 Processed/discarded inbox records are retained for ABP's deduplication window and then removed by ABP's built-in
 cleanup worker. Tune `AbpEventBusBoxesOptions.WaitTimeToDeleteProcessedInboxEvents` and
@@ -349,215 +338,51 @@ exactly-once external delivery or atomicity across all independently scheduled f
 Without the opt-in, a crash between inbox persistence and work-event publication can leave a notification with no
 channel delivery. Cancellation remains a boundary for stopping new work, not compensation for completed work.
 
-#### Delivery reliability, retries, and external side effects
-
-`NotificationDeliveryRequestedEto` contains exactly one recipient and one channel. Its `DeliveryId` and
-`IdempotencyKey` are deterministic from the tenant/host boundary, notification, user, and normalized channel.
-Workers atomically claim a time-limited lease before invoking a notifier; a competing event or worker cannot claim
-the same work concurrently. Expired leases are recoverable, failures use bounded exponential backoff with jitter,
-and exhausted work becomes `DeadLettered`. Intentional channel decisions such as a missing email address return
-`Suppressed` and are not retried automatically. Ordinary operator retry is limited to `RetryScheduled` and `DeadLettered`
-work and preserves the producer-resolved intent, delay, and preference reason. A suppressed delivery can only be
-requeued through the separately authorized force-delivery operation, which explicitly changes the intent to
-`Deliver` and records the actor, time, previous state, and stable `operator-force-delivery` audit reason without
-copying payload data into the audit fields. Each channel consumer owns this execution state. In a monolith the one
-Notification Center database contains every channel; independently deployed channel services may use their own
-Notification Center database because the delivery row stores a stable System.Text.Json payload snapshot and does
-not require the producer's `Notification` row to retry. Operational queries therefore report the channels hosted
-by that application/database.
-
-The guarantee is **at-least-once scheduling with a durable internal idempotency boundary**, not exactly-once
-delivery to an external provider. A process can fail after an email, webhook, or push provider accepted the side
-effect but before `Succeeded` was stored. Forward `workItem.IdempotencyKey` to providers that offer an idempotency
-or deduplication key; without provider support, a retry may repeat that external side effect. Diagnostic fields use
-fixed reason codes and sanitized messages and never contain exception text, addresses, recipient IDs, or payloads;
-the separate payload snapshot follows the normal stable-discriminator/System.Text.Json persistence rules.
-
-Core-only applications continue to work without Notification Center. `InMemoryNotificationDeliveryStore` keeps the
-same state machine and concurrent-claim behavior in process, but restart loses pending work, leases, retry history,
-and operator visibility. Install either Notification Center persistence provider when retries must survive a crash
-or deployment.
-
 #### Retention and lifecycle cleanup
 
-Notification Center retention is opt-in. The ABP periodic cleanup worker is disabled by default, so upgrading
-preserves the historical behavior of retaining inbox rows, base payload rows, and delivery state until an application
-or user explicitly deletes them. Enable it only after setting retention windows that match your operational and
-legal requirements:
+Notification Center retention is opt-in and best-effort. The ABP periodic cleanup worker is disabled by default, so
+upgrading preserves the historical behavior of retaining inbox and base payload rows until an application or user
+explicitly deletes them. Enable it only after setting retention windows that match your operational and legal
+requirements:
 
 ```csharp
 Configure<NotificationRetentionOptions>(options =>
 {
     options.IsCleanupEnabled = true;
-    options.CleanupBatchSize = 500;              // max scanned candidates per record kind and pass
+    options.CleanupBatchSize = 500;              // max rows deleted per record kind and pass
     options.CleanupWorkerPeriod = TimeSpan.FromHours(6);
     options.CleanupWorkerLockName = NotificationRetentionOptions.DefaultCleanupWorkerLockName;
     options.CleanupWorkerLockTimeout = TimeSpan.Zero; // skip immediately when another instance owns the cycle
-    options.ReadUserNotificationRetention = TimeSpan.FromDays(180);
-    options.TerminalDeliveryRetention = TimeSpan.FromDays(30);
-    options.TerminalAudienceBroadcastRetention = TimeSpan.FromDays(30);
-    options.OrphanNotificationRetention = TimeSpan.FromDays(30);
-    options.NotificationDeletionQuarantineDuration = TimeSpan.FromMinutes(5);
+    options.ReadUserNotificationRetention = TimeSpan.FromDays(180); // null disables read-inbox cleanup
+    options.OrphanNotificationRetention = TimeSpan.FromDays(30);    // null disables orphan-payload cleanup
 });
 ```
 
-The concrete domain manager can also be called manually for dry-run/reporting:
-
-```csharp
-var retentionManager = serviceProvider.GetRequiredService<NotificationRetentionManager>();
-var report = await retentionManager.CleanupAsync(new NotificationRetentionCleanupRequest
-{
-    IsDryRun = true,
-    Now = clock.Now
-});
-```
-
-`NotificationRetentionCleanupResult` reports scanned, deleted, skipped, and error counts per record kind plus the
-oldest retained `Notification`, `UserNotification`, and `NotificationDeliveryRecord` creation timestamps. The same
-counts are emitted through the `Dignite.Abp.NotificationCenter.Retention` meter with `record_kind` and `dry_run`
-tags, and the oldest retained timestamps are exposed as Unix-time-millisecond gauges. In a dry run, the deleted
-counts mean "would delete"; no row is physically removed.
-
-Retention ownership and deletion rules:
+`NotificationRetentionManager.CleanupAsync(cancellationToken)` deletes, in bounded batches: `Read` inbox rows older
+than `ReadUserNotificationRetention` (`Unread` rows are always retained), and `Notification` payload rows older than
+`OrphanNotificationRetention` once no inbox row references them. A host can invoke it directly or enable the worker.
+There is no deletion cursor, dry-run mode, deletion contributor, quarantine marker, or retention metric — those were
+removed as over-engineering for an in-app inbox.
 
 | Record | Owner | Deletion rule |
 |---|---|---|
-| `UserNotification` inbox row | Notification Center / current user | User actions can delete any of their own rows. Retention cleanup only deletes `Read` rows older than `ReadUserNotificationRetention`; `Unread` rows are always retained. |
-| `Notification` base payload | Notification Center retention cleanup | First marked with `RetentionDeletionTime` after `OrphanNotificationRetention` and only when no same-tenant inbox row and no same-tenant delivery record still references it. Physical deletion happens after `NotificationDeletionQuarantineDuration` and a second reference check. New same-tenant inbox/delivery materialization cancels the marker; a cross-tenant row never retains or deletes another tenant's payload. |
-| `NotificationDeliveryRecord` | Channel consumer / Notification Center | Cleanup deletes only terminal `Succeeded`, `Suppressed`, or `DeadLettered` rows older than `TerminalDeliveryRetention`. `Pending`, retryable `RetryScheduled`, and leased `Processing` rows are active work and are never time-deleted. |
-| `NotificationAudienceBroadcastState` | Notification Center / broadcast workflow | Cleanup deletes only `Completed` or `Canceled` state older than `TerminalAudienceBroadcastRetention`. Enqueued, running, failed/retryable, and cancellation-requested workflows are retained. |
+| `UserNotification` inbox row | Notification Center / current user | Users delete their own rows. Cleanup deletes `Read` rows older than `ReadUserNotificationRetention`; `Unread` rows are always retained. |
+| `Notification` base payload | Notification Center retention cleanup | Deleted when older than `OrphanNotificationRetention` and no inbox row still references it. |
 | `NotificationSubscription` | User subscription settings | Not time-based. Delete only by the exact subscription identity through the subscription APIs. |
-| `NotificationDeliveryPreference` / `NotificationQuietHours` | User delivery settings | Not time-based. Delete only by user/settings APIs; absence means default allow/no quiet hours. |
-| `NotificationRetentionCleanupCursor` | Notification Center retention cleanup | Internal scan state. One cursor per cleanup scope and record kind records the last keyset position so bounded runs can resume after retained, vetoed, or failing prefixes. |
 | ABP event inbox/outbox records | ABP distributed event bus | Use ABP's status-aware event-box cleanup windows. Do not add TTL deletes that bypass processed/in-progress state. |
 
-Applications can implement `INotificationRetentionDeletionContributor` to archive a candidate or veto deletion
-before a physical delete. If a contributor throws, cleanup records an error for that row, leaves the row intact,
-and continues with the next candidate. Cleanup reads candidates in keyset order, caps each pass at
-`CleanupBatchSize` scanned candidates per record kind, and persists the last scan position in
-`NotificationRetentionCleanupCursor`, so protected, vetoed, or temporarily failing old rows do not starve later
-eligible rows. Base notification deletion checks references again after contributors run, and its concurrency stamp
-prevents physical deletion from winning over a same-tenant retained reference that cancels the marker concurrently.
+#### The retention worker in clustered deployments
 
-#### Periodic workers in clustered deployments
-
-The delivery retry scanner and retention cleanup scanner are registered through ABP's background-worker manager and
-run as `AsyncPeriodicBackgroundWorkerBase` workers. Every cycle gets a fresh dependency-injection scope, observes
-the application shutdown token, and tries its stable lock without waiting by default. A lock miss is an expected
-`lock_miss` outcome: the cycle is skipped, logged at debug level, and is not reported as a worker failure. An
-exception is recorded as `failed` and rethrown to ABP's periodic-worker boundary, which logs it and allows the next
-timer cycle to run. Existing delivery claims/idempotency and retention concurrency checks remain the final safety
-boundaries.
+The retention cleanup scanner is registered through ABP's background-worker manager as an
+`AsyncPeriodicBackgroundWorkerBase`. Every cycle gets a fresh dependency-injection scope, observes the application
+shutdown token, and tries its stable lock without waiting by default; a lock miss skips the cycle.
 
 `Volo.Abp.DistributedLocking.Abstractions` supplies only a process-local default lock. Multiple application
 instances therefore require a real ABP distributed-lock provider (for example, the provider already used by the
-host's background jobs). All instances that scan the same notification store must use the same worker lock names
-and the same `AbpDistributedLockOptions.KeyPrefix`. Set that prefix to a stable application/deployment name when
-unrelated applications share the lock backend; changing it per replica defeats coordination. The two lock names
-and acquisition timeouts are configurable through `NotificationDeliveryOptions` and
-`NotificationRetentionOptions` as shown in [Configuration](#configuration).
-
-For a dedicated-worker deployment, keep ABP workers enabled only in the worker process and configure
-`AbpBackgroundWorkerOptions.IsEnabled = false` on web/API replicas. Alternatively, leave ABP workers enabled and
-disable only `IsDeliveryRetryWorkerEnabled` or `IsCleanupEnabled` on replicas that should not run that scanner.
-The dedicated worker must use the same notification database, distributed-event transport/outbox configuration,
-lock provider, application key prefix, and notification option values as the producer/consumer deployment.
-
-The ABP 10.5 distributed-event publish API has no cancellation-token parameter. The retry scanner checks shutdown
-before every item and applies the shutdown token to its wait for each publication; an already-started transport
-call can still finish in the background. Durable delivery identity and claims keep such a late publication
-idempotent.
-
-Worker cycle outcomes are emitted as `notification.delivery.retry.scans` and
-`dignite.notifications.retention.worker.cycles`, each tagged with `outcome=completed|lock_miss|failed`.
-
-**Retention database upgrade:** EF Core hosts should add a host-owned migration for the new retention query indexes
-from `ConfigureNotificationCenter()`: `AbpNotifications.RetentionDeletionTime` and its concurrency stamp, old
-payload scans (`CreationTime`, `TenantId + CreationTime`, `TenantId + RetentionDeletionTime + CreationTime`), old
-read inbox scans and payload-reference checks (`State + CreationTime`, `TenantId + State + CreationTime`,
-`TenantId + NotificationId`), terminal delivery scans/reference checks (`State + CompletedTime`,
-`TenantKey + State + CompletedTime`, `TenantKey + NotificationId`), and the
-`AbpNotificationRetentionCleanupCursors` table with its unique `IsTenantScoped + TenantKey + RecordKind` cursor
-index. MongoDB contexts create the equivalent indexes and cursor collection from
-`NotificationCenterMongoDbContext.CreateModel`; custom MongoDB contexts must mirror them. Existing notifications
-require no backfill: a null `RetentionDeletionTime` means "not marked", and missing cleanup cursors are created on
-the first non-dry-run cleanup pass. Take a normal database backup before first enabling destructive cleanup and
-verify restore procedures against both the notification tables/collections, cleanup cursor state, and ABP event-box
-collections.
-
-#### Per-user delivery preferences and quiet hours
-
-Delivery consent is independent from subscriptions and address resolution. Subscriptions decide who is a candidate
-only when `userIds` is omitted; explicit and subscription-derived candidates then pass through the same
-`INotificationDeliveryPreferenceEvaluator`. An email opt-out therefore does not remove the Notification Center inbox
-row, suppress SignalR, or claim that an email address is missing. Core-only applications use
-`AllowAllNotificationDeliveryPreferenceEvaluator`, whose deterministic default is immediate delivery.
-
-Notification Center persists allow/deny rules at four nullable scopes. The first matching rule wins:
-
-| Precedence | Notification | Channel |
-|---:|---|---|
-| 1 | exact | exact |
-| 2 | exact | any |
-| 3 | any | exact |
-| 4 | any | any |
-| 5 | no row | default allow |
-
-Entity-specific preferences are intentionally not supported: entity interest remains a subscription concern. A
-more-specific `IsDeliveryEnabled = true` rule can override a broader opt-out. Quiet hours are a separate per-user daily
-window (`StartMinute` inclusive, `EndMinute` exclusive) and a system time-zone identifier; equal start/end values
-are rejected instead of meaning “all day.” Normal work created during the window is delayed, not dropped. The
-producer writes `Delay + DeliveryNotBefore` into the single-user/channel `NotificationDeliveryRequestedEto`; its owning
-remote consumer persists the work as pending, and the delivery retry worker republishes it when due. Keep
-`IsDeliveryRetryWorkerEnabled` enabled when using quiet hours. DST-invalid local end times advance to the first
-valid minute according to the configured system time-zone rules.
-
-Use `.AsMandatory()` on a notification definition only for system messages that must bypass permanent opt-outs and
-quiet hours. Mandatory does not bypass permission/feature recipient eligibility and does not change subscription
-candidate selection. The producer always resolves the final `Deliver`, `Suppress`, or `Delay` intent before the
-distributed event leaves its process; remote notifiers must not query a local preference database.
-
-**Preference database upgrade:** EF Core hosts must add `AbpNotificationDeliveryPreferences` and
-`AbpNotificationQuietHours`, their tenant/user scope indexes, and the `Intent`, `DeliveryNotBefore`, and
-`PreferenceReasonCode` columns on `AbpNotificationDeliveries`. Existing delivery rows initialize `Intent` to
-`Deliver`; preference/quiet-hours tables require no backfill because absence means allow/no quiet hours. Custom
-`INotificationCenterDbContext` implementations must expose both new `DbSet` properties. MongoDB contexts must expose
-the equivalent collections and create the same unique scope indexes; existing delivery documents deserialize the
-additive intent as `Deliver`.
-
-This additive wire shape still requires a consumer-first rollout for preference enforcement. An old consumer ignores
-the new intent fields and could send work that a new producer marked suppressed or delayed. Quiesce publication,
-drain old work, apply the consumer schema and code, upgrade producers, and only then let users create enforced
-preferences. Do not enable preference-producing code during a mixed-version window.
-
-**Database upgrade:** this repository does not ship migrations because the consuming host owns its schema history.
-Before enabling durable channel consumers, EF Core hosts must add the mapped `AbpNotificationDeliveries` table and its unique
-`TenantKey + NotificationId + UserId + ChannelKey` index plus the configured due-work indexes. Custom
-`INotificationCenterDbContext` implementations must expose the
-`DbSet<NotificationDeliveryRecord> NotificationDeliveries` property; `ConfigureNotificationCenter()` creates the
-same unique/due indexes. This is a new ledger,
-so historical notifications require no backfill. Custom MongoDB contexts must expose
-`IMongoCollection<NotificationDeliveryRecord> NotificationDeliveries` and configure the collection name plus the
-same unique and due-work indexes in `CreateModel`.
-
-Hosts upgrading an existing delivery ledger must also add the nullable
-`LastForceDeliveryActorId`, `LastForceDeliveryTime`, `LastForceDeliveryPreviousState`, and
-`LastForceDeliveryReasonCode` columns. No backfill is required. Custom `INotificationDeliveryStore`
-implementations must replace the old broad `RequeueAsync` operation with preference-preserving `RetryAsync` and
-the separately audited `ForceDeliverAsync` operation.
-
-This wire change does **not** support a zero-downtime mixed-version rollout. The legacy aggregate event and generic
-notifier adapter were removed before 10.0.0 stable. Quiesce notification publication, drain every queued
-`Dignite.Abp.Notifications.NotificationDelivery` aggregate event, upgrade custom notifiers and consumer code/schema,
-then upgrade producers and resume. A 10.0 consumer handles only the single-recipient
-`NotificationDeliveryRequestedEto`; historical notifications require no ledger backfill.
-
-Large explicit fan-outs are split into independently scheduled jobs. The publisher prepares the shared
-`Notification` record first, then each job commits or fails independently; no provider promises one transaction
-across the complete logical fan-out. A failed job therefore leaves partial notification-wide progress even when
-each successful EF/outbox job was internally atomic. Likewise, a host/job-store failure after preparation or after
-only some batches were enqueued can leave a notification record with no inbox rows or an incomplete set of queued
-batches; this release does not add the resumable fan-out ledger needed to reconcile that state.
+host's background jobs). All instances that scan the same notification store must use the same
+`CleanupWorkerLockName` and the same `AbpDistributedLockOptions.KeyPrefix`. For a dedicated-worker deployment,
+keep ABP workers enabled only in the worker process (`AbpBackgroundWorkerOptions.IsEnabled = false` on web/API
+replicas), or leave them enabled and set `IsCleanupEnabled = false` on replicas that should not run the scanner.
 
 ## Defining and publishing a notification
 
@@ -591,65 +416,22 @@ Discriminators use ordinal, case-sensitive comparison. Registering the same disc
 types, or the same CLR type under two discriminators, fails during application startup with both sides
 named in the error. Repeating the exact same discriminator/type pair is safe and idempotent.
 
-### Evolving a persisted payload
+### Reading persisted payloads (tolerant reads)
 
-Every new write carries both the stable `type` and an explicit integer `schemaVersion`. Existing JSON
-without `schemaVersion` is defined as legacy **v1**, so current v1 payload declarations need no change.
-When a breaking JSON-shape change is necessary, keep the discriminator, advance the version on the
-attribute, and register every consecutive JSON upcast step:
-
-```csharp
-[NotificationDataType("Demo.OrderShipped", 3)]
-public class OrderShippedNotificationData : NotificationData
-{
-    public string OrderId { get; set; } = default!;
-    public int Quantity { get; set; }
-}
-
-Configure<NotificationDataOptions>(options =>
-{
-    options.Add<OrderShippedNotificationData>();
-    options.AddUpcaster<OrderShippedNotificationData>(1, payload =>
-    {
-        payload["orderId"] = payload["orderNumber"]?.DeepClone();
-        payload.Remove("orderNumber");
-        return payload;
-    });
-    options.AddUpcaster<OrderShippedNotificationData>(2, payload =>
-    {
-        payload["quantity"] = payload["itemCount"]?.DeepClone();
-        payload.Remove("itemCount");
-        return payload;
-    });
-});
-```
-
-An upcaster transforms payload members from N to N+1; the framework owns the reserved `type` and
-`schemaVersion` envelope. Registration order does not affect execution order. Duplicate steps, a step
-beyond the declared current version, or any missing v1→current link fails at application startup. Upcasting
-is lazy: persisted rows are not rewritten and no EF Core/MongoDB migration is required.
+The wire/storage envelope carries only the stable `type` discriminator — there is no schema-version field or
+upcaster chain (an earlier design added event-sourcing-style versioning + N→N+1 upcasters; it was removed as
+over-engineering, since notifications are read-once, not a replayable event stream). To change a payload's JSON
+shape, prefer adding members: a newer payload of a *known* type reads leniently, with unknown members landing in
+`ExtensionData`.
 
 `INotificationDataSerializer.Deserialize(json, readMode)` is the single programmatic read boundary. Callers select
 `NotificationDataReadMode.Strict` for trusted/corruption-sensitive reads or `Tolerant` for durable and batch reads.
-Strict mode throws a typed `NotificationDataReadException`; its `Reason` distinguishes an unknown discriminator,
-unsupported future version, malformed known payload, and failed upcast. Notification Center inbox and delivery
-snapshot reads, distributed-event deserialization, and HTTP server/client converters use tolerant mode: they return
-`UnsupportedNotificationData`, preserving the original discriminator, version, and escaped raw JSON without
-activating an arbitrary CLR type. One bad historical row therefore cannot fail the rest of an inbox page.
-The MVC and Angular libraries render this known placeholder as a generic unsupported-notification message and
-do not display its raw diagnostic JSON.
-
-Rolling-upgrade expectations are explicit:
-
-| Producer | Consumer | Result |
-|---|---|---|
-| versionless/v1 producer | newer consumer with a complete upcast chain | deterministically upcast to the current CLR model |
-| newer producer | older **schema-aware** tolerant consumer | `UnsupportedNotificationData`; processing/page continues |
-| newer producer | pre-versioning consumer | not guaranteed; it may misread or reject the new shape |
-
-Deploy schema-aware readers (including notifier/event consumers) before enabling producers that emit a newer
-schema. Upcasters only help newer consumers read older data; they cannot make an already-deployed legacy
-consumer understand a future breaking shape.
+Strict mode throws a typed `NotificationDataReadException`. Notification Center inbox reads, distributed-event
+deserialization, and HTTP server/client converters use tolerant mode: an unknown discriminator or malformed known
+payload becomes `UnsupportedNotificationData`, preserving the original discriminator and escaped raw JSON without
+activating an arbitrary CLR type. One bad historical row therefore cannot fail the rest of an inbox page. The MVC
+and Angular libraries render this placeholder as a generic unsupported-notification message and do not display its
+raw diagnostic JSON.
 
 **3. Register the notification definition** through an `INotificationDefinitionProvider` — its name,
 display text, optional feature/permission gating, and explicit channel routing:
@@ -662,49 +444,18 @@ public class ShopNotificationDefinitionProvider : NotificationDefinitionProvider
         context.Add(new NotificationDefinition(
             "Demo.OrderShipped",
             new FixedLocalizableString("Order shipped"))
-            .WithPayload<OrderShippedNotificationData>()
-            .WithEntityContract(NotificationEntityRequirement.Required, "Demo.Order")
             .UseChannels(SignalRNotifier.ChannelName));
     }
 }
 ```
 
-Definition names also use ordinal, case-sensitive comparison. Every duplicate name is a startup error,
-and the error identifies both provider types; an equivalent-looking second definition is not treated as
-idempotent because definitions are mutable after construction. Provider types are convention-discovered
-across modules; registering the same provider type more than once is idempotent and the provider executes once.
-Empty and whitespace-only definition names are rejected by the constructor.
+Definition names use ordinal, case-sensitive comparison. Every duplicate name is a startup error, and the error
+identifies both provider types; an equivalent-looking second definition is not treated as idempotent because
+definitions are mutable after construction. Provider types are convention-discovered across modules; registering
+the same provider type more than once is idempotent and the provider executes once. Empty and whitespace-only
+definition names are rejected by the constructor.
 
-Definitions can opt into publish-time contracts independently for payload and entity identity:
-
-| Declaration | Publish-time rule |
-|---|---|
-| no `WithPayload(...)` | Legacy compatibility: no definition-level payload check; normal serializer registration still applies |
-| `WithPayload<TData>()` | A payload is required and its registered stable discriminator must exactly match `TData` |
-| no `WithEntityContract(...)` | Legacy compatibility: an entity identity may be present or absent |
-| `Forbidden` | Entity identity must be absent |
-| `Optional` | Entity identity may be absent; when present, its type must match the optional stable type constraint |
-| `Required` | Entity identity must be present and must match the optional stable type constraint |
-
-`WithPayload<TData>()` reads `TData`'s `[NotificationDataType]` value; it never stores a CLR type name on a
-wire or persistence contract. Host startup fails if that discriminator is not registered in
-`NotificationDataOptions` or maps to a different CLR type. A string overload is available when a module knows
-only the stable discriminator. Entity type constraints such as `"Demo.Order"` are likewise caller-chosen stable
-names and compare ordinally/case-sensitively—they are never converted to or from a CLR `Type`. Repeating the
-same contract is idempotent; conflicting repetitions fail immediately, and a same-discriminator string call
-cannot erase the CLR registration check established by `WithPayload<TData>()`.
-
-Before 10.0.0 stable, the unused `NotificationDefinition` constructor `entityType: Type` parameter and `EntityType`
-property were removed. Replace them with `WithEntityContract(requirement, "Your.StableName")`; no data migration is
-required because the removed CLR value was never used by persistence or distribution.
-
-The publisher validates opted-in contracts before creating durable notification work or enqueueing a background
-job, and the distributor validates again before writing an inbox row or publishing an external event. This
-second boundary also protects direct distributor calls and replayed jobs. The trusted-recipient eligibility
-bypass does not bypass payload/entity contracts. An explicitly empty `userIds` array remains a true no-op and
-returns before definition resolution. Existing definitions are unchanged until they opt into either contract,
-so applications can migrate definition by definition: register the payload first, add `WithPayload<TData>()`,
-then declare the entity requirement that matches existing publisher call sites.
+An explicitly empty `userIds` array remains a true no-op and returns before definition resolution.
 
 **4. Publish** from your business code via `INotificationPublisher`:
 
@@ -723,159 +474,48 @@ threshold is configurable — see [Configuration](#configuration)). Recipient se
 targets those users explicitly. Duplicate explicit IDs are removed before the threshold is evaluated,
 inbox rows are persisted, or channel delivery is published.
 
-### Recipient eligibility policy
+### Recipient eligibility
 
-A definition's permission and feature requirements govern both who may subscribe **and who may receive**
-the notification. Distribution applies one `INotificationRecipientEligibilityEvaluator` to both
-subscription-derived and explicitly targeted candidates. Caller-supplied exclusions are removed first;
-each remaining candidate must satisfy `PermissionName` and `FeatureName` (configured through
-`RequireFeature(...)`), or is filtered without an
-inbox row or channel event. This is a delivery policy, not publisher authorization: publishing code still
+A definition's permission and feature requirements govern both who may subscribe **and who may receive** the
+notification. The distributor applies the same `INotificationDefinitionManager.IsAvailableAsync` filter to both
+subscription-derived and explicitly targeted candidates: caller-supplied exclusions are removed first, then each
+remaining candidate must satisfy `PermissionName` and `FeatureName` (configured through `RequirePermission(...)` /
+`RequireFeature(...)`) or is filtered out without an inbox row or channel event. An explicit `userIds` array is
+**not** an authorization bypass. This is a delivery policy, not publisher authorization: publishing code still
 needs its own application permission checks where appropriate.
 
-Eligibility is evaluated in the notification's recorded `TenantId`, not whichever tenant happens to be
-ambient when an inline call or background job executes. A tenant notification therefore uses that tenant's
-feature values and permission context, while a host notification is evaluated in the host context. Filtered
-counts and batch progress are logged without logging the recipient IDs. Replace
-`INotificationRecipientEligibilityEvaluator` when a deployment can batch these lookups more efficiently;
-the replacement must preserve the notification tenant/host boundary and return the same eligible/excluded
-partition.
+Eligibility is evaluated in the notification's recorded `TenantId`, not whichever tenant happens to be ambient
+when an inline call or background job executes. A tenant notification therefore uses that tenant's feature values
+and permission context, while a host notification is evaluated in the host context. Recipient IDs are never logged.
 
 ### Bounded recipient pipeline
 
-Inline versus background selection controls where distribution runs; it does not change the amount of work in
-one pipeline unit. Both explicit and subscription-derived recipients now flow through the same configurable,
-bounded stages:
+Both explicit and subscription-derived recipients flow through the same bounded pipeline: resolve a candidate
+batch → filter by definition eligibility → write inbox rows → publish one `NotificationDeliveryRequestedEto` per
+eligible recipient/channel. The batch size is `NotificationDistributionOptions.RecipientBatchSize` (default 256;
+must be between 1 and `MaxBatchSize` = 10,000, validated at host startup). The built-in subscription scan uses a
+database-side distinct query with an exclusive user-ID keyset cursor rather than offset paging, so inserts/deletes
+before the cursor cannot repeat or skip later recipients. `NullNotificationStore` implements the same contract
+without persistence. All store operations accept a cancellation token, observed between candidate, persistence,
+and delivery batches (not during a provider operation already in flight). Notification data must fit the chosen
+transport's message-size limit.
 
-1. normalize one candidate page (the built-in stores use a database-side distinct/order/keyset query);
-2. remove caller exclusions and evaluate definition eligibility for that page;
-3. write inbox rows in bounded multi-insert groups;
-4. publish work events in bounded scheduling groups, one for every eligible recipient/channel pair; the process
-   hosting that channel persists and claims its consumer-owned delivery state.
-
-The defaults are 256 candidates, 256 inbox rows, and 100 single-recipient/channel work items per scheduling
-operation. Each value must be between 1 and `NotificationDistributionOptions.MaxBatchSize` (10,000), and invalid
-configuration fails host startup with the responsible option type and property. `DeliveryWorkItemBatchSize` limits
-work scheduled by one operation; every `NotificationDeliveryRequestedEto` still carries exactly one recipient and
-channel. Notification data still has to fit the chosen transport's message-size limit.
-
-Stable keyset paging and bounded inbox multi-inserts are canonical `INotificationStore` members. The built-in
-`NotificationStore` supplies equivalent EF Core and MongoDB behavior; `NullNotificationStore` implements the same
-contract without persistence. All store operations accept a cancellation token. Cancellation is observed while
-scanning explicit normalization windows and between candidate, persistence, and delivery batches, not during a
-provider operation already in flight.
-
-For explicit arrays above `DirectDistributionUserThreshold`, the built-in publisher removes exclusions, prepares
-the notification once, and enqueues `RecipientBatchSize` recipients per job through the canonical
-`INotificationDistributor.DistributePreparedAsync` boundary; no job payload contains the complete fan-out. The public `Guid[]`
-boundary still means the caller supplies the explicit input in memory. The built-in path repeatedly scans that
-caller-owned array with an exclusive GUID cursor and retains at most one `RecipientBatchSize` sorted window, so
-exact cross-batch duplicate removal creates no notification-wide collection. This intentionally trades additional
-CPU scans and GUID-ordered large batches for a hard memory bound; recipient order is not a delivery contract. Prefer
-subscription-driven resolution for very large audiences already modeled as subscriptions.
-`DirectDistributionUserThreshold` is capped by the same 10,000 hard safeguard as batch sizes so inline normalization
-is also bounded. Subscription scans use an exclusive user-ID keyset cursor rather than offset paging, so
-inserts/deletes before the cursor cannot repeat or skip later recipients.
-
-For large audiences that should be resolved by infrastructure rather than by loading a `Guid[]` in the publisher,
-use `INotificationAudienceBroadcaster`. `EnqueueAsync` always receives an authoritative tenant-or-host scope:
-`TenantId` identifies one tenant and `null` identifies host users; `Guid.Empty` is rejected. The separate
-host-authorized `EnqueueForTenantsAsync` operation takes an explicit tenant-id list and enqueues one tenant job at a
-time inside independent ABP units of work. It records success/failure per tenant without combining tenants in one
-notification transaction or delivery event, and it intentionally never includes host users.
-
-```csharp
-await _audienceBroadcaster.EnqueueAsync(
-    new NotificationAudienceBroadcastRequest(tenantId, "Demo.TenantAnnouncement")
-    {
-        Data = new MessageNotificationData("Maintenance starts at 22:00 UTC.")
-    });
-```
-
-The built-in audience name is `NotificationAudienceNames.AllActiveUsers`. Core defines only the abstraction and
-continues to work with `NullNotificationStore`; it has no dependency on ABP Identity or Notification Center.
-Installing `Dignite.Abp.Notifications.Identity` registers an Identity-backed source for that audience. It pages
-ABP Identity users by an opaque, exclusive user-id continuation token and includes only users in the requested
-tenant-or-host scope that are `IsActive`, not `Leaved`, and not soft-deleted. Every page is then passed to
-`INotificationDistributor.DistributePreparedAsync`, so the normal feature/permission eligibility evaluator,
-Notification Center inbox persistence, delivery
-preferences/quiet hours, and work-event scheduling still run. Progress is represented by the stable notification
-id, tenant id, page index, and continuation token in job args/logs, and low-cardinality page/candidate/failure
-counters are
-emitted from the `Dignite.Abp.Notifications.AudienceBroadcast` meter. Retried pages are idempotent against the
-Notification Center `(UserId, NotificationId)` inbox identity.
-
-`INotificationAudienceBroadcaster.GetProgressAsync(...)` returns the current observable state for a tenant-or-host
-scoped broadcast, and `CancelAsync(...)` records a cancellation request. Core-only uses the explicitly process-local
-`InMemoryNotificationAudienceBroadcastProgressStore`; it is suitable for single-instance diagnostics but loses
-state on restart and cannot coordinate API/worker instances. Installing Notification Center automatically replaces
-it with repository-backed `NotificationAudienceBroadcastProgressStore`, persisted equivalently by EF Core and
-MongoDB. Progress, sanitized failure diagnostics, replay protection, and cooperative cancellation then survive
-restart and are visible across instances. A job checks the authoritative store before loading a page and before
-enqueueing the next continuation token, then marks the broadcast completed, canceled, or failed.
-
-ABP Background Jobs still owns queue persistence, scheduling, retry, job identity, and clustered execution. The
-Notifications table/collection stores only broadcast business progress and cancellation; it does not modify or
-reuse `IBackgroundJobStore` / `AbpBackgroundJobs`, and deleting a Hangfire/Quartz/provider dashboard job is not a
-business cancellation. Use `CancelAsync(...)` for the provider-neutral cooperative boundary.
-
-**Broadcast-state database upgrade:** EF Core consuming hosts must generate a host-owned migration for
-`AbpNotificationAudienceBroadcastStates`, including notification/audience names, status, page/candidate counts,
-opaque next token, cancellation/failure/timestamp fields, `ConcurrencyStamp`, and the terminal-retention indexes
-configured by `ConfigureNotificationCenter()`. MongoDB contexts create the equivalent collection and indexes from
-`NotificationCenterMongoDbContext.CreateModel`; custom contexts must mirror them. The repository ships no migration
-and requires no backfill for broadcasts created before the upgrade.
-
-The EF Core package replaces the provider-neutral inbox writer with a flush-and-detach implementation. It saves
-only the configured write group and immediately detaches those `UserNotification` entities; a regression test
-asserts that 513 recipients leave zero inbox entities in the change tracker before the transactional UoW commits.
-
-The public `Dignite.Abp.Notifications` meter exposes counters for candidates, eligible recipients, filtered
-recipients, batches, and failures, plus a distribution-duration histogram. Stable instrument names are constants
-on `NotificationDistributionMetrics`. Logs include the notification ID for correlating independently scheduled
-batches but never recipient IDs. Low-cardinality metric tags identify recipient source, host/tenant scope, stage,
-and outcome; `notification.name` is also included and should be allow-listed or aggregated when definitions are
-dynamically named.
-
-The default-size rationale and reproducible 2,001-recipient EF Core/MongoDB measurements are recorded in
-[`benchmarks/issue-60-recipient-batching.md`](benchmarks/issue-60-recipient-batching.md).
+`PublishAsync` distributes explicit fan-outs at or below `DirectDistributionUserThreshold` (default 5) inline, and
+larger ones through a single background job carrying the caller's `Guid[]`; the job's distributor batches
+recipients internally. `DirectDistributionUserThreshold` is capped by the same 10,000 safeguard.
 
 `INotificationPublisher` records `CurrentTenant.Id` automatically. Code that calls `INotificationDistributor`
 directly must populate `NotificationInfo.TenantId` for tenant notifications. That value is authoritative for
 subscription lookup, eligibility, inbox persistence, and event/outbox publication; `null` explicitly means
-**host**, even when the direct caller currently has an ambient tenant. Direct callers must also populate
-`NotificationInfo.EntityTypeName` and `EntityId` together or leave both null when the definition has opted into
-an entity contract; contract validation rejects a partial raw entity identity before any store or event side effect.
-
-Trusted infrastructure has a deliberately conspicuous, explicit-recipient-only escape hatch:
-
-```csharp
-await _publisher.PublishToExplicitRecipientsWithoutEligibilityChecksAsync(
-    "Demo.MandatorySecurityNotice",
-    new[] { userId },
-    new MessageNotificationData("Your recovery settings changed."));
-```
-
-This API never resolves subscribers, emits a Warning log for every invocation that reaches eligibility
-evaluation, and bypasses both the permission and feature requirements. Use it only when receiving the
-notification is itself mandatory regardless of those requirements; it is not a shortcut around a denied
-recipient.
-
-> **Upgrade note:** before this policy was introduced, explicitly supplied `userIds` implicitly bypassed
-> definition requirements. `PublishAsync` now filters explicit recipients exactly like subscribers. Move
-> only genuine trusted-system call sites to the named bypass API. Custom `INotificationPublisher` and
-> `INotificationDistributor` implementations must add the new bypass members; custom recipient evaluation
-> should replace `INotificationRecipientEligibilityEvaluator`. Direct distributor callers that previously
-> omitted `NotificationInfo.TenantId` while relying on an ambient tenant must now set it explicitly; an omitted
-> value no longer falls back to ambient state and is treated as a host notification.
+**host**, even when the direct caller currently has an ambient tenant.
 
 ## Notifiers
 
-A notifier implements the single canonical `INotificationNotifier` contract and relays one claimed
+A notifier implements the single canonical `INotificationNotifier` contract and relays one
 `NotificationDeliveryRequestedEto` to a single channel. `Name` is the stable routing key. `DeliverAsync` receives a
-`CancellationToken` and returns `Succeeded` or an intentional `Suppressed(reasonCode)` result; throwing reports a
-retryable channel failure. The Core-owned distributed-event handler is the transport adapter, so a channel plugin
-does not implement an event-handler interface.
+`CancellationToken`; delivery is best-effort, so a notifier that intentionally skips a recipient simply returns,
+and throwing is logged and dropped by the Core handler (not retried). The Core-owned distributed-event handler is
+the transport adapter, so a channel plugin does not implement an event-handler interface.
 
 - **SignalR** — clients connect to the hub at `/signalr-hubs/notifications` (an ABP `AbpHub`, mapped
   **automatically**; the host must *not* call `MapHub`) and receive a trimmed `NotificationDelivery`
@@ -958,24 +598,18 @@ public class WebPushNotifier
     public const string ChannelName = "WebPush";
     public string Name => ChannelName;
 
-    public async Task<NotificationDeliveryResult> DeliverAsync(
+    public async Task DeliverAsync(
         NotificationDeliveryRequestedEto request,
         CancellationToken cancellationToken = default)
     {
         var payload = NotificationDelivery.FromWorkItem(request);
-        // Forward request.IdempotencyKey if the provider supports idempotent requests.
-        await _webPush.SendAsync(request.UserId, payload, request.IdempotencyKey, cancellationToken);
-        return NotificationDeliveryResult.Succeeded();
+        await _webPush.SendAsync(request.UserId, payload, cancellationToken);
     }
 }
 ```
 
-For a pre-stable custom notifier, replace
-`INotificationNotifier<NotificationDeliveryEto>.HandleEventAsync(NotificationDeliveryEto)` with the contract above.
-The old aggregate event exposed many recipients and no result/cancellation boundary; the replacement receives one
-recipient/channel request, observes cancellation, forwards its idempotency key, and reports suppression explicitly.
-Drain old aggregate events before deploying the upgraded consumer because 10.0 intentionally registers no legacy
-aggregate handler.
+`DeliverAsync` handles one recipient/channel request and observes cancellation. Delivery is best-effort: to skip a
+recipient (e.g. no address), simply return; throwing is logged and dropped by the Core handler, not retried.
 
 Use `UseChannels(...)` only for external delivery channels. If a definition omits `UseChannels(...)`,
 it is NotificationCenter inbox-only: the notification is persisted for the recipient to read later,
@@ -1015,20 +649,9 @@ that mode.
 | `DELETE /api/notifications/subscriptions/{name}` | Unsubscribe from all entities for a name (compatibility endpoint) |
 | `POST /api/notifications/subscription-scopes` | Subscribe to the definition-wide or exact entity scope in the JSON body |
 | `DELETE /api/notifications/subscription-scopes` | Unsubscribe only the definition-wide or exact entity scope in the query |
-| `GET /api/notifications/deliveries` | Query delivery state by notification, user, channel, state, and time (`NotificationCenter.Deliveries`) |
-| `POST /api/notifications/deliveries/{id}/retry` | Retry failed or dead-letter work in the current tenant without overriding preferences (`NotificationCenter.Deliveries.Retry`) |
-| `POST /api/notifications/deliveries/{id}/force-deliver` | Explicitly override a suppressed delivery in the current tenant and record the operator audit (`NotificationCenter.Deliveries.ForceDeliver`) |
-| `GET /api/notifications/preferences` | List the caller's global, notification, channel, and exact rules |
-| `PUT /api/notifications/preferences` | Upsert one caller-owned rule (`notificationName` and `channel` are independently optional) |
-| `DELETE /api/notifications/preferences` | Delete exactly the caller-owned rule identified by the nullable query scope |
-| `GET /api/notifications/preferences/quiet-hours` | Get the caller's quiet-hours schedule, or `null` |
-| `PUT /api/notifications/preferences/quiet-hours` | Set the caller's minute-of-day window and system time-zone ID |
-| `DELETE /api/notifications/preferences/quiet-hours` | Disable quiet hours by deleting the caller's schedule |
 
-Inbox and subscription endpoints are scoped to the authenticated caller. Delivery operations are administrative,
-permission-gated, and tenant/host scoped; they expose only sanitized diagnostics. Use `...HttpApi.Client` for a
-typed C# proxy, or the ABP-generated Angular services for end-user endpoints. Preference routes are exposed through
-`NotificationDeliveryPreferencesService`; the Angular library does not add an operator UI for delivery state.
+All endpoints are scoped to the authenticated caller. Use `...HttpApi.Client` for a typed C# proxy, or the
+ABP-generated Angular services.
 
 The scoped request contains `notificationName` plus optional `entityTypeName` and `entityId`; the two
 entity fields must be supplied together. `GET subscriptions` returns the definition-wide row for each
@@ -1048,28 +671,14 @@ source-level changes:
 |---|---|---|
 | `INotificationAppService` / `NotificationAppService` | `IUserNotificationAppService` / `UserNotificationAppService` | Rename injected service types and replacements. |
 | `GetCountAsync` | `GetNotificationCountAsync` | Rename C# calls; the route remains `GET /api/notifications/count`. |
-| `INotificationDeliveryPreferenceAppService.SetAsync` | `SetPreferenceAsync` | Rename C# calls; the route remains `PUT /api/notifications/preferences`. |
-| `NotificationDeliveryPreferenceManager.SetAsync` | `SetPreferenceAsync` | Rename domain mutation calls. |
-| Preference `IsEnabled` | `IsDeliveryEnabled` | Rename entity, DTO, request, JSON/TypeScript property, and custom mapping references. |
-| `NotificationDeliveryPreference.SetEnabled` | `SetDeliveryEnabled` | Rename aggregate behavior calls. |
 | `IUserNotificationManager` / `UserNotificationManager` | removed | Use `INotificationStore` for inbox queries and state mutations. |
 | `INotificationSubscriptionManager` | concrete `NotificationSubscriptionManager` | Use the manager only for validated subscription mutations; use `INotificationStore` for reads. |
 | Subscription-manager read methods | removed | Use `INotificationStore.GetSubscriptionsAsync` / `IsSubscribedAsync` directly in query paths. |
-| `INotificationDeliveryPreferenceManager` | concrete `NotificationDeliveryPreferenceManager` | Use the manager only for validated preference mutations; query repositories in the application/query layer. |
-| Preference-manager `GetListAsync` / `GetQuietHoursOrNullAsync` | removed | Query the generic preference/quiet-hours repositories in the application/query layer. |
-| `INotificationRetentionCleanupService` / `NotificationRetentionCleanupService` | `NotificationRetentionManager` | Inject the concrete domain manager for manual cleanup and dry runs. |
+| `INotificationRetentionCleanupService` / `NotificationRetentionCleanupService` | `NotificationRetentionManager` | Inject the concrete domain manager for manual cleanup. |
 
 `INotificationDefinitionManager` remains intentionally replaceable because consuming hosts can provide a custom
 definition registry and availability policy; startup resolves that replacement before definition initialization.
-Stores, evaluators, contributors/providers, and the retention-deletion veto contract likewise remain genuine
-extension boundaries.
-
-Because `NotificationDeliveryPreference.IsDeliveryEnabled` is also the conventional persistence member name,
-existing EF Core hosts must add a host-owned column rename from `IsEnabled` to `IsDeliveryEnabled`, and MongoDB
-hosts must rename/backfill the equivalent field before removing the old field. This repository does not ship
-application migrations. From `angular/`, regenerate the library proxy with
-`abp generate-proxy -t ng -m notification-center -s Host --target notification-center -a NotificationCenter`;
-its method/property names change while its URLs do not.
+`INotificationStore` likewise remains a genuine extension boundary.
 
 ## UI libraries (optional)
 
@@ -1079,16 +688,12 @@ its method/property names change while its URLs do not.
 - **Angular** (`angular/projects/notification-center`): an ABP-generated proxy service plus bell and
   subscriptions components, built against `/api/notifications` and the SignalR hub.
 
-Both UI libraries use the same realtime lifecycle contract: one application-scoped SignalR connection,
-deduplicated `ReceiveNotification` handlers, shared refresh events, and a full REST resync after reconnect
-because SignalR does not replay missed notifications. Component mount/unmount only retains or releases the
-shared runtime. Logout stops the connection; login, token renewal, tenant/account changes, and hub/API URL
-changes reconnect with the new context. Angular exposes this as `NotificationRealtimeService` and
-`NotificationCenterRealtimeOptions` through `provideNotificationCenterConfig({ realtime: ... })`; MVC exposes
-the shared manager as `dignite.notificationCenter.realtime` and reads the hub URL from
-`NotificationCenterWebOptions.SignalRHubUrl`. For remote deployments, set the Angular `hubUrl`/`hubPath` or the
-MVC `SignalRHubUrl` to the externally reachable hub endpoint while keeping `/api/notifications` as the
-authoritative inbox source.
+Both bells open a SignalR connection to `/signalr-hubs/notifications` and refresh from the REST inbox when a
+`ReceiveNotification` message arrives or the connection reconnects (auto-reconnect handled by the SignalR client);
+the REST inbox is always the authoritative source, since SignalR does not replay missed notifications. If the
+SignalR notifier isn't installed or `@microsoft/signalr` isn't loaded, the bell degrades to a non-live view. MVC
+reads the hub URL from `NotificationCenterWebOptions.SignalRHubUrl`; for remote deployments point that (or the
+Angular API URL) at the externally reachable hub while keeping `/api/notifications` as the inbox source.
 
 ## Configuration
 
@@ -1104,31 +709,7 @@ Configure<NotificationDistributionOptions>(options =>
     // Explicit recipients above this count distribute on a background job instead of inline. Default: 5.
     options.DirectDistributionUserThreshold = 10;
 
-    // Each value must be between 1 and NotificationDistributionOptions.MaxBatchSize (10,000).
-    options.RecipientBatchSize = 256;
-    options.UserNotificationWriteBatchSize = 256;
-    options.DeliveryWorkItemBatchSize = 100;
-});
-
-Configure<NotificationDeliveryOptions>(options =>
-{
-    // Per-recipient/channel claim, retry, and dead-letter policy.
-    options.DeliveryLeaseDuration = TimeSpan.FromMinutes(2);
-    options.MaxDeliveryAttempts = 5;
-    options.InitialDeliveryRetryDelay = TimeSpan.FromSeconds(10);
-    options.MaxDeliveryRetryDelay = TimeSpan.FromMinutes(15);
-    options.DeliveryRetryBackoffFactor = 2;
-    options.DeliveryRetryJitterFactor = 0.2;
-    options.DeliveryRetryWorkerPeriod = TimeSpan.FromSeconds(30);
-    options.DeliveryRetryBatchSize = 100;
-    options.IsDeliveryRetryWorkerEnabled = true;
-    options.DeliveryRetryWorkerLockName = NotificationDeliveryOptions.DefaultDeliveryRetryWorkerLockName;
-    options.DeliveryRetryWorkerLockTimeout = TimeSpan.Zero; // skip immediately when another instance owns the cycle
-});
-
-Configure<NotificationAudienceBroadcastOptions>(options =>
-{
-    // Recipients requested from an audience source in one resumable page. Default: 256.
+    // Recipients resolved, persisted, and published per batch. Between 1 and MaxBatchSize (10,000). Default: 256.
     options.RecipientBatchSize = 256;
 });
 
@@ -1138,16 +719,18 @@ Configure<NotificationEmailOptions>(options =>
     options.DefaultCulture = "en-US";
 });
 
+// Retention cleanup is opt-in — see "Retention and lifecycle cleanup" above.
+Configure<NotificationRetentionOptions>(options => options.IsCleanupEnabled = true);
+
 // EF Core Notification Center hosts can opt in to ABP's transactional outbox so the persisted
-// inbox rows and NotificationDeliveryRequestedEto outbox records commit together. The channel consumer
-// persists its delivery ledger before claiming the work.
+// inbox rows and NotificationDeliveryRequestedEto outbox records commit together.
 Configure<AbpDistributedEventBusOptions>(options =>
 {
     options.UseNotificationCenterEfCoreOutbox();
 });
 
-// MongoDB hosts use the equivalent opt-in. Host startup performs a real transaction probe;
-// use a transaction-capable MongoDB 4.0+ replica set and transactional ABP units of work.
+// MongoDB hosts use the equivalent opt-in on a transaction-capable MongoDB 4.0+ replica set with
+// transactional ABP units of work.
 Configure<AbpDistributedEventBusOptions>(options =>
 {
     options.UseNotificationCenterMongoDbOutbox();
@@ -1157,13 +740,13 @@ Configure<AbpDistributedEventBusOptions>(options =>
 ## Architecture
 
 ```
-Notifications.Abstractions   ── data model + NotificationDeliveryRequestedEto + reliable notifier contract
+Notifications.Abstractions   ── data model + NotificationDeliveryRequestedEto + notifier contract
         │
-Notifications (Core)         ── define → distribute → publish work; channel consumers claim/retry
+Notifications (Core)         ── define → distribute → publish delivery events (best-effort)
         │
    ┌────┴───────────────────┐
 Notifiers                 NotificationCenter (optional)
-(SignalR / Email / …)     durable delivery ledger · inbox · subscriptions · REST API · UI
+(SignalR / Email / …)     inbox · subscriptions · REST API · UI
                                                        (EF Core / MongoDB)
 ```
 
@@ -1171,26 +754,24 @@ Notifiers                 NotificationCenter (optional)
 
 1. Business code calls `INotificationPublisher.PublishAsync(...)`.
 2. Small explicit fan-outs distribute inline; larger ones enqueue a `NotificationDistributionJob`.
-3. The distributor resolves bounded recipient pages (explicit `userIds`, or subscribers from
+3. The distributor resolves bounded recipient batches (explicit `userIds`, or subscribers from
    `INotificationStore`), checks the definition's feature/permission availability, persists bounded
-   inbox groups (a no-op under `NullNotificationStore`), creates one delivery identity per recipient/channel,
-   then publishes `NotificationDeliveryRequestedEto` when external channels are configured.
-4. Only a process hosting the selected channel handles the work. In one independently committed store operation it
-   inserts a new self-contained delivery snapshot directly as a claimed lease, or atomically claims an existing due
-   row; it then invokes the notifier and records success, suppression, retry timing, or dead-letter state. Its retry
-   worker republishes due or lease-expired work.
+   inbox groups (a no-op under `NullNotificationStore`), then publishes one `NotificationDeliveryRequestedEto`
+   per recipient/channel when external channels are configured.
+4. Only a process hosting the selected channel handles the work: the Core-owned event handler resolves the channel
+   notifier and calls `DeliverAsync` once. Delivery is best-effort — a channel that throws is logged and dropped,
+   not retried; the inbox row is the authoritative record.
 
 `NotificationDeliveryRequestedEto` is the load-bearing boundary between scheduling and delivery and the extension
 point for any new channel. Under either Notification Center persistence provider, hosts should opt in to ABP's
 transactional outbox (see [Configuration](#configuration)) so notification, inbox, and outgoing work records
-commit together. The delivery ledger belongs to the consuming channel application; initial materialization and
-claim commit together independently of the consumer's ambient event-inbox transaction.
+commit together.
 
 > **Serialization invariant:** every `NotificationData` subclass must carry a stable
-> `[NotificationDataType]` discriminator plus an explicit schema version and round-trip through
-> System.Text.Json only — never a CLR type name / `AssemblyQualifiedName`, never Newtonsoft. Versionless
-> historical JSON is v1; breaking shapes advance the attribute version and provide every deterministic
-> N→N+1 upcaster. That is what keeps historical and remote payloads readable and lets non-.NET clients render them.
+> `[NotificationDataType]` discriminator and round-trip through System.Text.Json only — never a CLR type name /
+> `AssemblyQualifiedName`, never Newtonsoft. The envelope carries only that discriminator (no schema version, no
+> upcaster chain); a newer payload of a known type reads leniently. That is what keeps historical and remote
+> payloads readable and lets non-.NET clients render them.
 
 ## Build & test
 

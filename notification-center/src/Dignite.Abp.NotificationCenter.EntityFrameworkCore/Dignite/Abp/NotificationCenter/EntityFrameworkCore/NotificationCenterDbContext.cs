@@ -18,8 +18,6 @@ public class NotificationCenterDbContext :
 
     public DbSet<NotificationSubscription> NotificationSubscriptions { get; set; } = default!;
 
-    public DbSet<NotificationDeliveryPreference> NotificationDeliveryPreferences { get; set; } = default!;
-
     // Transactional inbox/outbox support makes persisting the notification/inbox rows and publishing
     // NotificationDeliveryRequestedEto atomic. Channel delivery itself is best-effort and keeps no per-recipient state.
     public DbSet<IncomingEventRecord> IncomingEvents { get; set; } = default!;

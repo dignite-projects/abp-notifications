@@ -12,9 +12,10 @@ public interface INotificationNotifier
     string Name { get; }
 
     /// <summary>
-    /// Delivers one recipient/channel request and reports success or intentional suppression.
+    /// Delivers one recipient/channel request. Delivery is best-effort: a failure throws and is logged by the
+    /// caller, not retried; a notifier that intentionally skips a recipient simply returns.
     /// </summary>
-    Task<NotificationDeliveryResult> DeliverAsync(
+    Task DeliverAsync(
         NotificationDeliveryRequestedEto request,
         CancellationToken cancellationToken = default);
 }

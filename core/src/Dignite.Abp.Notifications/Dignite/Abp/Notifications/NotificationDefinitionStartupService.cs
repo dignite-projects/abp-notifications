@@ -5,28 +5,25 @@ using Microsoft.Extensions.Hosting;
 namespace Dignite.Abp.Notifications;
 
 /// <summary>
-/// Materializes notification definitions in the host's starting phase so registration conflicts are reported
-/// after dependency injection and options construction, but before any hosted service can publish notifications.
+/// Materializes notification definitions (and the data-type registry, via constructor injection) in the host's
+/// starting phase so registration conflicts are reported at startup, before any hosted service can publish
+/// notifications.
 /// </summary>
 internal sealed class NotificationDefinitionStartupService : IHostedLifecycleService
 {
     private readonly INotificationDefinitionManager _definitionManager;
-    private readonly INotificationDataTypeRegistry _dataTypeRegistry;
 
     public NotificationDefinitionStartupService(
         INotificationDefinitionManager definitionManager,
         INotificationDataTypeRegistry dataTypeRegistry)
     {
         _definitionManager = definitionManager;
-        _dataTypeRegistry = dataTypeRegistry;
+        _ = dataTypeRegistry;
     }
 
     public Task StartingAsync(CancellationToken cancellationToken)
     {
-        foreach (var definition in _definitionManager.GetAll())
-        {
-            NotificationDefinitionContractValidator.ValidateRegistration(definition, _dataTypeRegistry);
-        }
+        _definitionManager.GetAll();
         return Task.CompletedTask;
     }
 

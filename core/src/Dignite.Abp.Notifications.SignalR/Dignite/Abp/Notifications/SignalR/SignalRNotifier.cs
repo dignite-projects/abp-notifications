@@ -7,7 +7,7 @@ using Volo.Abp.DependencyInjection;
 namespace Dignite.Abp.Notifications.SignalR;
 
 /// <summary>
-/// Relays reliable single-recipient work to connected SignalR users. Recipients receive only a
+/// Relays single-recipient delivery requests to connected SignalR users. Recipients receive only a
 /// <see cref="NotificationDelivery"/>, which by construction omits every aggregate recipient list.
 /// </summary>
 [ExposeServices(
@@ -28,7 +28,7 @@ public class SignalRNotifier :
         HubContext = hubContext;
     }
 
-    public virtual async Task<NotificationDeliveryResult> DeliverAsync(
+    public virtual async Task DeliverAsync(
         NotificationDeliveryRequestedEto workItem,
         CancellationToken cancellationToken = default)
     {
@@ -42,6 +42,5 @@ public class SignalRNotifier :
             nameof(INotificationsClient.ReceiveNotification),
             new object[] { NotificationDelivery.FromWorkItem(workItem) },
             cancellationToken);
-        return NotificationDeliveryResult.Succeeded();
     }
 }

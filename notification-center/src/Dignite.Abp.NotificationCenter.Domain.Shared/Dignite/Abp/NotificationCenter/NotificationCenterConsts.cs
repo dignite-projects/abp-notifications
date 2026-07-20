@@ -1,5 +1,3 @@
-using Dignite.Abp.Notifications;
-
 namespace Dignite.Abp.NotificationCenter;
 
 public static class NotificationCenterConsts
@@ -11,24 +9,4 @@ public static class NotificationCenterConsts
     public const int MaxEntityIdLength = 128;
 
     public const int SubscriptionIdentityKeyLength = 64;
-
-    public const int MaxDeliveryChannelLength = NotificationDeliveryIdentity.MaxChannelNameLength;
-
-    public const int DeliveryIdempotencyKeyLength = 89;
-
-    public const int MaxDeliveryFailureCodeLength = 64;
-
-    public const int MaxDeliveryFailureMessageLength = 256;
-
-    public const int DeliveryPreferenceIdentityKeyLength = 64;
-
-    public const int MaxTimeZoneIdLength = 256;
-
-    public const int MaxAudienceNameLength = 256;
-
-    public const int MaxBroadcastContinuationTokenLength = 2048;
-
-    public const int MaxBroadcastFailureCodeLength = 64;
-
-    public const int MaxBroadcastFailureMessageLength = 256;
 }

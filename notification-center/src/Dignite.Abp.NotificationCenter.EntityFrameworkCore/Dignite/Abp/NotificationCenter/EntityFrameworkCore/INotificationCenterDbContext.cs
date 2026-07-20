@@ -12,6 +12,4 @@ public interface INotificationCenterDbContext : IEfCoreDbContext
     DbSet<UserNotification> UserNotifications { get; }
 
     DbSet<NotificationSubscription> NotificationSubscriptions { get; }
-
-    DbSet<NotificationDeliveryPreference> NotificationDeliveryPreferences { get; }
 }
