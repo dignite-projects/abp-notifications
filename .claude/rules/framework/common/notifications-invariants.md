@@ -118,60 +118,55 @@ name in application contracts or UI state.
 
 ## 7. Definition requirements apply again at delivery
 
-`NotificationDefinition.PermissionName` and `FeatureDependency` constrain both subscription and delivery.
+`NotificationDefinition.PermissionName` and `FeatureName` constrain both subscription and delivery.
 Never treat an explicit `userIds` array as an implicit authorization or eligibility bypass. Explicit and
-subscription-derived candidates flow through the same `INotificationRecipientEligibilityEvaluator`, after
-caller-supplied exclusions and before inbox persistence or channel publication.
+subscription-derived candidates run through the same `INotificationDefinitionManager.IsAvailableAsync`
+filter in the distributor, after caller-supplied exclusions and before inbox persistence or channel publication.
 
 - Evaluate in the notification's recorded `TenantId`; do not inherit an unrelated ambient tenant from an
-  inline caller, background worker, or retry. Host (`null`) and tenant contexts must never mix. Direct
+  inline caller or background worker. Host (`null`) and tenant contexts must never mix. Direct
   `INotificationDistributor` callers must populate tenant notifications explicitly; `null` is authoritative host,
   not an instruction to fall back to ambient state.
-- Keep the contract batch-shaped even when the default implementation checks users individually, so a host
-  can replace it with an efficient remote or bulk policy evaluator without forking distribution.
-- The only supported bypass is the narrowly named explicit-recipient trusted-system API. It must never resolve
-  subscriptions, must bypass both permission and feature requirements together, and must remain observable.
 - A failed requirement filters that candidate before any `UserNotificationInfo` or `NotificationDeliveryRequestedEto`
   is produced. Publishing authorization is a separate application-layer concern.
 
-## 8. Definition payload/entity contracts validate before side effects
+> An earlier design added a replaceable batch `INotificationRecipientEligibilityEvaluator`, an
+> enforce/bypass eligibility-mode enum threaded through publisher → job → distributor, and a
+> `PublishToExplicitRecipientsWithoutEligibilityChecksAsync` trusted-system bypass. All removed as
+> over-engineering: this is best-effort in-app notification, not a pluggable policy engine. Gating is
+> simply "don't set `PermissionName`/`FeatureName` if you don't want it." Don't reintroduce a
+> replaceable evaluator contract or a requirement-bypassing publish API.
 
-A definition may bind itself to a stable payload discriminator and to a forbidden, optional, or required entity
-identity. Treat these as publish-time contracts, not hints for a downstream Notifier or UI.
+> **Removed — definition payload/entity contracts.** An earlier design let a definition bind itself to a
+> stable payload discriminator (`WithPayload<TData>()`) and to a forbidden/optional/required entity identity
+> (`WithEntityContract(...)`), validated at startup and again at publish/distribution. Removed as
+> over-engineering — it re-implemented a type system to catch a developer publishing the wrong payload, an
+> error tests already catch, while the tolerant reader (§1) already renders anything downstream. The stable
+> `[NotificationDataType]` discriminator and its registration-conflict fail-fast are what remain. Don't
+> reintroduce `WithPayload`/`WithEntityContract` or a `NotificationEntityRequirement` state.
 
-- `WithPayload<TData>()` derives its contract from `[NotificationDataType]`; startup must verify that exact
-  discriminator is registered to the intended CLR type. Runtime matching uses the registry and ordinal stable
-  discriminator, never `Type.FullName`, `AssemblyQualifiedName`, or Newtonsoft metadata.
-- An opted-in payload contract requires data. Reject missing, unregistered, or differently discriminated data
-  before background enqueue, store writes, or distributed event publication.
-- Entity requirements use the complete `NotificationEntityIdentifier`. If a definition constrains an entity type,
-  compare its stable caller-chosen name ordinally. Never translate it back to a CLR `Type`.
-- `NotificationDefinition` accepts only a non-empty stable definition name and never exposes a CLR entity `Type`;
-  use `WithEntityContract` and its stable entity type name.
-- The trusted-recipient eligibility bypass does not bypass payload/entity validation; the policies answer different
-  questions.
-- `Unspecified` is the compatibility state. A definition that has not opted into a dimension remains permissive for
-  that dimension so migration can happen definition by definition.
+## 8. Recipient work stays bounded
 
-## 9. Recipient work stays bounded
-
-Inline/background selection is not a scalability boundary. Explicit and subscription-derived recipients must join
+Inline/background selection is not a scalability boundary. Explicit and subscription-derived recipients join
 the same bounded candidate → eligibility → persistence → delivery pipeline after resolution.
 
 - Built-in stores page a stable, database-side distinct user-ID query with an exclusive keyset cursor and
   multi-insert only an already-bounded inbox group. Never use offset paging for a mutable subscription set.
   Matching definition-wide and exact entity subscriptions must not create duplicate inbox rows.
-- A background job must not carry the whole explicit fan-out. Prepare shared notification state once, then schedule
-  bounded explicit batches; preserve tenant and eligibility mode on every job. Exact explicit deduplication must use
-  bounded keyset windows over the caller-owned array, never a notification-wide `HashSet` or normalized copy.
-- EF Core must flush and detach each completed inbox group so the change tracker does not become a hidden
-  notification-wide collection. Atomic rollback requires an ambient transactional UoW.
+- The distributor processes recipients in bounded batches (`RecipientBatchSize`). A large explicit fan-out goes
+  to a single background job carrying the caller's list; the job's distributor batches internally. Preserve the
+  notification tenant on every job.
 - Publish one `NotificationDeliveryRequestedEto` for each recipient/channel after bounded candidate processing.
   Broker limits also include the notification payload.
 - Observe cancellation between candidate, store, and event batches. Do not describe cancellation as rollback:
   EF/outbox, EF without outbox, MongoDB, and null-store forwarding have different partial-progress semantics.
-- Keep candidates, eligible recipients, filtered recipients, batches, duration, and failures observable without
-  logging recipient IDs. Preserve tenant scope on every query, write, metric tag, job, and event.
-- Stable keyset paging and bounded multi-insert belong to canonical `INotificationStore`; cancellation and prepared
-  distribution belong to canonical `INotificationDistributor`. Do not add runtime capability probes or a
-  materializing/per-row fallback. `NullNotificationStore` must implement the complete contract without persistence.
+- Do not log recipient IDs. Preserve tenant scope on every query, write, job, and event.
+- Stable keyset paging and bounded multi-insert belong to canonical `INotificationStore`; cancellation belongs to
+  canonical `INotificationDistributor`. `NullNotificationStore` must implement the complete contract without
+  persistence.
+
+> An earlier design added per-recipient delivery metrics (an OpenTelemetry meter + candidate/eligible/filtered/
+> batch counters + stage instrumentation), a prepared-notification/eligibility-mode multi-job split, and an EF
+> change-tracker detach abstraction (`INotificationBatchPersistence`). All removed as over-engineering for an
+> in-app module. A single summary log line per distribution is enough; don't reintroduce the meter, the
+> multi-job prepared split, or a per-provider batch-persistence seam.

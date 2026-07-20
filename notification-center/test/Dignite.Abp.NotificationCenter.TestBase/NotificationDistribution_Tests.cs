@@ -52,11 +52,8 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
             GetRequiredService<INotificationStore>(),
             GetRequiredService<INotificationDefinitionManager>(),
             eventBus,
-            GetRequiredService<INotificationRecipientEligibilityEvaluator>(),
             GetRequiredService<ICurrentTenant>(),
             GetRequiredService<ILogger<DefaultNotificationDistributor>>(),
-            GetRequiredService<INotificationDataTypeRegistry>(),
-            GetRequiredService<INotificationDeliveryPreferenceEvaluator>(),
             Options.Create(options ?? new NotificationDistributionOptions()));
     }
 
@@ -280,28 +277,6 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
     }
 
     [Fact]
-    public async Task Direct_distribution_rejects_a_mismatched_payload_before_store_or_event_side_effects()
-    {
-        var notificationId = Guid.NewGuid();
-        var notification = NewNotification(notificationId);
-        notification.Data = new LocalizableMessageNotificationData("Test", "WrongPayload");
-        var eventBus = Substitute.For<IDistributedEventBus>();
-
-        await Should.ThrowAsync<AbpException>(() => DistributeAsync(
-            background: false,
-            CreateDistributor(eventBus),
-            notification,
-            new[] { Guid.NewGuid() }));
-
-        await WithUnitOfWorkAsync(async () =>
-        {
-            (await GetRequiredService<IRepository<Notification, Guid>>()
-                .FindAsync(notificationId)).ShouldBeNull();
-        });
-        await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<NotificationDeliveryRequestedEto>());
-    }
-
-    [Fact]
     public async Task Thousands_of_duplicate_scope_subscribers_are_paged_persisted_and_published_in_bounded_batches()
     {
         const int recipientCount = 2001;
@@ -339,9 +314,7 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
         var notificationId = Guid.NewGuid();
         var distributor = CreateDistributor(eventBus, new NotificationDistributionOptions
         {
-            RecipientBatchSize = 256,
-            UserNotificationWriteBatchSize = 256,
-            DeliveryWorkItemBatchSize = 100
+            RecipientBatchSize = 256
         });
 
         await DistributeAsync(
@@ -379,9 +352,7 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
         var notificationId = Guid.NewGuid();
         var distributor = CreateDistributor(eventBus, new NotificationDistributionOptions
         {
-            RecipientBatchSize = 2,
-            UserNotificationWriteBatchSize = 2,
-            DeliveryWorkItemBatchSize = 2
+            RecipientBatchSize = 2
         });
 
         await Should.ThrowAsync<OperationCanceledException>(() => WithUnitOfWorkAsync(() =>
@@ -403,14 +374,12 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
     }
 
     [Fact]
-    public async Task Large_explicit_publish_prepares_once_and_completed_bounded_jobs_can_run_out_of_order()
+    public async Task Large_explicit_publish_enqueues_one_background_job_that_persists_and_delivers_all_users()
     {
         var options = new NotificationDistributionOptions
         {
             DirectDistributionUserThreshold = 1,
-            RecipientBatchSize = 256,
-            UserNotificationWriteBatchSize = 256,
-            DeliveryWorkItemBatchSize = 100
+            RecipientBatchSize = 256
         };
         var eventBus = Substitute.For<IDistributedEventBus>();
         var deliveries = new List<NotificationDeliveryRequestedEto>();
@@ -425,9 +394,7 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
             GetRequiredService<IGuidGenerator>(),
             GetRequiredService<IClock>(),
             GetRequiredService<ICurrentTenant>(),
-            GetRequiredService<INotificationDefinitionManager>(),
-            GetRequiredService<INotificationDataTypeRegistry>(),
-            GetRequiredService<INotificationStore>());
+            GetRequiredService<INotificationDefinitionManager>());
         var distinctUsers = Enumerable.Range(0, 2_001).Select(_ => Guid.NewGuid()).ToArray();
         var users = distinctUsers
             .Concat(new[] { distinctUsers[0], distinctUsers[255], distinctUsers[256], distinctUsers[^1] })
@@ -435,30 +402,25 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
 
         await WithUnitOfWorkAsync(() => publisher.PublishAsync(
             "order.shipped",
-            new MessageNotificationData("prepared"),
+            new MessageNotificationData("bulk"),
             userIds: users));
-        var jobs = backgroundJobManager.ReceivedCalls()
-            .SelectMany(call => call.GetArguments().OfType<NotificationDistributionJobArgs>())
-            .ToList();
-        jobs.Count.ShouldBe(8);
-        foreach (var job in jobs)
-        {
-            job.NotificationAlreadyPersisted.ShouldBeTrue();
-            job.UserIds.ShouldNotBeNull();
-            job.UserIds!.Length.ShouldBeLessThanOrEqualTo(256);
-        }
 
-        foreach (var args in jobs.AsEnumerable().Reverse())
-        {
-            await WithUnitOfWorkAsync(() => new NotificationDistributionJob(
-                    distributor,
-                    GetRequiredService<ICurrentTenant>())
-                .ExecuteAsync(args));
-        }
+        // A large explicit fan-out is a single background job carrying the whole list; the distributor batches
+        // recipients internally when the job runs.
+        var args = backgroundJobManager.ReceivedCalls()
+            .SelectMany(call => call.GetArguments().OfType<NotificationDistributionJobArgs>())
+            .Single();
+        args.UserIds.ShouldNotBeNull();
+        args.UserIds!.Length.ShouldBe(users.Length);
+
+        await WithUnitOfWorkAsync(() => new NotificationDistributionJob(
+                distributor,
+                GetRequiredService<ICurrentTenant>())
+            .ExecuteAsync(args));
 
         await WithUnitOfWorkAsync(async () =>
         {
-            var notificationId = jobs[0].Notification.Id;
+            var notificationId = args.Notification.Id;
             (await GetRequiredService<IRepository<Notification, Guid>>()
                 .FindAsync(notificationId)).ShouldNotBeNull();
             var rows = await GetRequiredService<IRepository<UserNotification, Guid>>()

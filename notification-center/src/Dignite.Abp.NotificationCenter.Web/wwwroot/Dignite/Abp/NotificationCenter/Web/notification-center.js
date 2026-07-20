@@ -1,17 +1,11 @@
 (function () {
     'use strict';
 
-    var digniteRoot = window.dignite = window.dignite || {};
-    var notificationCenterRoot = digniteRoot.notificationCenter = digniteRoot.notificationCenter || {};
-
-    if (notificationCenterRoot.webInitialized) {
-        return;
-    }
-    notificationCenterRoot.webInitialized = true;
-
     // ABP's dynamic JavaScript service proxy for the NotificationCenter API. It's generated at
     // /Abp/ServiceProxyScript and included on every ABP MVC page by default, so we call the application
-    // service directly (dignite.abp.notificationCenter.notifications.*) instead of hand-writing fetch().
+    // service directly (dignite.abp.notificationCenter.notifications.*) instead of hand-writing fetch():
+    // abp.ajax handles antiforgery, authentication and error reporting, and this surface auto-tracks the
+    // C# INotificationAppService (no URLs to keep in sync).
     function api() {
         return dignite.abp.notificationCenter.notifications;
     }
@@ -65,7 +59,7 @@
 
             var unreadCount = parseInt(nextContent.getAttribute('data-unread-count') || '0', 10);
             if (!isNaN(unreadCount)) {
-                setAllBadgeCounts(unreadCount);
+                setBadgeCount(unreadCount);
             }
 
             clearRefreshing();
@@ -91,7 +85,7 @@
             e.preventDefault();
             if (notificationId) {
                 api().markAsRead(notificationId).then(function () {
-                    setAllBadgeCounts(getFirstBadgeCount() - 1);
+                    setBadgeCount(getBadgeCount() - 1);
                     item.classList.remove('dignite-notification-unread');
                     if (hasLink && href) {
                         window.location.href = href;
@@ -113,7 +107,7 @@
         if (markAllLink) {
             e.preventDefault();
             api().markAllAsRead().then(function () {
-                setAllBadgeCounts(0);
+                setBadgeCount(0);
                 var bell = markAllLink.closest('.dignite-notification-bell');
                 if (bell) {
                     bell.querySelectorAll('.dignite-notification-item').forEach(function (item) {
@@ -147,338 +141,69 @@
     });
 
     // ---- unread badge helpers ----
-    function badgeEls() {
-        return document.querySelectorAll('.dignite-notification-badge');
+    function badgeEl() {
+        return document.querySelector('.dignite-notification-badge');
     }
 
-    function getFirstBadgeCount() {
-        var el = badgeEls()[0];
+    function getBadgeCount() {
+        var el = badgeEl();
         return el ? parseInt(el.getAttribute('data-count') || '0', 10) : 0;
     }
 
-    function setAllBadgeCounts(count) {
+    function setBadgeCount(count) {
+        var el = badgeEl();
+        if (!el) {
+            return;
+        }
         count = Math.max(0, count);
-        badgeEls().forEach(function (el) {
-            el.setAttribute('data-count', count);
-            el.textContent = count;
-            if (count > 0) {
-                el.removeAttribute('hidden');
-            } else {
-                el.setAttribute('hidden', '');
-            }
-        });
-    }
-
-    // ---- application-scoped real-time runtime ----
-    function createRealtimeRuntime() {
-        var consumers = [];
-        var refreshHandlers = [];
-        var connection = null;
-        var hubUrl = null;
-        var retryTimer = null;
-        var manualRetryCount = 0;
-
-        function retain(element) {
-            if (element && consumers.indexOf(element) < 0) {
-                consumers.push(element);
-                configure(element);
-            }
-
-            start('consumer-start');
-
-            return function () {
-                var index = consumers.indexOf(element);
-                if (index >= 0) {
-                    consumers.splice(index, 1);
-                }
-                if (consumers.length === 0) {
-                    stop('no-consumers');
-                }
-            };
-        }
-
-        function configure(element) {
-            var nextHubUrl = element ? element.getAttribute('data-signalr-hub-url') : null;
-            if (!nextHubUrl || nextHubUrl === hubUrl) {
-                return;
-            }
-
-            hubUrl = nextHubUrl;
-            if (connection) {
-                restart('hub-url-changed');
-            }
-        }
-
-        function onRefresh(handler) {
-            if (refreshHandlers.indexOf(handler) < 0) {
-                refreshHandlers.push(handler);
-            }
-
-            return function () {
-                var index = refreshHandlers.indexOf(handler);
-                if (index >= 0) {
-                    refreshHandlers.splice(index, 1);
-                }
-            };
-        }
-
-        function emitRefresh(reason) {
-            refreshHandlers.slice().forEach(function (handler) {
-                handler({ reason: reason });
-            });
-        }
-
-        function start(reason) {
-            clearRetryTimer();
-            if (connection || !hubUrl || typeof signalR === 'undefined') {
-                return;
-            }
-
-            var accessTokenFactory = resolveAccessTokenFactory();
-            var builder = new signalR.HubConnectionBuilder();
-            var withUrlOptions = accessTokenFactory ? { accessTokenFactory: accessTokenFactory } : undefined;
-            var nextConnection = builder
-                .withUrl(hubUrl, withUrlOptions)
-                .withAutomaticReconnect(createRetryPolicy())
-                .build();
-
-            connection = nextConnection;
-
-            nextConnection.on('ReceiveNotification', function () {
-                if (connection !== nextConnection) {
-                    return;
-                }
-                emitRefresh('received');
-            });
-
-            nextConnection.onreconnected(function () {
-                if (connection !== nextConnection) {
-                    return;
-                }
-                manualRetryCount = 0;
-                emitRefresh('reconnected');
-            });
-
-            nextConnection.onclose(function () {
-                if (connection !== nextConnection) {
-                    return;
-                }
-                connection = null;
-                if (consumers.length > 0) {
-                    scheduleReconnect('closed');
-                }
-            });
-
-            nextConnection.start().then(function () {
-                if (connection === nextConnection) {
-                    manualRetryCount = 0;
-                    if (reason !== 'consumer-start') {
-                        emitRefresh('reconnected');
-                    }
-                }
-            }).catch(function (err) {
-                if (connection !== nextConnection) {
-                    return;
-                }
-
-                connection = null;
-                if (window.console) {
-                    console.warn('Notification hub connection failed; bell will not update live.', err);
-                }
-                if (consumers.length > 0) {
-                    scheduleReconnect(reason);
-                }
-            });
-        }
-
-        function stop() {
-            clearRetryTimer();
-            var currentConnection = connection;
-            connection = null;
-            if (currentConnection) {
-                currentConnection.stop().catch(function () { });
-            }
-        }
-
-        function restart(reason) {
-            stop(reason);
-            start(reason);
-        }
-
-        function sessionChanged() {
-            emitRefresh('context-changed');
-            restart('context-changed');
-        }
-
-        function scheduleReconnect(reason) {
-            clearRetryTimer();
-            var retryCount = manualRetryCount++;
-            var delay = calculateRetryDelay(retryCount);
-            retryTimer = setTimeout(function () {
-                retryTimer = null;
-                start(reason + '-retry');
-            }, delay);
-        }
-
-        function clearRetryTimer() {
-            if (retryTimer) {
-                clearTimeout(retryTimer);
-                retryTimer = null;
-            }
-        }
-
-        return {
-            retain: retain,
-            configure: configure,
-            onRefresh: onRefresh,
-            requestRefresh: emitRefresh,
-            sessionChanged: sessionChanged,
-            stop: stop
-        };
-    }
-
-    function resolveAccessTokenFactory() {
-        var options = notificationCenterRoot.realtimeOptions || {};
-        if (typeof options.accessTokenFactory === 'function') {
-            return options.accessTokenFactory;
-        }
-
-        if (typeof abp !== 'undefined' &&
-            abp.auth &&
-            typeof abp.auth.getToken === 'function') {
-            return function () {
-                return abp.auth.getToken();
-            };
-        }
-
-        return null;
-    }
-
-    function createRetryPolicy() {
-        return {
-            nextRetryDelayInMilliseconds: function (retryContext) {
-                return calculateRetryDelay(retryContext.previousRetryCount);
-            }
-        };
-    }
-
-    function calculateRetryDelay(previousRetryCount) {
-        if (previousRetryCount <= 0) {
-            return 0;
-        }
-
-        var cappedRetryCount = Math.min(previousRetryCount, 5);
-        var baseDelay = Math.min(30000, Math.pow(2, cappedRetryCount) * 1000);
-        var jitter = Math.floor(Math.random() * Math.min(1000, Math.max(1, baseDelay * 0.2)));
-        return baseDelay + jitter;
-    }
-
-    var realtime = notificationCenterRoot.realtime =
-        notificationCenterRoot.realtime || createRealtimeRuntime();
-    var bellRegistrations = [];
-
-    realtime.onRefresh(function (event) {
-        refreshAllBells(event.reason);
-    });
-
-    function syncBells() {
-        cleanupRemovedBells();
-        document.querySelectorAll('.dignite-notification-bell').forEach(function (bell) {
-            if (bell.getAttribute('data-notification-realtime-bound') === 'true') {
-                return;
-            }
-
-            bell.setAttribute('data-notification-realtime-bound', 'true');
-            bellRegistrations.push({
-                bell: bell,
-                release: realtime.retain(bell)
-            });
-        });
-    }
-
-    function cleanupRemovedBells() {
-        for (var i = bellRegistrations.length - 1; i >= 0; i--) {
-            if (document.documentElement.contains(bellRegistrations[i].bell)) {
-                continue;
-            }
-
-            bellRegistrations[i].release();
-            bellRegistrations[i].bell.removeAttribute('data-notification-realtime-bound');
-            bellRegistrations.splice(i, 1);
+        el.setAttribute('data-count', count);
+        el.textContent = count;
+        if (count > 0) {
+            el.removeAttribute('hidden');
+        } else {
+            el.setAttribute('hidden', '');
         }
     }
 
-    function refreshAllBells(reason) {
-        refreshUnreadCount();
-        document.querySelectorAll('.dignite-notification-bell').forEach(function (bell) {
-            if (reason === 'received') {
-                bell.classList.add('dignite-notification-pulse');
-                setTimeout(function () { bell.classList.remove('dignite-notification-pulse'); }, 1000);
-            }
-
-            if (isDropdownOpen(bell)) {
-                refreshDropdown(bell);
-            }
-        });
-    }
-
-    function refreshUnreadCount() {
-        var service = api();
-        if (!service || typeof service.getCount !== 'function') {
+    // ---- real-time receive over ABP SignalR (optional, degrades gracefully) ----
+    // The server-side Notifier (Dignite.Abp.Notifications.SignalR) pushes a per-recipient NotificationDelivery
+    // (recipient list already stripped, per notifications-invariants.md §4) via the strongly-typed client method
+    // "ReceiveNotification". We only nudge the unread badge + flag the bell here; the authoritative, fully
+    // rendered list (localized display name, custom per-type view components, entity links) is server-rendered
+    // on the next open/refresh — so we never duplicate server rendering (or its localization) on the client.
+    function connectSignalR() {
+        if (typeof signalR === 'undefined') {
+            return; // @microsoft/signalr not loaded by the host — bell stays non-live, still fully usable.
+        }
+        var bell = document.querySelector('.dignite-notification-bell');
+        var hubUrl = bell ? bell.getAttribute('data-signalr-hub-url') : null;
+        if (!hubUrl) {
             return;
         }
 
-        service.getCount(0).then(function (count) {
-            var unreadCount = parseInt(count || '0', 10);
-            if (!isNaN(unreadCount)) {
-                setAllBadgeCounts(unreadCount);
+        var connection = new signalR.HubConnectionBuilder()
+            .withUrl(hubUrl)
+            .withAutomaticReconnect()
+            .build();
+
+        connection.on('ReceiveNotification', function () {
+            setBadgeCount(getBadgeCount() + 1);
+            if (bell) {
+                bell.classList.add('dignite-notification-pulse');
+                setTimeout(function () { bell.classList.remove('dignite-notification-pulse'); }, 1000);
             }
         });
-    }
 
-    function isDropdownOpen(bell) {
-        var toggle = bell ? bell.querySelector('.dignite-notification-toggle') : null;
-        return toggle && toggle.getAttribute('aria-expanded') === 'true';
-    }
-
-    function bindAbpEvent(name, handler) {
-        if (typeof abp !== 'undefined' &&
-            abp.event &&
-            typeof abp.event.on === 'function') {
-            abp.event.on(name, handler);
-        }
-    }
-
-    bindAbpEvent('abp.auth.login', realtime.sessionChanged);
-    bindAbpEvent('abp.auth.tokenChanged', realtime.sessionChanged);
-    bindAbpEvent('abp.multiTenancy.tenantChanged', realtime.sessionChanged);
-    bindAbpEvent('abp.auth.logout', function () {
-        realtime.stop('logout');
-        refreshAllBells('context-changed');
-    });
-    bindAbpEvent('dignite.notificationCenter.sessionChanged', realtime.sessionChanged);
-
-    document.addEventListener('dignite.notificationCenter.sessionChanged', realtime.sessionChanged);
-    window.addEventListener('storage', function (e) {
-        var key = e.key || '';
-        if (key.indexOf('token') >= 0 || key.indexOf('tenant') >= 0 || key.indexOf('Abp') >= 0) {
-            realtime.sessionChanged();
-        }
-    });
-    window.addEventListener('beforeunload', function () {
-        realtime.stop('beforeunload');
-    });
-
-    if (typeof MutationObserver !== 'undefined') {
-        new MutationObserver(syncBells).observe(document.documentElement, {
-            childList: true,
-            subtree: true
+        connection.start().catch(function (err) {
+            if (window.console) {
+                console.warn('Notification hub connection failed; bell will not update live.', err);
+            }
         });
     }
 
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', syncBells);
+        document.addEventListener('DOMContentLoaded', connectSignalR);
     } else {
-        syncBells();
+        connectSignalR();
     }
 })();

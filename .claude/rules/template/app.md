@@ -98,14 +98,13 @@ core publish/distribute logic has to work with `NullNotificationStore` too.
 **A new notification type** (most common change — doesn't touch the Domain layer at all):
 1. Define a `NotificationData` subclass wherever the business logic that raises it lives (or in
    `Abstractions` if it's shared across modules), tagged with a **stable, short discriminator** via
-   `[NotificationDataType("...")]` — never rely on the CLR type name. Existing/versionless payloads are schema
-   v1; when changing JSON shape incompatibly, keep the discriminator, advance the attribute version, and register
-   every deterministic N→N+1 upcaster in `NotificationDataOptions`. See
+   `[NotificationDataType("...")]` — never rely on the CLR type name. The wire/storage envelope carries only
+   that discriminator; a newer payload of a known type reads leniently (extra members land in `ExtensionData`),
+   so there is no schema-version field or upcaster chain. See
    `.claude/rules/framework/common/notifications-invariants.md`.
 2. Register the payload in `NotificationDataOptions`, then define it through an
-   `INotificationDefinitionProvider` (name, display text, optional feature/permission gating, stable
-   `WithPayload<TData>()` / `WithEntityContract(...)` contracts, and allowed channels). Stable entity type
-   names are never CLR type names.
+   `INotificationDefinitionProvider` (name, display text, optional feature/permission gating, and allowed
+   channels via `UseChannels(...)`).
 3. Publish via `INotificationPublisher`. No entity/EF/Mongo changes needed — `Notification` /
    `UserNotification` are generic containers for any `NotificationData`.
 

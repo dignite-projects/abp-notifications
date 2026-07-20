@@ -7,7 +7,5 @@ namespace Dignite.Abp.Notifications;
 public enum UnsupportedNotificationDataReason
 {
     UnknownDiscriminator = 0,
-    UnsupportedFutureVersion = 1,
-    MalformedPayload = 2,
-    UpcastFailed = 3
+    MalformedPayload = 1
 }

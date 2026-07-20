@@ -15,8 +15,6 @@ public class NotificationCenterMongoDbContext : AbpMongoDbContext, INotification
 
     public IMongoCollection<NotificationSubscription> NotificationSubscriptions => Collection<NotificationSubscription>();
 
-    public IMongoCollection<NotificationDeliveryPreference> NotificationDeliveryPreferences => Collection<NotificationDeliveryPreference>();
-
     public IMongoCollection<IncomingEventRecord> IncomingEvents => Collection<IncomingEventRecord>();
 
     public IMongoCollection<OutgoingEventRecord> OutgoingEvents => Collection<OutgoingEventRecord>();
@@ -141,26 +139,5 @@ public class NotificationCenterMongoDbContext : AbpMongoDbContext, INotification
                         .Ascending(nameof(NotificationSubscription.NotificationNameKey))));
             });
         });
-
-        modelBuilder.Entity<NotificationDeliveryPreference>(b =>
-        {
-            b.CollectionName = NotificationCenterDbProperties.DbTablePrefix + "NotificationDeliveryPreferences";
-            b.ConfigureIndexes(indexes =>
-            {
-                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
-                    Builders<BsonDocument>.IndexKeys
-                        .Ascending(nameof(NotificationDeliveryPreference.TenantKey))
-                        .Ascending(nameof(NotificationDeliveryPreference.UserId))
-                        .Ascending(nameof(NotificationDeliveryPreference.NotificationNameKey))
-                        .Ascending(nameof(NotificationDeliveryPreference.ChannelKey)),
-                    new CreateIndexOptions { Unique = true }));
-
-                indexes.CreateOne(new CreateIndexModel<BsonDocument>(
-                    Builders<BsonDocument>.IndexKeys
-                        .Ascending(nameof(NotificationDeliveryPreference.TenantKey))
-                        .Ascending(nameof(NotificationDeliveryPreference.UserId))));
-            });
-        });
-
     }
 }

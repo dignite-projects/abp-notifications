@@ -81,13 +81,9 @@ public class NotificationChannelRouting_Tests
             store,
             definitionManager,
             eventBus,
-            new DefaultNotificationRecipientEligibilityEvaluator(
-                definitionManager,
-                currentTenant,
-                NullLogger<DefaultNotificationRecipientEligibilityEvaluator>.Instance),
             currentTenant,
             NullLogger<DefaultNotificationDistributor>.Instance,
-            new NotificationDataTypeRegistry(Options.Create(new NotificationDataOptions())));
+            Options.Create(new NotificationDistributionOptions()));
         await distributor.DistributeAsync(
             new NotificationInfo { Id = Guid.NewGuid(), NotificationName = "test" }, new[] { Guid.NewGuid() });
 

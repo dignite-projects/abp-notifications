@@ -2,26 +2,17 @@ using System;
 
 namespace Dignite.Abp.Notifications;
 
-/// <summary>Controls bounded recipient resolution, inbox persistence, and delivery-work scheduling.</summary>
+/// <summary>Controls inline-versus-background distribution and recipient batch sizing.</summary>
 public class NotificationDistributionOptions
 {
     /// <summary>Hard safeguard for every distribution batch size.</summary>
     public const int MaxBatchSize = 10_000;
 
-    /// <summary>Maximum explicit recipients distributed inline instead of through background jobs.</summary>
+    /// <summary>Maximum explicit recipients distributed inline instead of through a background job.</summary>
     public int DirectDistributionUserThreshold { get; set; } = 5;
 
-    /// <summary>Maximum distinct recipient candidates resolved and evaluated at once.</summary>
+    /// <summary>Maximum recipients resolved, persisted, and published per batch.</summary>
     public int RecipientBatchSize { get; set; } = 256;
-
-    /// <summary>Maximum inbox rows passed to one store batch write.</summary>
-    public int UserNotificationWriteBatchSize { get; set; } = 256;
-
-    /// <summary>
-    /// Maximum single-recipient/channel work items scheduled by one operation. Each
-    /// <see cref="NotificationDeliveryRequestedEto"/> still contains exactly one recipient and channel.
-    /// </summary>
-    public int DeliveryWorkItemBatchSize { get; set; } = 100;
 
     internal void Validate()
     {
@@ -32,17 +23,10 @@ public class NotificationDistributionOptions
                 $"between 0 and {MaxBatchSize}.");
         }
 
-        ValidateBatchSize(RecipientBatchSize, nameof(RecipientBatchSize));
-        ValidateBatchSize(UserNotificationWriteBatchSize, nameof(UserNotificationWriteBatchSize));
-        ValidateBatchSize(DeliveryWorkItemBatchSize, nameof(DeliveryWorkItemBatchSize));
-    }
-
-    private static void ValidateBatchSize(int value, string propertyName)
-    {
-        if (value < 1 || value > MaxBatchSize)
+        if (RecipientBatchSize < 1 || RecipientBatchSize > MaxBatchSize)
         {
             throw new InvalidOperationException(
-                $"{nameof(NotificationDistributionOptions)}.{propertyName} must be between 1 and {MaxBatchSize}.");
+                $"{nameof(NotificationDistributionOptions)}.{nameof(RecipientBatchSize)} must be between 1 and {MaxBatchSize}.");
         }
     }
 }

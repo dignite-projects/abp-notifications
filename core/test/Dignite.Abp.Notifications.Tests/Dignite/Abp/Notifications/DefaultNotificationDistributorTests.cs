@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics.Metrics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -66,29 +65,15 @@ public class DefaultNotificationDistributorTests
     }
 
     [Fact]
-    public async Task Bounded_pipeline_respects_exact_batch_limits_and_emits_progress_metrics()
+    public async Task Explicit_recipients_are_processed_in_bounded_batches()
     {
         var store = Substitute.For<INotificationStore>();
         var definitionManager = Substitute.For<INotificationDefinitionManager>();
         var eventBus = Substitute.For<IDistributedEventBus>();
-        var evaluator = Substitute.For<INotificationRecipientEligibilityEvaluator>();
-        var notificationName = $"batch-metrics-{Guid.NewGuid():N}";
+        var notificationName = $"batch-{Guid.NewGuid():N}";
         definitionManager.Get(notificationName).Returns(
             new NotificationDefinition(notificationName, new FixedLocalizableString("Batch")).UseChannels("Test"));
-
-        var candidateBatchSizes = new List<int>();
-        evaluator.EvaluateAsync(
-                notificationName,
-                Arg.Any<IReadOnlyCollection<Guid>>(),
-                null,
-                NotificationRecipientEligibilityMode.EnforceDefinitionRequirements,
-                Arg.Any<CancellationToken>())
-            .Returns(call =>
-            {
-                var candidates = call.ArgAt<IReadOnlyCollection<Guid>>(1).ToArray();
-                candidateBatchSizes.Add(candidates.Length);
-                return new NotificationRecipientEligibilityResult(candidates, Array.Empty<Guid>());
-            });
+        definitionManager.IsAvailableAsync(notificationName, Arg.Any<Guid>()).Returns(true);
 
         var writeBatches = new List<Guid[]>();
         store.When(storeCapability => storeCapability.InsertUserNotificationsAsync(
@@ -103,117 +88,43 @@ public class DefaultNotificationDistributorTests
         eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryRequestedEto>()))
             .Do(call => deliveryWorkItems.Add(call.Arg<NotificationDeliveryRequestedEto>()));
 
-        long candidateMetric = 0;
-        long eligibleMetric = 0;
-        long filteredMetric = 0;
-        long batchMetric = 0;
-        var durationMeasurements = 0;
-        using var listener = new MeterListener
-        {
-            InstrumentPublished = (instrument, meterListener) =>
-            {
-                if (instrument.Meter.Name == NotificationDistributionMetrics.MeterName)
-                {
-                    meterListener.EnableMeasurementEvents(instrument);
-                }
-            }
-        };
-        listener.SetMeasurementEventCallback<long>((instrument, measurement, tags, _) =>
-        {
-            if (!HasTag(tags, "notification.name", notificationName))
-            {
-                return;
-            }
-
-            switch (instrument.Name)
-            {
-                case NotificationDistributionMetrics.CandidateCountName:
-                    candidateMetric += measurement;
-                    break;
-                case NotificationDistributionMetrics.EligibleCountName:
-                    eligibleMetric += measurement;
-                    break;
-                case NotificationDistributionMetrics.FilteredCountName:
-                    filteredMetric += measurement;
-                    break;
-                case NotificationDistributionMetrics.BatchCountName:
-                    batchMetric += measurement;
-                    break;
-            }
-        });
-        listener.SetMeasurementEventCallback<double>((instrument, _, tags, _) =>
-        {
-            if (instrument.Name == NotificationDistributionMetrics.DurationName &&
-                HasTag(tags, "notification.name", notificationName))
-            {
-                durationMeasurements++;
-            }
-        });
-        listener.Start();
-
-        var options = new NotificationDistributionOptions
-        {
-            RecipientBatchSize = 128,
-            UserNotificationWriteBatchSize = 64,
-            DeliveryWorkItemBatchSize = 50
-        };
         var distributor = CreateDistributor(
             store,
             definitionManager,
             eventBus,
-            evaluator,
-            options: options);
-        var distinctUserIds = Enumerable.Range(0, 512)
-            .Select(_ => Guid.NewGuid())
-            .Append(Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff"))
-            .ToArray();
+            options: new NotificationDistributionOptions { RecipientBatchSize = 128 });
+        var distinctUserIds = Enumerable.Range(0, 512).Select(_ => Guid.NewGuid()).ToArray();
+        var excludedUserId = Guid.NewGuid();
         var userIds = distinctUserIds
+            .Append(excludedUserId)
             .Concat(new[] { distinctUserIds[0], distinctUserIds[255], distinctUserIds[^1] })
             .ToArray();
 
         await distributor.DistributeAsync(
             new NotificationInfo { Id = Guid.NewGuid(), NotificationName = notificationName },
             userIds,
-            new[] { distinctUserIds[^1] });
+            new[] { excludedUserId });
 
-        // The final one-recipient candidate batch is removed by caller exclusion before policy evaluation.
-        candidateBatchSizes.ShouldBe(new[] { 128, 128, 128, 128 });
-        writeBatches.Count.ShouldBe(8);
-        writeBatches.ShouldAllBe(batch => batch.Length == 64);
+        writeBatches.Count.ShouldBe(4);
+        writeBatches.ShouldAllBe(batch => batch.Length <= 128);
         writeBatches.SelectMany(batch => batch).Distinct().Count().ShouldBe(512);
         deliveryWorkItems.Count.ShouldBe(512);
         deliveryWorkItems.Select(item => item.UserId).Distinct().Count().ShouldBe(512);
+        deliveryWorkItems.Select(item => item.UserId).ShouldNotContain(excludedUserId);
         await store.Received(1).InsertNotificationAsync(
             Arg.Any<NotificationInfo>(),
             Arg.Any<CancellationToken>());
         await store.DidNotReceiveWithAnyArgs().InsertUserNotificationAsync(default!);
-
-        candidateMetric.ShouldBe(513);
-        eligibleMetric.ShouldBe(512);
-        filteredMetric.ShouldBe(1);
-        batchMetric.ShouldBe(24);
-        durationMeasurements.ShouldBe(1);
     }
 
     [Fact]
-    public async Task Cancellation_is_observed_during_a_delivery_batch()
+    public async Task Cancellation_is_observed_during_delivery_publication()
     {
         var store = Substitute.For<INotificationStore>();
         var definitionManager = Substitute.For<INotificationDefinitionManager>();
         var eventBus = Substitute.For<IDistributedEventBus>();
-        var evaluator = Substitute.For<INotificationRecipientEligibilityEvaluator>();
         definitionManager.Get("test").Returns(DefinitionWithChannels());
-        evaluator.EvaluateAsync(
-                "test",
-                Arg.Any<IReadOnlyCollection<Guid>>(),
-                null,
-                NotificationRecipientEligibilityMode.EnforceDefinitionRequirements,
-                Arg.Any<CancellationToken>())
-            .Returns(call =>
-            {
-                var candidates = call.ArgAt<IReadOnlyCollection<Guid>>(1).ToArray();
-                return new NotificationRecipientEligibilityResult(candidates, Array.Empty<Guid>());
-            });
+        definitionManager.IsAvailableAsync("test", Arg.Any<Guid>()).Returns(true);
 
         var persistedRecipients = new List<Guid>();
         store.When(storeCapability => storeCapability.InsertUserNotificationsAsync(
@@ -234,13 +145,7 @@ public class DefaultNotificationDistributorTests
             store,
             definitionManager,
             eventBus,
-            evaluator,
-            options: new NotificationDistributionOptions
-            {
-                RecipientBatchSize = 2,
-                UserNotificationWriteBatchSize = 2,
-                DeliveryWorkItemBatchSize = 2
-            });
+            options: new NotificationDistributionOptions { RecipientBatchSize = 2 });
 
         await Should.ThrowAsync<OperationCanceledException>(() => distributor.DistributeAsync(
             new NotificationInfo { Id = Guid.NewGuid(), NotificationName = "test" },
@@ -250,107 +155,6 @@ public class DefaultNotificationDistributorTests
 
         deliveryCount.ShouldBe(1);
         persistedRecipients.Count.ShouldBe(2);
-        await evaluator.Received(1).EvaluateAsync(
-            "test",
-            Arg.Any<IReadOnlyCollection<Guid>>(),
-            null,
-            NotificationRecipientEligibilityMode.EnforceDefinitionRequirements,
-            Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task Prepared_explicit_batch_skips_the_shared_notification_insert()
-    {
-        var store = Substitute.For<INotificationStore>();
-        var definitionManager = Substitute.For<INotificationDefinitionManager>();
-        var eventBus = Substitute.For<IDistributedEventBus>();
-        var evaluator = Substitute.For<INotificationRecipientEligibilityEvaluator>();
-        definitionManager.Get("test").Returns(DefinitionWithChannels());
-        evaluator.EvaluateAsync(
-                "test",
-                Arg.Any<IReadOnlyCollection<Guid>>(),
-                null,
-                NotificationRecipientEligibilityMode.EnforceDefinitionRequirements,
-                Arg.Any<CancellationToken>())
-            .Returns(call =>
-            {
-                var candidates = call.ArgAt<IReadOnlyCollection<Guid>>(1).ToArray();
-                return new NotificationRecipientEligibilityResult(candidates, Array.Empty<Guid>());
-            });
-        var distributor = CreateDistributor(store, definitionManager, eventBus, evaluator);
-        var users = new[] { Guid.NewGuid(), Guid.NewGuid() };
-
-        await distributor.DistributePreparedAsync(
-            new NotificationInfo { Id = Guid.NewGuid(), NotificationName = "test" },
-            users,
-            NotificationRecipientEligibilityMode.EnforceDefinitionRequirements,
-            CancellationToken.None);
-
-        await store.DidNotReceiveWithAnyArgs().InsertNotificationAsync(
-            default!,
-            default);
-        await store.Received(1).InsertUserNotificationsAsync(
-            Arg.Is<IReadOnlyCollection<UserNotificationInfo>>(rows =>
-                rows.Select(row => row.UserId).SequenceEqual(users)),
-            CancellationToken.None);
-        await eventBus.Received(2).PublishAsync(Arg.Any<NotificationDeliveryRequestedEto>());
-    }
-
-    [Fact]
-    public async Task Failure_metric_identifies_the_failed_pipeline_stage()
-    {
-        var store = Substitute.For<INotificationStore>();
-        var definitionManager = Substitute.For<INotificationDefinitionManager>();
-        var eventBus = Substitute.For<IDistributedEventBus>();
-        var evaluator = Substitute.For<INotificationRecipientEligibilityEvaluator>();
-        var notificationName = $"batch-failure-{Guid.NewGuid():N}";
-        definitionManager.Get(notificationName).Returns(
-            new NotificationDefinition(notificationName, new FixedLocalizableString("Failure")).UseChannels("Test"));
-        evaluator.EvaluateAsync(
-                notificationName,
-                Arg.Any<IReadOnlyCollection<Guid>>(),
-                null,
-                NotificationRecipientEligibilityMode.EnforceDefinitionRequirements,
-                Arg.Any<CancellationToken>())
-            .Returns(call =>
-            {
-                var candidates = call.ArgAt<IReadOnlyCollection<Guid>>(1).ToArray();
-                return new NotificationRecipientEligibilityResult(candidates, Array.Empty<Guid>());
-            });
-        store.InsertUserNotificationsAsync(
-                Arg.Any<IReadOnlyCollection<UserNotificationInfo>>(),
-                Arg.Any<CancellationToken>())
-            .Returns<Task>(_ => throw new InvalidOperationException("store failed"));
-
-        long failures = 0;
-        string? failedStage = null;
-        using var listener = new MeterListener
-        {
-            InstrumentPublished = (instrument, meterListener) =>
-            {
-                if (instrument.Name == NotificationDistributionMetrics.FailureCountName)
-                {
-                    meterListener.EnableMeasurementEvents(instrument);
-                }
-            }
-        };
-        listener.SetMeasurementEventCallback<long>((_, measurement, tags, _) =>
-        {
-            if (HasTag(tags, "notification.name", notificationName))
-            {
-                failures += measurement;
-                failedStage = GetTag(tags, "distribution.stage");
-            }
-        });
-        listener.Start();
-        var distributor = CreateDistributor(store, definitionManager, eventBus, evaluator);
-
-        await Should.ThrowAsync<InvalidOperationException>(() => distributor.DistributeAsync(
-            new NotificationInfo { Id = Guid.NewGuid(), NotificationName = notificationName },
-            new[] { Guid.NewGuid() }));
-
-        failures.ShouldBe(1);
-        failedStage.ShouldBe("persistence");
     }
 
     [Theory]
@@ -370,7 +174,7 @@ public class DefaultNotificationDistributorTests
     }
 
     [Fact]
-    public void Inline_threshold_cannot_create_an_unbounded_normalization_window()
+    public void Inline_threshold_cannot_exceed_the_batch_safeguard()
     {
         var options = new NotificationDistributionOptions
         {
@@ -569,155 +373,6 @@ public class DefaultNotificationDistributorTests
             Arg.Any<CancellationToken>());
     }
 
-    [Fact]
-    public async Task Explicit_and_subscription_candidates_flow_through_the_same_batch_evaluator()
-    {
-        var store = Substitute.For<INotificationStore>();
-        var definitionManager = Substitute.For<INotificationDefinitionManager>();
-        var eventBus = Substitute.For<IDistributedEventBus>();
-        var evaluator = Substitute.For<INotificationRecipientEligibilityEvaluator>();
-        definitionManager.Get("test").Returns(DefinitionWithChannels());
-
-        var explicitUser = Guid.NewGuid();
-        var subscribedUser = Guid.NewGuid();
-        store.GetSubscriptionUserIdsAsync(
-                "test", null, null, Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(call => call.ArgAt<Guid?>(3).HasValue
-                ? new List<Guid>()
-                : new List<Guid> { subscribedUser });
-        evaluator.EvaluateAsync(
-                "test",
-                Arg.Any<IReadOnlyCollection<Guid>>(),
-                null,
-                NotificationRecipientEligibilityMode.EnforceDefinitionRequirements,
-                Arg.Any<CancellationToken>())
-            .Returns(call =>
-            {
-                var candidates = call.ArgAt<IReadOnlyCollection<Guid>>(1).ToList();
-                return new NotificationRecipientEligibilityResult(candidates, Array.Empty<Guid>());
-            });
-
-        var distributor = CreateDistributor(store, definitionManager, eventBus, evaluator);
-
-        await distributor.DistributeAsync(
-            new NotificationInfo { Id = Guid.NewGuid(), NotificationName = "test" },
-            new[] { explicitUser });
-        await distributor.DistributeAsync(
-            new NotificationInfo { Id = Guid.NewGuid(), NotificationName = "test" });
-
-        await evaluator.Received(1).EvaluateAsync(
-            "test",
-            Arg.Is<IReadOnlyCollection<Guid>>(users => users.SequenceEqual(new[] { explicitUser })),
-            null,
-            NotificationRecipientEligibilityMode.EnforceDefinitionRequirements,
-            Arg.Any<CancellationToken>());
-        await evaluator.Received(1).EvaluateAsync(
-            "test",
-            Arg.Is<IReadOnlyCollection<Guid>>(users => users.SequenceEqual(new[] { subscribedUser })),
-            null,
-            NotificationRecipientEligibilityMode.EnforceDefinitionRequirements,
-            Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task Named_bypass_is_forwarded_only_for_explicit_recipients()
-    {
-        var store = Substitute.For<INotificationStore>();
-        var definitionManager = Substitute.For<INotificationDefinitionManager>();
-        var eventBus = Substitute.For<IDistributedEventBus>();
-        var evaluator = Substitute.For<INotificationRecipientEligibilityEvaluator>();
-        definitionManager.Get("test").Returns(DefinitionWithChannels());
-        var userId = Guid.NewGuid();
-        evaluator.EvaluateAsync(
-                "test",
-                Arg.Any<IReadOnlyCollection<Guid>>(),
-                null,
-                NotificationRecipientEligibilityMode.BypassDefinitionRequirements)
-            .Returns(new NotificationRecipientEligibilityResult(new[] { userId }, Array.Empty<Guid>()));
-
-        var logger = Substitute.For<ILogger<DefaultNotificationDistributor>>();
-        var distributor = CreateDistributor(store, definitionManager, eventBus, evaluator, logger: logger);
-
-        await distributor.DistributeToExplicitRecipientsWithoutEligibilityChecksAsync(
-            new NotificationInfo { Id = Guid.NewGuid(), NotificationName = "test" },
-            new[] { userId });
-
-        await evaluator.Received(1).EvaluateAsync(
-            "test",
-            Arg.Is<IReadOnlyCollection<Guid>>(users => users.SequenceEqual(new[] { userId })),
-            null,
-            NotificationRecipientEligibilityMode.BypassDefinitionRequirements);
-        await definitionManager.DidNotReceiveWithAnyArgs().IsAvailableAsync(default!, default);
-        logger.ReceivedCalls().Any(call =>
-            Equals(call.GetArguments().FirstOrDefault(), LogLevel.Warning)).ShouldBeTrue();
-    }
-
-    [Fact]
-    public async Task Direct_distribution_rejects_definition_contract_mismatch_before_side_effects()
-    {
-        var store = Substitute.For<INotificationStore>();
-        var definitionManager = Substitute.For<INotificationDefinitionManager>();
-        var eventBus = Substitute.For<IDistributedEventBus>();
-        definitionManager.Get("typed").Returns(
-            new NotificationDefinition("typed", new FixedLocalizableString("Typed"))
-                .WithPayload<MessageNotificationData>()
-                .UseChannels("Test"));
-        var dataOptions = new NotificationDataOptions();
-        dataOptions.Add<MessageNotificationData>();
-        dataOptions.Add<LocalizableMessageNotificationData>();
-        var distributor = CreateDistributor(
-            store,
-            definitionManager,
-            eventBus,
-            dataTypeRegistry: new NotificationDataTypeRegistry(Options.Create(dataOptions)));
-
-        var exception = await Should.ThrowAsync<AbpException>(() => distributor.DistributeAsync(
-            new NotificationInfo
-            {
-                Id = Guid.NewGuid(),
-                NotificationName = "typed",
-                Data = new LocalizableMessageNotificationData("Test", "Wrong"),
-                CreationTime = DateTime.UtcNow
-            },
-            new[] { Guid.NewGuid() }));
-
-        exception.Message.ShouldContain("Dignite.Message");
-        exception.Message.ShouldContain("Dignite.LocalizableMessage");
-        await store.DidNotReceiveWithAnyArgs().GetSubscriptionUserIdsAsync(
-            default!, default, default, default, default, default);
-        await store.DidNotReceiveWithAnyArgs().InsertNotificationAsync(default!);
-        await store.DidNotReceiveWithAnyArgs().InsertUserNotificationsAsync(default!, default);
-        await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<NotificationDeliveryRequestedEto>());
-    }
-
-    [Fact]
-    public async Task Direct_distribution_rejects_partial_raw_entity_identity_for_an_opted_in_contract()
-    {
-        var store = Substitute.For<INotificationStore>();
-        var definitionManager = Substitute.For<INotificationDefinitionManager>();
-        var eventBus = Substitute.For<IDistributedEventBus>();
-        definitionManager.Get("entity-aware").Returns(
-            new NotificationDefinition("entity-aware", new FixedLocalizableString("Entity aware"))
-                .WithEntityContract(NotificationEntityRequirement.Optional, "Demo.Order")
-                .UseChannels("Test"));
-        var distributor = CreateDistributor(store, definitionManager, eventBus);
-
-        var exception = await Should.ThrowAsync<AbpException>(() => distributor.DistributeAsync(
-            new NotificationInfo
-            {
-                Id = Guid.NewGuid(),
-                NotificationName = "entity-aware",
-                EntityTypeName = "Demo.Order",
-                EntityId = null,
-                CreationTime = DateTime.UtcNow
-            },
-            new[] { Guid.NewGuid() }));
-
-        exception.Message.ShouldContain("incomplete entity identity");
-        await store.DidNotReceiveWithAnyArgs().InsertNotificationAsync(default!);
-        await eventBus.DidNotReceiveWithAnyArgs().PublishAsync(Arg.Any<NotificationDeliveryRequestedEto>());
-    }
-
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -780,56 +435,21 @@ public class DefaultNotificationDistributorTests
         INotificationStore store,
         INotificationDefinitionManager definitionManager,
         IDistributedEventBus eventBus,
-        INotificationRecipientEligibilityEvaluator? evaluator = null,
         ICurrentTenant? currentTenant = null,
         ILogger<DefaultNotificationDistributor>? logger = null,
-        INotificationDataTypeRegistry? dataTypeRegistry = null,
         NotificationDistributionOptions? options = null)
     {
-        currentTenant ??= new TestCurrentTenant();
-        evaluator ??= new DefaultNotificationRecipientEligibilityEvaluator(
-            definitionManager,
-            currentTenant,
-            NullLogger<DefaultNotificationRecipientEligibilityEvaluator>.Instance);
-
         return new DefaultNotificationDistributor(
             store,
             definitionManager,
             eventBus,
-            evaluator,
-            currentTenant,
+            currentTenant ?? new TestCurrentTenant(),
             logger ?? NullLogger<DefaultNotificationDistributor>.Instance,
-            dataTypeRegistry ?? new NotificationDataTypeRegistry(
-                Options.Create(new NotificationDataOptions())),
             Options.Create(options ?? new NotificationDistributionOptions()));
-    }
-
-    private static bool HasTag(
-        ReadOnlySpan<KeyValuePair<string, object?>> tags,
-        string key,
-        string expectedValue)
-    {
-        return GetTag(tags, key) == expectedValue;
-    }
-
-    private static string? GetTag(
-        ReadOnlySpan<KeyValuePair<string, object?>> tags,
-        string key)
-    {
-        foreach (var tag in tags)
-        {
-            if (tag.Key == key)
-            {
-                return tag.Value?.ToString();
-            }
-        }
-
-        return null;
     }
 
     private static NotificationDefinition DefinitionWithChannels()
     {
         return new NotificationDefinition("test", new FixedLocalizableString("Test")).UseChannels("Test");
     }
-
 }

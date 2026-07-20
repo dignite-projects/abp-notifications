@@ -60,7 +60,7 @@ public class NotificationDeliveryRequestedHandler :
         catch (Exception exception)
         {
             // Best-effort delivery: log and move on so one channel failure does not poison the event. No recipient
-            // ids, exception messages, or payload fragments (invariants §9); operators correlate by notification id.
+            // ids, exception messages, or payload fragments (invariants §8); operators correlate by notification id.
             Logger.LogWarning(
                 "Notification delivery for notification {NotificationId} on channel {Channel} failed with exception type {ExceptionType}.",
                 eventData.NotificationId,

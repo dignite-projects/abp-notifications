@@ -40,8 +40,6 @@ public class NotificationStore : INotificationStore, ITransientDependency
 
     protected IAsyncQueryableExecuter AsyncExecuter { get; }
 
-    protected INotificationBatchPersistence BatchPersistence { get; }
-
     public NotificationStore(
         IRepository<Notification, Guid> notificationRepository,
         IRepository<UserNotification, Guid> userNotificationRepository,
@@ -51,29 +49,6 @@ public class NotificationStore : INotificationStore, ITransientDependency
         IClock clock,
         ICurrentTenant currentTenant,
         IAsyncQueryableExecuter asyncExecuter)
-        : this(
-            notificationRepository,
-            userNotificationRepository,
-            subscriptionRepository,
-            dataSerializer,
-            guidGenerator,
-            clock,
-            currentTenant,
-            asyncExecuter,
-            new NotificationBatchPersistence(userNotificationRepository))
-    {
-    }
-
-    public NotificationStore(
-        IRepository<Notification, Guid> notificationRepository,
-        IRepository<UserNotification, Guid> userNotificationRepository,
-        IRepository<NotificationSubscription, Guid> subscriptionRepository,
-        INotificationDataSerializer dataSerializer,
-        IGuidGenerator guidGenerator,
-        IClock clock,
-        ICurrentTenant currentTenant,
-        IAsyncQueryableExecuter asyncExecuter,
-        INotificationBatchPersistence batchPersistence)
     {
         NotificationRepository = notificationRepository;
         UserNotificationRepository = userNotificationRepository;
@@ -83,7 +58,6 @@ public class NotificationStore : INotificationStore, ITransientDependency
         Clock = clock;
         CurrentTenant = currentTenant;
         AsyncExecuter = asyncExecuter;
-        BatchPersistence = batchPersistence;
     }
 
     public virtual async Task InsertNotificationAsync(
@@ -119,54 +93,35 @@ public class NotificationStore : INotificationStore, ITransientDependency
             return;
         }
 
-        var remainingUserNotifications = userNotifications
+        var deduplicated = userNotifications
             .GroupBy(userNotification => new { userNotification.UserId, userNotification.NotificationId })
             .Select(group => group.First())
             .ToList();
 
-        while (remainingUserNotifications.Count > 0)
+        // One pre-check keeps a re-run of the same distribution (e.g. a retried background job) from
+        // violating the unique (UserId, NotificationId) inbox index.
+        var existingKeys = await GetExistingUserNotificationKeysAsync(deduplicated, cancellationToken);
+        var entities = deduplicated
+            .Where(userNotification => !existingKeys.Contains((
+                userNotification.UserId,
+                userNotification.NotificationId)))
+            .Select(userNotification => new UserNotification(
+                userNotification.Id == Guid.Empty ? GuidGenerator.Create() : userNotification.Id,
+                userNotification.UserId,
+                userNotification.NotificationId,
+                userNotification.State,
+                userNotification.CreationTime == default ? Clock.Now : userNotification.CreationTime,
+                userNotification.TenantId ?? CurrentTenant.Id))
+            .ToList();
+        if (entities.Count == 0)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var existingKeys = await GetExistingUserNotificationKeysAsync(
-                remainingUserNotifications,
-                cancellationToken);
-            var entities = remainingUserNotifications
-                .Where(userNotification => !existingKeys.Contains((
-                    userNotification.UserId,
-                    userNotification.NotificationId)))
-                .Select(userNotification => new UserNotification(
-                    userNotification.Id == Guid.Empty ? GuidGenerator.Create() : userNotification.Id,
-                    userNotification.UserId,
-                    userNotification.NotificationId,
-                    userNotification.State,
-                    userNotification.CreationTime == default ? Clock.Now : userNotification.CreationTime,
-                    userNotification.TenantId ?? CurrentTenant.Id))
-                .ToList();
-            if (entities.Count == 0)
-            {
-                return;
-            }
-
-            try
-            {
-                await BatchPersistence.InsertAsync(entities, cancellationToken);
-                return;
-            }
-            catch (Exception) when (!cancellationToken.IsCancellationRequested)
-            {
-                var committedKeys = await GetExistingUserNotificationKeysAsync(entities, cancellationToken);
-                if (committedKeys.Count == 0)
-                {
-                    throw;
-                }
-
-                remainingUserNotifications = remainingUserNotifications
-                    .Where(userNotification => !committedKeys.Contains((
-                        userNotification.UserId,
-                        userNotification.NotificationId)))
-                    .ToList();
-            }
+            return;
         }
+
+        await UserNotificationRepository.InsertManyAsync(
+            entities,
+            autoSave: true,
+            cancellationToken: cancellationToken);
     }
 
     protected virtual async Task<HashSet<(Guid UserId, Guid NotificationId)>> GetExistingUserNotificationKeysAsync(
@@ -178,30 +133,6 @@ public class NotificationStore : INotificationStore, ITransientDependency
             .Select(userNotification => userNotification.NotificationId)
             .Distinct()
             .ToList();
-        return await GetExistingUserNotificationKeysAsync(userIds, notificationIds, cancellationToken);
-    }
-
-    protected virtual async Task<HashSet<(Guid UserId, Guid NotificationId)>> GetExistingUserNotificationKeysAsync(
-        IReadOnlyCollection<UserNotification> userNotifications,
-        CancellationToken cancellationToken)
-    {
-        var userIds = userNotifications.Select(userNotification => userNotification.UserId).Distinct().ToList();
-        var notificationIds = userNotifications
-            .Select(userNotification => userNotification.NotificationId)
-            .Distinct()
-            .ToList();
-        return await GetExistingUserNotificationKeysAsync(userIds, notificationIds, cancellationToken);
-    }
-
-    protected virtual async Task<HashSet<(Guid UserId, Guid NotificationId)>> GetExistingUserNotificationKeysAsync(
-        IReadOnlyCollection<Guid> userIds,
-        IReadOnlyCollection<Guid> notificationIds,
-        CancellationToken cancellationToken)
-    {
-        if (userIds.Count == 0 || notificationIds.Count == 0)
-        {
-            return new HashSet<(Guid UserId, Guid NotificationId)>();
-        }
 
         var query = await UserNotificationRepository.GetQueryableAsync();
         var rows = await AsyncExecuter.ToListAsync(

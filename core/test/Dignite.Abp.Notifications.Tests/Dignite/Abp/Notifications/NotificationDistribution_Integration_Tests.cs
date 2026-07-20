@@ -143,48 +143,6 @@ public class NotificationDistribution_Integration_Tests : DigniteAbpNotification
     }
 
     [Fact]
-    public async Task Named_bypass_delivers_a_trusted_system_notification_and_is_tenant_scoped()
-    {
-        var tenantId = Guid.NewGuid();
-        var userId = Guid.NewGuid();
-
-        using (_currentTenant.Change(tenantId, "tenant"))
-        {
-            await _publisher.PublishToExplicitRecipientsWithoutEligibilityChecksAsync(
-                TestNotificationDefinitionProvider.DisabledFeatureGated,
-                new[] { userId },
-                new MessageNotificationData("system"));
-        }
-
-        var delivery = _received.Items.Single();
-        delivery.UserId.ShouldBe(userId);
-        delivery.TenantId.ShouldBe(tenantId);
-    }
-
-    [Fact]
-    public async Task Background_job_preserves_the_named_bypass_for_explicit_recipients()
-    {
-        var tenantId = Guid.NewGuid();
-        var users = Enumerable.Range(0, 6).Select(_ => Guid.NewGuid()).ToArray();
-
-        using (_currentTenant.Change(tenantId, "tenant"))
-        {
-            await _publisher.PublishToExplicitRecipientsWithoutEligibilityChecksAsync(
-                TestNotificationDefinitionProvider.DisabledFeatureGated,
-                users);
-        }
-
-        var args = _backgroundJobs.EnqueuedArgs.Single().ShouldBeOfType<NotificationDistributionJobArgs>();
-        args.RecipientEligibilityMode.ShouldBe(
-            NotificationRecipientEligibilityMode.BypassDefinitionRequirements);
-        await GetRequiredService<NotificationDistributionJob>().ExecuteAsync(args);
-
-        _received.Items.Select(item => item.UserId).ShouldBe(users, ignoreOrder: true);
-        _received.Items.ShouldAllBe(item => item.TenantId == tenantId);
-        _currentTenant.Id.ShouldBeNull();
-    }
-
-    [Fact]
     public void Definition_providers_are_auto_discovered()
     {
         _definitionManager.GetOrNull(TestNotificationDefinitionProvider.Plain).ShouldNotBeNull();

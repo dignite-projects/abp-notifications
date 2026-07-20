@@ -137,43 +137,6 @@ public class NotificationRegistration_Tests
     }
 
     [Fact]
-    public void Definition_contract_records_stable_payload_and_entity_metadata()
-    {
-        var definition = NewDefinition("Test.Contract")
-            .WithPayload<DistinctDataA>()
-            .WithPayload("Test.DistinctA")
-            .WithPayload<DistinctDataA>()
-            .WithEntityContract(NotificationEntityRequirement.Required, "Demo.Order");
-
-        definition.PayloadDiscriminator.ShouldBe("Test.DistinctA");
-        definition.EntityRequirement.ShouldBe(NotificationEntityRequirement.Required);
-        definition.ExpectedEntityTypeName.ShouldBe("Demo.Order");
-    }
-
-    [Fact]
-    public void Definition_contract_rejects_conflicting_reconfiguration()
-    {
-        Should.Throw<InvalidOperationException>(() =>
-            NewDefinition("Test.PayloadDiscriminatorConflict")
-                .WithPayload<DistinctDataA>()
-                .WithPayload<DistinctDataB>());
-        Should.Throw<InvalidOperationException>(() =>
-            NewDefinition("Test.PayloadTypeConflict")
-                .WithPayload<DuplicateDataA>()
-                .WithPayload<DuplicateDataB>());
-        Should.Throw<ArgumentOutOfRangeException>(() =>
-            NewDefinition("Test.Unspecified")
-                .WithEntityContract(NotificationEntityRequirement.Unspecified));
-        Should.Throw<ArgumentException>(() =>
-            NewDefinition("Test.Forbidden")
-                .WithEntityContract(NotificationEntityRequirement.Forbidden, "Demo.Order"));
-        Should.Throw<InvalidOperationException>(() =>
-            NewDefinition("Test.EntityConflict")
-                .WithEntityContract(NotificationEntityRequirement.Required, "Demo.Order")
-                .WithEntityContract(NotificationEntityRequirement.Optional, "Demo.Order"));
-    }
-
-    [Fact]
     public async Task Duplicate_definition_providers_fail_host_start_independent_of_provider_order()
     {
         var forward = await Should.ThrowAsync<InvalidOperationException>(
@@ -221,56 +184,22 @@ public class NotificationRegistration_Tests
     }
 
     [Fact]
-    public async Task Definition_referencing_unregistered_payload_discriminator_fails_host_start()
-    {
-        var exception = await Should.ThrowAsync<InvalidOperationException>(
-            () => StartHostAsync<UnregisteredPayloadContractStartupModule>());
-
-        exception.Message.ShouldContain("Test.UnregisteredPayloadContract");
-        exception.Message.ShouldContain("Test.Definition.Unregistered");
-        exception.Message.ShouldContain(nameof(NotificationDataOptions));
-    }
-
-    [Fact]
-    public async Task Definition_referencing_registered_payload_discriminator_allows_host_start()
-    {
-        await StartHostAsync<RegisteredPayloadContractStartupModule>();
-    }
-
-    [Fact]
-    public async Task Type_safe_payload_contract_cannot_be_weakened_by_string_repeat_in_either_order()
-    {
-        var genericFirst = await Should.ThrowAsync<InvalidOperationException>(
-            () => StartHostAsync<GenericThenStringPayloadContractStartupModule>());
-        var stringFirst = await Should.ThrowAsync<InvalidOperationException>(
-            () => StartHostAsync<StringThenGenericPayloadContractStartupModule>());
-
-        genericFirst.Message.ShouldBe(stringFirst.Message);
-        genericFirst.Message.ShouldContain("Test.OrderIndependentPayloadContract");
-        genericFirst.Message.ShouldContain("Test.Definition.Unregistered");
-        genericFirst.Message.ShouldContain(typeof(DefinitionContractData).FullName!);
-        genericFirst.Message.ShouldContain(typeof(DefinitionContractAliasData).FullName!);
-    }
-
-    [Fact]
     public async Task Invalid_distribution_batch_configuration_fails_host_start()
     {
         var exception = await Should.ThrowAsync<Exception>(
             () => StartHostAsync<InvalidDistributionBatchStartupModule>());
 
         exception.ToString().ShouldContain(nameof(NotificationDistributionOptions));
-        exception.ToString().ShouldContain(nameof(NotificationDistributionOptions.DeliveryWorkItemBatchSize));
+        exception.ToString().ShouldContain(nameof(NotificationDistributionOptions.RecipientBatchSize));
         exception.ToString().ShouldContain(NotificationDistributionOptions.MaxBatchSize.ToString());
     }
 
     [Fact]
-    public void Split_option_groups_preserve_existing_defaults()
+    public void Option_groups_preserve_existing_defaults()
     {
         var distribution = new NotificationDistributionOptions();
         distribution.DirectDistributionUserThreshold.ShouldBe(5);
         distribution.RecipientBatchSize.ShouldBe(256);
-        distribution.UserNotificationWriteBatchSize.ShouldBe(256);
-        distribution.DeliveryWorkItemBatchSize.ShouldBe(100);
 
         new NotificationDefinitionOptions().DefinitionProviders.ShouldBeEmpty();
         NotificationDistributionOptions.MaxBatchSize.ShouldBe(10_000);
@@ -293,7 +222,7 @@ public class NotificationRegistration_Tests
             .ShouldBe(1);
 
         var data = JsonSerializer.Deserialize<NotificationData>(
-            """{"type":"Other.Product.Payload","schemaVersion":7,"value":"opaque"}""",
+            """{"type":"Other.Product.Payload","value":"opaque"}""",
             serializerOptions);
 
         var unsupported = data.ShouldBeOfType<UnsupportedNotificationData>();
@@ -379,27 +308,6 @@ internal sealed class CaseSensitiveDataUpper : NotificationData
 [NotificationDataType("test.case")]
 internal sealed class CaseSensitiveDataLower : NotificationData
 {
-}
-
-[NotificationDataType("Test.Definition.Unregistered")]
-internal sealed class DefinitionContractData : NotificationData
-{
-}
-
-[NotificationDataType("Test.Definition.Unregistered")]
-internal sealed class DefinitionContractAliasData : NotificationData
-{
-}
-
-internal sealed class DefinitionContractProvider : INotificationDefinitionProvider
-{
-    public void Define(INotificationDefinitionContext context)
-    {
-        context.Add(new NotificationDefinition(
-                "Test.UnregisteredPayloadContract",
-                new FixedLocalizableString("Payload contract"))
-            .WithPayload<DefinitionContractData>());
-    }
 }
 
 internal sealed class ProviderDependencyDefinitionProvider : INotificationDefinitionProvider
@@ -512,83 +420,12 @@ public class ValidRegistrationsStartupModule : AbpModule
 }
 
 [DependsOn(typeof(AbpNotificationsModule))]
-public class UnregisteredPayloadContractStartupModule : AbpModule
-{
-    public override void ConfigureServices(ServiceConfigurationContext context)
-    {
-        context.Services.AddTransient<DefinitionContractProvider>();
-        Configure<NotificationDefinitionOptions>(options =>
-            options.DefinitionProviders.Add(typeof(DefinitionContractProvider)));
-    }
-}
-
-internal sealed class GenericThenStringPayloadContractProvider : INotificationDefinitionProvider
-{
-    public void Define(INotificationDefinitionContext context)
-    {
-        context.Add(new NotificationDefinition(
-                "Test.OrderIndependentPayloadContract",
-                new FixedLocalizableString("Order-independent payload contract"))
-            .WithPayload<DefinitionContractData>()
-            .WithPayload("Test.Definition.Unregistered"));
-    }
-}
-
-internal sealed class StringThenGenericPayloadContractProvider : INotificationDefinitionProvider
-{
-    public void Define(INotificationDefinitionContext context)
-    {
-        context.Add(new NotificationDefinition(
-                "Test.OrderIndependentPayloadContract",
-                new FixedLocalizableString("Order-independent payload contract"))
-            .WithPayload("Test.Definition.Unregistered")
-            .WithPayload<DefinitionContractData>());
-    }
-}
-
-[DependsOn(typeof(AbpNotificationsModule))]
-public class RegisteredPayloadContractStartupModule : AbpModule
-{
-    public override void ConfigureServices(ServiceConfigurationContext context)
-    {
-        context.Services.AddTransient<DefinitionContractProvider>();
-        Configure<NotificationDefinitionOptions>(options =>
-            options.DefinitionProviders.Add(typeof(DefinitionContractProvider)));
-        Configure<NotificationDataOptions>(options => options.Add<DefinitionContractData>());
-    }
-}
-
-[DependsOn(typeof(AbpNotificationsModule))]
-public class GenericThenStringPayloadContractStartupModule : AbpModule
-{
-    public override void ConfigureServices(ServiceConfigurationContext context)
-    {
-        context.Services.AddTransient<GenericThenStringPayloadContractProvider>();
-        Configure<NotificationDefinitionOptions>(options =>
-            options.DefinitionProviders.Add(typeof(GenericThenStringPayloadContractProvider)));
-        Configure<NotificationDataOptions>(options => options.Add<DefinitionContractAliasData>());
-    }
-}
-
-[DependsOn(typeof(AbpNotificationsModule))]
-public class StringThenGenericPayloadContractStartupModule : AbpModule
-{
-    public override void ConfigureServices(ServiceConfigurationContext context)
-    {
-        context.Services.AddTransient<StringThenGenericPayloadContractProvider>();
-        Configure<NotificationDefinitionOptions>(options =>
-            options.DefinitionProviders.Add(typeof(StringThenGenericPayloadContractProvider)));
-        Configure<NotificationDataOptions>(options => options.Add<DefinitionContractAliasData>());
-    }
-}
-
-[DependsOn(typeof(AbpNotificationsModule))]
 public class InvalidDistributionBatchStartupModule : AbpModule
 {
     public override void ConfigureServices(ServiceConfigurationContext context)
     {
         Configure<NotificationDistributionOptions>(options =>
-            options.DeliveryWorkItemBatchSize = NotificationDistributionOptions.MaxBatchSize + 1);
+            options.RecipientBatchSize = NotificationDistributionOptions.MaxBatchSize + 1);
     }
 }
 
