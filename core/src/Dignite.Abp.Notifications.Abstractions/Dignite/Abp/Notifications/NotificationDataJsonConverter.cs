@@ -7,33 +7,20 @@ namespace Dignite.Abp.Notifications;
 
 /// <summary>
 /// Polymorphic (de)serializer for <see cref="NotificationData"/>. It owns the stable <c>type</c> discriminator
-/// envelope and never resolves CLR names from JSON. The one-argument constructor remains strict; durable/event/HTTP
-/// boundaries explicitly opt into tolerant reads that fall back to <see cref="UnsupportedNotificationData"/>.
+/// envelope and never resolves CLR names from JSON. Reads are always tolerant: an unknown discriminator or a
+/// malformed known payload becomes <see cref="UnsupportedNotificationData"/> instead of throwing, so one bad
+/// payload cannot break a whole page/event. Writing an unregistered CLR type still throws.
 /// </summary>
 public sealed class NotificationDataJsonConverter : JsonConverter<NotificationData>
 {
     public const string DiscriminatorPropertyName = "type";
 
     private readonly INotificationDataTypeRegistry _registry;
-    private readonly NotificationDataReadMode _readMode;
     private JsonSerializerOptions? _innerOptions;
 
     public NotificationDataJsonConverter(INotificationDataTypeRegistry registry)
-        : this(registry, NotificationDataReadMode.Strict)
     {
-    }
-
-    public NotificationDataJsonConverter(
-        INotificationDataTypeRegistry registry,
-        NotificationDataReadMode readMode)
-    {
-        if (!Enum.IsDefined(typeof(NotificationDataReadMode), readMode))
-        {
-            throw new ArgumentOutOfRangeException(nameof(readMode), readMode, "Specify Strict or Tolerant.");
-        }
-
         _registry = registry;
-        _readMode = readMode;
     }
 
     public override bool CanConvert(Type typeToConvert)
@@ -56,13 +43,9 @@ public sealed class NotificationDataJsonConverter : JsonConverter<NotificationDa
         {
             document = JsonDocument.ParseValue(ref reader);
         }
-        catch (JsonException exception)
+        catch (JsonException)
         {
-            return HandleFailure(
-                UnsupportedNotificationDataReason.MalformedPayload,
-                "NotificationData JSON is malformed.",
-                rawJson: string.Empty,
-                innerException: exception);
+            return HandleFailure(UnsupportedNotificationDataReason.MalformedPayload, rawJson: string.Empty);
         }
 
         using (document)
@@ -71,31 +54,21 @@ public sealed class NotificationDataJsonConverter : JsonConverter<NotificationDa
             var rawJson = root.GetRawText();
             if (root.ValueKind != JsonValueKind.Object)
             {
-                return HandleFailure(
-                    UnsupportedNotificationDataReason.MalformedPayload,
-                    "NotificationData JSON must be an object.",
-                    rawJson);
+                return HandleFailure(UnsupportedNotificationDataReason.MalformedPayload, rawJson);
             }
 
             if (!root.TryGetProperty(DiscriminatorPropertyName, out var typeElement) ||
                 typeElement.ValueKind != JsonValueKind.String ||
                 string.IsNullOrWhiteSpace(typeElement.GetString()))
             {
-                return HandleFailure(
-                    UnsupportedNotificationDataReason.MalformedPayload,
-                    $"NotificationData JSON is missing a non-empty string '{DiscriminatorPropertyName}' discriminator.",
-                    rawJson);
+                return HandleFailure(UnsupportedNotificationDataReason.MalformedPayload, rawJson);
             }
 
             var discriminator = typeElement.GetString()!;
             var clrType = _registry.GetTypeOrNull(discriminator);
             if (clrType == null)
             {
-                return HandleFailure(
-                    UnsupportedNotificationDataReason.UnknownDiscriminator,
-                    $"Unknown notification data type '{discriminator}'. Register it via NotificationDataOptions.",
-                    rawJson,
-                    discriminator);
+                return HandleFailure(UnsupportedNotificationDataReason.UnknownDiscriminator, rawJson, discriminator);
             }
 
             JsonObject payload;
@@ -108,12 +81,7 @@ public sealed class NotificationDataJsonConverter : JsonConverter<NotificationDa
                 exception is InvalidOperationException ||
                 exception is ArgumentException)
             {
-                return HandleFailure(
-                    UnsupportedNotificationDataReason.MalformedPayload,
-                    $"Notification data '{discriminator}' could not be read as a JSON object.",
-                    rawJson,
-                    discriminator,
-                    exception);
+                return HandleFailure(UnsupportedNotificationDataReason.MalformedPayload, rawJson, discriminator);
             }
 
             try
@@ -131,12 +99,7 @@ public sealed class NotificationDataJsonConverter : JsonConverter<NotificationDa
             }
             catch (Exception exception) when (IsRecoverableReadException(exception))
             {
-                return HandleFailure(
-                    UnsupportedNotificationDataReason.MalformedPayload,
-                    $"Notification data '{discriminator}' is malformed for the registered model.",
-                    rawJson,
-                    discriminator,
-                    exception);
+                return HandleFailure(UnsupportedNotificationDataReason.MalformedPayload, rawJson, discriminator);
             }
         }
     }
@@ -174,18 +137,11 @@ public sealed class NotificationDataJsonConverter : JsonConverter<NotificationDa
         writer.WriteEndObject();
     }
 
-    private NotificationData HandleFailure(
+    private static UnsupportedNotificationData HandleFailure(
         UnsupportedNotificationDataReason reason,
-        string message,
         string rawJson,
-        string? discriminator = null,
-        Exception? innerException = null)
+        string? discriminator = null)
     {
-        if (_readMode == NotificationDataReadMode.Strict)
-        {
-            throw new NotificationDataReadException(reason, message, discriminator, innerException);
-        }
-
         return new UnsupportedNotificationData
         {
             OriginalDiscriminator = discriminator,
@@ -210,7 +166,8 @@ public sealed class NotificationDataJsonConverter : JsonConverter<NotificationDa
         return payload;
     }
 
-    private static bool IsRecoverableReadException(Exception exception)
+    /// <summary>Shared with <see cref="NotificationDataSerializer"/>'s own top-level read guard.</summary>
+    internal static bool IsRecoverableReadException(Exception exception)
     {
         return exception is not OperationCanceledException &&
                exception is not OutOfMemoryException &&

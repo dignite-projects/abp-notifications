@@ -428,7 +428,7 @@ public class NotificationStore : INotificationStore, ITransientDependency
 
     protected virtual NotificationData? DeserializeDurableData(string? json)
     {
-        return DataSerializer.Deserialize(json, NotificationDataReadMode.Tolerant);
+        return DataSerializer.Deserialize(json);
     }
 
     protected virtual NotificationSubscriptionInfo MapToSubscriptionInfo(NotificationSubscription s)

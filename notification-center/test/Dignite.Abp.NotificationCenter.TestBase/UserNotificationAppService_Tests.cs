@@ -109,8 +109,7 @@ public abstract class UserNotificationAppService_Tests<TStartupModule> : Notific
 
                 var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
                 options.Converters.Add(new NotificationDataJsonConverter(
-                    GetRequiredService<INotificationDataTypeRegistry>(),
-                    NotificationDataReadMode.Tolerant));
+                    GetRequiredService<INotificationDataTypeRegistry>()));
                 var restJson = JsonSerializer.Serialize(dto, options);
                 restJson.ShouldContain("\"type\":\"Dignite.Unsupported\"");
                 restJson.ShouldContain("\"originalDiscriminator\":\"Removed.Module.Payload\"");

@@ -26,12 +26,15 @@ Newtonsoft.Json anywhere in this pipeline.
 - The payload envelope carries only the stable `type` discriminator — no `schemaVersion`, no upcaster chain.
   (An earlier design added event-sourcing-style schema versioning + N→N+1 upcasters; it was removed as
   over-engineering — notifications are read-once, not a replayable event stream. Don't reintroduce it.)
-- Trusted reads stay strict and expose a typed failure reason. Durable inbox, distributed-event, and HTTP reads
-  are tolerant: unknown discriminators and malformed known data become `UnsupportedNotificationData`. A newer
-  payload of a *known* type reads leniently (extra members land in `ExtensionData`). Preserve raw JSON only as
-  escaped diagnostic data; never interpret it as a CLR name or show it in the fallback UI.
-- Use the canonical `INotificationDataSerializer.Deserialize(json, readMode)`. Do not reintroduce optional
-  reader capability probes or a schema-evolution/upcaster registry.
+- Every read is tolerant: unknown discriminators and malformed known data become `UnsupportedNotificationData`
+  instead of throwing. A newer payload of a *known* type reads leniently (extra members land in
+  `ExtensionData`). Preserve raw JSON only as escaped diagnostic data; never interpret it as a CLR name or show
+  it in the fallback UI.
+- Use the canonical `INotificationDataSerializer.Deserialize(json)`. Do not reintroduce optional reader
+  capability probes, a schema-evolution/upcaster registry, or a strict-vs-tolerant read-mode switch — an
+  earlier design had one (`NotificationDataReadMode.Strict` + `NotificationDataReadException`), but every real
+  read boundary (durable inbox, distributed-event, HTTP) already chose tolerant, so strict mode was unreachable
+  dead API surface. Writing an unregistered CLR type still throws `JsonException` — that fail-fast stays.
 - **Why**: the legacy implementation wrote with System.Text.Json + `AssemblyQualifiedName`, read
   back with Newtonsoft + `Type.GetType()`, and had a separate hardcoded switch (only 2 types) in
   the HTTP client converter. Result: an assembly version bump could make historical notifications

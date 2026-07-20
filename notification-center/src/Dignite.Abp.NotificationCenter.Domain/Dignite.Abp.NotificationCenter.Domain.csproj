@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Dignite.Abp.NotificationCenter.TestBase" />
+    <InternalsVisibleTo Include="Dignite.Abp.NotificationCenter.Tests" />
   </ItemGroup>
 
 </Project>

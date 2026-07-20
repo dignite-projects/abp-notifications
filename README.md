@@ -424,14 +424,13 @@ over-engineering, since notifications are read-once, not a replayable event stre
 shape, prefer adding members: a newer payload of a *known* type reads leniently, with unknown members landing in
 `ExtensionData`.
 
-`INotificationDataSerializer.Deserialize(json, readMode)` is the single programmatic read boundary. Callers select
-`NotificationDataReadMode.Strict` for trusted/corruption-sensitive reads or `Tolerant` for durable and batch reads.
-Strict mode throws a typed `NotificationDataReadException`. Notification Center inbox reads, distributed-event
-deserialization, and HTTP server/client converters use tolerant mode: an unknown discriminator or malformed known
-payload becomes `UnsupportedNotificationData`, preserving the original discriminator and escaped raw JSON without
-activating an arbitrary CLR type. One bad historical row therefore cannot fail the rest of an inbox page. The MVC
-and Angular libraries render this placeholder as a generic unsupported-notification message and do not display its
-raw diagnostic JSON.
+`INotificationDataSerializer.Deserialize(json)` is the single programmatic read boundary, and every read through
+it is tolerant: an unknown discriminator or malformed known payload becomes `UnsupportedNotificationData`,
+preserving the original discriminator and escaped raw JSON without activating an arbitrary CLR type, instead of
+throwing. One bad historical row therefore cannot fail the rest of an inbox page. Notification Center inbox reads,
+distributed-event deserialization, and HTTP server/client converters all go through this same tolerant path. The
+MVC and Angular libraries render the placeholder as a generic unsupported-notification message and do not display
+its raw diagnostic JSON. Writing an unregistered CLR type still throws — that fail-fast is unconditional.
 
 **3. Register the notification definition** through an `INotificationDefinitionProvider` — its name,
 display text, optional feature/permission gating, and explicit channel routing:

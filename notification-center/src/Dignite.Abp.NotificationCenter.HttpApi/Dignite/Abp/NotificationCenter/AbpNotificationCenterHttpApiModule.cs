@@ -36,8 +36,7 @@ public class AbpNotificationCenterHttpApiModule : AbpModule
             .AddOptions<JsonOptions>()
             .Configure<INotificationDataTypeRegistry>((options, registry) =>
             {
-                options.JsonSerializerOptions.Converters.Add(
-                    new NotificationDataJsonConverter(registry, NotificationDataReadMode.Tolerant));
+                options.JsonSerializerOptions.Converters.Add(new NotificationDataJsonConverter(registry));
             });
     }
 }
