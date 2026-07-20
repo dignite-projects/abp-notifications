@@ -45,7 +45,7 @@ abp-notifications/
     │   └── Dignite.Abp.NotificationCenter.MongoDB/           # INotificationStore impl #2 (document)
     └── test/
         ├── Dignite.Abp.NotificationCenter.TestBase/       # shared provider-agnostic test scenarios (abstract *_Tests<TModule>)
-        ├── Dignite.Abp.NotificationCenter.Tests/          # EF Core / in-memory Sqlite provider + EF-only outbox test
+        ├── Dignite.Abp.NotificationCenter.Tests/          # EF Core / in-memory Sqlite provider
         └── Dignite.Abp.NotificationCenter.MongoDB.Tests/  # MongoDB provider (embedded mongod via MongoSandbox)
 ```
 
