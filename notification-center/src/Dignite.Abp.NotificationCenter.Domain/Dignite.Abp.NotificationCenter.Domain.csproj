@@ -7,19 +7,12 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Volo.Abp.BackgroundWorkers" />
-    <PackageReference Include="Volo.Abp.DistributedLocking.Abstractions" />
     <PackageReference Include="Volo.Abp.Ddd.Domain" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Dignite.Abp.NotificationCenter.Domain.Shared\Dignite.Abp.NotificationCenter.Domain.Shared.csproj" />
     <ProjectReference Include="..\..\..\core\src\Dignite.Abp.Notifications\Dignite.Abp.Notifications.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <InternalsVisibleTo Include="Dignite.Abp.NotificationCenter.TestBase" />
-    <InternalsVisibleTo Include="Dignite.Abp.NotificationCenter.Tests" />
   </ItemGroup>
 
 </Project>
