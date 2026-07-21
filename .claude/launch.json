@@ -4,7 +4,7 @@
     {
       "name": "web-host",
       "runtimeExecutable": "dotnet",
-      "runtimeArgs": ["run", "--project", "host/Dignite.Abp.NotificationCenter.Web.Host"],
+      "runtimeArgs": ["run", "--project", "host/Dignite.NotificationCenter.Web.Host"],
       "port": 44380
     },
     {

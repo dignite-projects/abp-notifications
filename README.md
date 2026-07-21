@@ -51,14 +51,14 @@ Core:
 
 | Package | Purpose |
 |---|---|
-| `Dignite.Abp.NotificationCenter.Domain.Shared` | Enums / constants (`NotificationSeverity`, `UserNotificationState`). |
-| `Dignite.Abp.NotificationCenter.Domain` | Aggregates: `Notification`, `UserNotification`, `NotificationSubscription`. |
-| `Dignite.Abp.NotificationCenter.Application` / `.Application.Contracts` | Inbox / subscription app service + DTOs. |
-| `Dignite.Abp.NotificationCenter.HttpApi` | REST controllers at `/api/notification-center`. |
-| `Dignite.Abp.NotificationCenter.HttpApi.Client` | C# client proxies for remote consumers. |
-| `Dignite.Abp.NotificationCenter.EntityFrameworkCore` | `INotificationStore` on EF Core (+ `NotificationCenterDbContext`). |
-| `Dignite.Abp.NotificationCenter.MongoDB` | `INotificationStore` on MongoDB. |
-| `Dignite.Abp.NotificationCenter.Web` | MVC UI: notification-bell view component + subscriptions page. |
+| `Dignite.NotificationCenter.Domain.Shared` | Enums / constants (`NotificationSeverity`, `UserNotificationState`). |
+| `Dignite.NotificationCenter.Domain` | Aggregates: `Notification`, `UserNotification`, `NotificationSubscription`. |
+| `Dignite.NotificationCenter.Application` / `.Application.Contracts` | Inbox / subscription app service + DTOs. |
+| `Dignite.NotificationCenter.HttpApi` | REST controllers at `/api/notification-center`. |
+| `Dignite.NotificationCenter.HttpApi.Client` | C# client proxies for remote consumers. |
+| `Dignite.NotificationCenter.EntityFrameworkCore` | `INotificationStore` on EF Core (+ `NotificationCenterDbContext`). |
+| `Dignite.NotificationCenter.MongoDB` | `INotificationStore` on MongoDB. |
+| `Dignite.NotificationCenter.Web` | MVC UI: notification-bell view component + subscriptions page. |
 | `notification-center` (Angular, `angular/projects/`) | Angular UI: proxy service + bell & subscriptions components. |
 
 > Core never references the Notification Center — the two trees are independently installable, and
@@ -92,21 +92,21 @@ dotnet add path/to/MyApp.csproj package Dignite.Abp.Notifications.Emailing.Ident
 
 ```bash
 dotnet add path/to/MyApp.csproj package Dignite.Abp.Notifications.SignalR --version 10.0.0-rc.2
-dotnet add path/to/MyApp.csproj package Dignite.Abp.NotificationCenter.Application --version 10.0.0-rc.2
-dotnet add path/to/MyApp.csproj package Dignite.Abp.NotificationCenter.HttpApi --version 10.0.0-rc.2
-dotnet add path/to/MyApp.csproj package Dignite.Abp.NotificationCenter.EntityFrameworkCore --version 10.0.0-rc.2
-dotnet add path/to/MyApp.csproj package Dignite.Abp.NotificationCenter.Web --version 10.0.0-rc.2
+dotnet add path/to/MyApp.csproj package Dignite.NotificationCenter.Application --version 10.0.0-rc.2
+dotnet add path/to/MyApp.csproj package Dignite.NotificationCenter.HttpApi --version 10.0.0-rc.2
+dotnet add path/to/MyApp.csproj package Dignite.NotificationCenter.EntityFrameworkCore --version 10.0.0-rc.2
+dotnet add path/to/MyApp.csproj package Dignite.NotificationCenter.Web --version 10.0.0-rc.2
 ```
 
-`Dignite.Abp.NotificationCenter.Web` is optional. For MongoDB, replace
-`Dignite.Abp.NotificationCenter.EntityFrameworkCore` with
-`Dignite.Abp.NotificationCenter.MongoDB`. Permission gating and active-user audience paging through
+`Dignite.NotificationCenter.Web` is optional. For MongoDB, replace
+`Dignite.NotificationCenter.EntityFrameworkCore` with
+`Dignite.NotificationCenter.MongoDB`. Permission gating and active-user audience paging through
 `Dignite.Abp.Notifications.Identity` are also optional.
 
 For an Angular host, install the version-matched UI library:
 
 ```bash
-npm install @dignite/abp.ng.notification-center@10.0.0-rc.2
+npm install @dignite/ng.notification-center@10.0.0-rc.2
 ```
 
 Then follow [The two operation modes](#the-two-operation-modes) for the module dependencies and
@@ -116,7 +116,7 @@ end-to-end notification.
 ## Upgrading from legacy 3.x
 
 `10.x` is a from-scratch rewrite of the legacy `Dignite.Abp.Notifications*` and
-`Dignite.Abp.NotificationCenter*` packages, not an in-place compatible upgrade. The major version
+`Dignite.NotificationCenter*` packages, not an in-place compatible upgrade. The major version
 tracks the targeted ABP Framework major and also ensures that this implementation supersedes the
 legacy `3.8.2` packages on NuGet.org.
 
@@ -163,10 +163,10 @@ persistent per-user inbox, subscriptions, read/unread state, and the `/api/notif
     // typeof(AbpNotificationsEmailingModule),                  // optional: email channel
     // typeof(AbpNotificationsEmailingIdentityModule),          // optional: UserId -> Email via ABP Identity
     typeof(AbpNotificationsIdentityModule),                    // optional: permission gating
-    typeof(AbpNotificationCenterApplicationModule),            // inbox / subscription logic
-    typeof(AbpNotificationCenterHttpApiModule),                // REST API at /api/notification-center
-    typeof(AbpNotificationCenterEntityFrameworkCoreModule),    // persistence (or ...MongoDbModule)
-    typeof(AbpNotificationCenterWebModule)                     // optional: MVC bell + subscriptions UI
+    typeof(NotificationCenterApplicationModule),            // inbox / subscription logic
+    typeof(NotificationCenterHttpApiModule),                // REST API at /api/notification-center
+    typeof(NotificationCenterEntityFrameworkCoreModule),    // persistence (or ...MongoDbModule)
+    typeof(NotificationCenterWebModule)                     // optional: MVC bell + subscriptions UI
 )]
 public class MyHostModule : AbpModule { }
 ```
@@ -680,7 +680,7 @@ definition registry and availability policy; startup resolves that replacement b
 
 ## UI libraries (optional)
 
-- **MVC** (`Dignite.Abp.NotificationCenter.Web`): a notification-bell view component and a
+- **MVC** (`Dignite.NotificationCenter.Web`): a notification-bell view component and a
   subscriptions page. Configure the hub URL and per-type rendering via `NotificationCenterWebOptions`
   — `SignalRHubUrl`, `DataViewComponents` (keyed by discriminator), and `EntityLinkResolvers`.
 - **Angular** (`angular/projects/notification-center`): an ABP-generated proxy service plus bell and
@@ -789,7 +789,7 @@ EF Core integration tests run on in-memory Sqlite and MongoDB tests on an embedd
 + MVC UI) end-to-end, with a demo notification type and a publish button:
 
 ```bash
-dotnet run --project host/Dignite.Abp.NotificationCenter.Web.Host
+dotnet run --project host/Dignite.NotificationCenter.Web.Host
 ```
 
 The `angular/` workspace consumes the same API for the Angular demo.

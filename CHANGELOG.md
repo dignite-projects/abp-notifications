@@ -39,6 +39,9 @@ changes.
 
 ### Changed
 
+- **Breaking NotificationCenter package-family rename before 10.0.0 stable.** The optional Notification Center
+  packages, namespaces, and module class names now use `Dignite.NotificationCenter*` instead of
+  `Dignite.Abp.NotificationCenter*`. This is a naming-only change with no functional behavior change.
 - **Breaking application/domain API alignment before 10.0.0 stable.** Current-user inbox services are now
   `IUserNotificationAppService` / `UserNotificationAppService`, and `GetCountAsync` is `GetNotificationCountAsync`.
   Pass-through manager interfaces and `UserNotificationManager` were removed; application reads now use
@@ -84,7 +87,7 @@ changes.
 
 ### Changed
 
-- Renamed the Angular package to `@dignite/abp.ng.notification-center`, making the UI framework
+- Renamed the Angular package to `@dignite/ng.notification-center`, making the UI framework
   explicit and leaving room for parallel React or other client packages.
 - Clarified that npm requires every package to have a `latest` dist-tag, so a package whose first
   public version is a pre-release temporarily exposes that version as both `next` and `latest`.

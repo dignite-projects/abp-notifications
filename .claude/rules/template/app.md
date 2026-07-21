@@ -35,18 +35,18 @@ abp-notifications/
 │   └── test/Dignite.Abp.Notifications.Tests/
 └── notification-center/
     ├── src/
-    │   ├── Dignite.Abp.NotificationCenter.Domain.Shared/     # constants, enums (NotificationSeverity, UserNotificationState)
-    │   ├── Dignite.Abp.NotificationCenter.Domain/            # Notification / UserNotification / NotificationSubscription aggregates
-    │   ├── Dignite.Abp.NotificationCenter.Application.Contracts/  # DTOs, service interfaces, permissions
-    │   ├── Dignite.Abp.NotificationCenter.Application/       # AppService implementations
-    │   ├── Dignite.Abp.NotificationCenter.HttpApi/           # Auto API Controllers
-    │   ├── Dignite.Abp.NotificationCenter.HttpApi.Client/    # C# client proxies for remote consumers
-    │   ├── Dignite.Abp.NotificationCenter.EntityFrameworkCore/  # INotificationStore impl #1 (relational)
-    │   └── Dignite.Abp.NotificationCenter.MongoDB/           # INotificationStore impl #2 (document)
+    │   ├── Dignite.NotificationCenter.Domain.Shared/     # constants, enums (NotificationSeverity, UserNotificationState)
+    │   ├── Dignite.NotificationCenter.Domain/            # Notification / UserNotification / NotificationSubscription aggregates
+    │   ├── Dignite.NotificationCenter.Application.Contracts/  # DTOs, service interfaces, permissions
+    │   ├── Dignite.NotificationCenter.Application/       # AppService implementations
+    │   ├── Dignite.NotificationCenter.HttpApi/           # Auto API Controllers
+    │   ├── Dignite.NotificationCenter.HttpApi.Client/    # C# client proxies for remote consumers
+    │   ├── Dignite.NotificationCenter.EntityFrameworkCore/  # INotificationStore impl #1 (relational)
+    │   └── Dignite.NotificationCenter.MongoDB/           # INotificationStore impl #2 (document)
     └── test/
-        ├── Dignite.Abp.NotificationCenter.TestBase/       # shared provider-agnostic test scenarios (abstract *_Tests<TModule>)
-        ├── Dignite.Abp.NotificationCenter.Tests/          # EF Core / in-memory Sqlite provider
-        └── Dignite.Abp.NotificationCenter.MongoDB.Tests/  # MongoDB provider (embedded mongod via MongoSandbox)
+        ├── Dignite.NotificationCenter.TestBase/       # shared provider-agnostic test scenarios (abstract *_Tests<TModule>)
+        ├── Dignite.NotificationCenter.EntityFrameworkCore.Tests/ # EF Core / in-memory Sqlite provider
+        └── Dignite.NotificationCenter.MongoDB.Tests/  # MongoDB provider (embedded mongod via MongoSandbox)
 ```
 
 ## File layout convention

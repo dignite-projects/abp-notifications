@@ -15,10 +15,10 @@
     "target": "ES2022",
     "lib": ["ES2022", "dom", "esnext.disposable"],
     "paths": {
-      "@dignite/abp.ng.notification-center": [
+      "@dignite/ng.notification-center": [
         "projects/notification-center/src/public-api.ts"
       ],
-      "@dignite/abp.ng.notification-center/config": [
+      "@dignite/ng.notification-center/config": [
         "projects/notification-center/config/src/public-api.ts"
       ]
     },

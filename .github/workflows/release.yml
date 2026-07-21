@@ -80,10 +80,10 @@ jobs:
         run: dotnet test core/test/Dignite.Abp.Notifications.Tests/Dignite.Abp.Notifications.Tests.csproj --no-build --configuration Release --verbosity normal
 
       - name: Run NotificationCenter (EF Core) tests
-        run: dotnet test notification-center/test/Dignite.Abp.NotificationCenter.Tests/Dignite.Abp.NotificationCenter.Tests.csproj --no-build --configuration Release --verbosity normal
+        run: dotnet test notification-center/test/Dignite.NotificationCenter.EntityFrameworkCore.Tests/Dignite.NotificationCenter.EntityFrameworkCore.Tests.csproj --no-build --configuration Release --verbosity normal
 
       - name: Run NotificationCenter (MongoDB) tests
-        run: dotnet test notification-center/test/Dignite.Abp.NotificationCenter.MongoDB.Tests/Dignite.Abp.NotificationCenter.MongoDB.Tests.csproj --no-build --configuration Release --verbosity normal
+        run: dotnet test notification-center/test/Dignite.NotificationCenter.MongoDB.Tests/Dignite.NotificationCenter.MongoDB.Tests.csproj --no-build --configuration Release --verbosity normal
 
       # Projects with IsPackable=false (host/ and the 4 test projects) are skipped automatically.
       # Only the 15 packable projects under core/src and notification-center/src are produced.

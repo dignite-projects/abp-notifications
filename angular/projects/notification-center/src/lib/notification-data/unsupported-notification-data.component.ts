@@ -9,7 +9,7 @@ import { NotificationDataPayload } from './notification-data-payload';
   imports: [LocalizationPipe],
   template: `
     <p class="abp-notification-item-message abp-notification-item-unsupported text-muted">
-      {{ 'AbpNotificationCenter::UnsupportedNotification' | abpLocalization }}
+      {{ 'NotificationCenter::UnsupportedNotification' | abpLocalization }}
     </p>
   `,
 })

@@ -1,6 +1,6 @@
 import { SettingTabsService } from '@abp/ng.setting-management/config';
 import { inject, provideAppInitializer } from '@angular/core';
-import { NotificationSubscriptionsComponent } from '@dignite/abp.ng.notification-center';
+import { NotificationSubscriptionsComponent } from '@dignite/ng.notification-center';
 
 /**
  * Adds a "Subscriptions" tab to the shared Settings page (see
@@ -18,7 +18,7 @@ export function configureSettingTabs() {
 
   settingTabs.add([
     {
-      name: 'AbpNotificationCenter::Subscriptions',
+      name: 'NotificationCenter::Subscriptions',
       order: 100,
       component: NotificationSubscriptionsComponent,
     },

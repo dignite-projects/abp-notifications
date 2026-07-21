@@ -1139,13 +1139,13 @@
       "rootPath": "app",
       "remoteServiceName": "Default",
       "controllers": {
-        "Dignite.Abp.NotificationCenter.Web.Controllers.NotificationBellController": {
+        "Dignite.NotificationCenter.Web.Controllers.NotificationBellController": {
           "controllerName": "NotificationBell",
           "controllerGroupName": null,
           "isRemoteService": false,
           "isIntegrationService": false,
           "apiVersion": null,
-          "type": "Dignite.Abp.NotificationCenter.Web.Controllers.NotificationBellController",
+          "type": "Dignite.NotificationCenter.Web.Controllers.NotificationBellController",
           "summary": null,
           "remarks": null,
           "description": null,
@@ -1172,7 +1172,7 @@
                   "roles": null
                 }
               ],
-              "implementFrom": "Dignite.Abp.NotificationCenter.Web.Controllers.NotificationBellController",
+              "implementFrom": "Dignite.NotificationCenter.Web.Controllers.NotificationBellController",
               "summary": null,
               "remarks": null,
               "description": null,
@@ -1180,13 +1180,13 @@
             }
           }
         },
-        "Dignite.Abp.NotificationCenter.Web.Host.Services.DemoNotificationAppService": {
+        "Dignite.NotificationCenter.Web.Host.Services.DemoNotificationAppService": {
           "controllerName": "DemoNotification",
           "controllerGroupName": "DemoNotification",
           "isRemoteService": true,
           "isIntegrationService": false,
           "apiVersion": null,
-          "type": "Dignite.Abp.NotificationCenter.Web.Host.Services.DemoNotificationAppService",
+          "type": "Dignite.NotificationCenter.Web.Host.Services.DemoNotificationAppService",
           "summary": null,
           "remarks": null,
           "description": null,
@@ -1213,7 +1213,7 @@
                   "roles": null
                 }
               ],
-              "implementFrom": "Dignite.Abp.NotificationCenter.Web.Host.Services.DemoNotificationAppService",
+              "implementFrom": "Dignite.NotificationCenter.Web.Host.Services.DemoNotificationAppService",
               "summary": null,
               "remarks": null,
               "description": null,
@@ -1239,7 +1239,7 @@
                   "roles": null
                 }
               ],
-              "implementFrom": "Dignite.Abp.NotificationCenter.Web.Host.Services.DemoNotificationAppService",
+              "implementFrom": "Dignite.NotificationCenter.Web.Host.Services.DemoNotificationAppService",
               "summary": null,
               "remarks": null,
               "description": null,
@@ -1265,7 +1265,7 @@
                   "roles": null
                 }
               ],
-              "implementFrom": "Dignite.Abp.NotificationCenter.Web.Host.Services.DemoNotificationAppService",
+              "implementFrom": "Dignite.NotificationCenter.Web.Host.Services.DemoNotificationAppService",
               "summary": null,
               "remarks": null,
               "description": null,
@@ -3418,28 +3418,28 @@
       "rootPath": "notification-center",
       "remoteServiceName": "NotificationCenter",
       "controllers": {
-        "Dignite.Abp.NotificationCenter.NotificationSubscriptionController": {
+        "Dignite.NotificationCenter.NotificationSubscriptionController": {
           "controllerName": "NotificationSubscription",
           "controllerGroupName": "NotificationSubscription",
           "isRemoteService": true,
           "isIntegrationService": false,
           "apiVersion": null,
-          "type": "Dignite.Abp.NotificationCenter.NotificationSubscriptionController",
+          "type": "Dignite.NotificationCenter.NotificationSubscriptionController",
           "summary": null,
           "remarks": null,
           "description": null,
           "displayName": null,
           "interfaces": [
             {
-              "type": "Dignite.Abp.NotificationCenter.INotificationSubscriptionAppService",
+              "type": "Dignite.NotificationCenter.INotificationSubscriptionAppService",
               "name": "INotificationSubscriptionAppService",
               "methods": [
                 {
                   "name": "GetSubscriptionsAsync",
                   "parametersOnMethod": [],
                   "returnValue": {
-                    "type": "Volo.Abp.Application.Dtos.ListResultDto<Dignite.Abp.NotificationCenter.NotificationSubscriptionDto>",
-                    "typeSimple": "Volo.Abp.Application.Dtos.ListResultDto<Dignite.Abp.NotificationCenter.NotificationSubscriptionDto>",
+                    "type": "Volo.Abp.Application.Dtos.ListResultDto<Dignite.NotificationCenter.NotificationSubscriptionDto>",
+                    "typeSimple": "Volo.Abp.Application.Dtos.ListResultDto<Dignite.NotificationCenter.NotificationSubscriptionDto>",
                     "summary": null
                   }
                 },
@@ -3448,9 +3448,9 @@
                   "parametersOnMethod": [
                     {
                       "name": "input",
-                      "typeAsString": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto, Dignite.Abp.NotificationCenter.Application.Contracts",
-                      "type": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
-                      "typeSimple": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
+                      "typeAsString": "Dignite.NotificationCenter.NotificationSubscriptionScopeDto, Dignite.NotificationCenter.Application.Contracts",
+                      "type": "Dignite.NotificationCenter.NotificationSubscriptionScopeDto",
+                      "typeSimple": "Dignite.NotificationCenter.NotificationSubscriptionScopeDto",
                       "isOptional": false,
                       "defaultValue": null,
                       "summary": null,
@@ -3469,9 +3469,9 @@
                   "parametersOnMethod": [
                     {
                       "name": "input",
-                      "typeAsString": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto, Dignite.Abp.NotificationCenter.Application.Contracts",
-                      "type": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
-                      "typeSimple": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
+                      "typeAsString": "Dignite.NotificationCenter.NotificationSubscriptionScopeDto, Dignite.NotificationCenter.Application.Contracts",
+                      "type": "Dignite.NotificationCenter.NotificationSubscriptionScopeDto",
+                      "typeSimple": "Dignite.NotificationCenter.NotificationSubscriptionScopeDto",
                       "isOptional": false,
                       "defaultValue": null,
                       "summary": null,
@@ -3498,13 +3498,13 @@
               "parametersOnMethod": [],
               "parameters": [],
               "returnValue": {
-                "type": "Volo.Abp.Application.Dtos.ListResultDto<Dignite.Abp.NotificationCenter.NotificationSubscriptionDto>",
-                "typeSimple": "Volo.Abp.Application.Dtos.ListResultDto<Dignite.Abp.NotificationCenter.NotificationSubscriptionDto>",
+                "type": "Volo.Abp.Application.Dtos.ListResultDto<Dignite.NotificationCenter.NotificationSubscriptionDto>",
+                "typeSimple": "Volo.Abp.Application.Dtos.ListResultDto<Dignite.NotificationCenter.NotificationSubscriptionDto>",
                 "summary": null
               },
               "allowAnonymous": null,
               "authorizeDatas": [],
-              "implementFrom": "Dignite.Abp.NotificationCenter.INotificationSubscriptionAppService",
+              "implementFrom": "Dignite.NotificationCenter.INotificationSubscriptionAppService",
               "summary": null,
               "remarks": null,
               "description": null,
@@ -3519,9 +3519,9 @@
               "parametersOnMethod": [
                 {
                   "name": "input",
-                  "typeAsString": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto, Dignite.Abp.NotificationCenter.Application.Contracts",
-                  "type": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
-                  "typeSimple": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
+                  "typeAsString": "Dignite.NotificationCenter.NotificationSubscriptionScopeDto, Dignite.NotificationCenter.Application.Contracts",
+                  "type": "Dignite.NotificationCenter.NotificationSubscriptionScopeDto",
+                  "typeSimple": "Dignite.NotificationCenter.NotificationSubscriptionScopeDto",
                   "isOptional": false,
                   "defaultValue": null,
                   "summary": null,
@@ -3534,8 +3534,8 @@
                   "nameOnMethod": "input",
                   "name": "input",
                   "jsonName": null,
-                  "type": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
-                  "typeSimple": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
+                  "type": "Dignite.NotificationCenter.NotificationSubscriptionScopeDto",
+                  "typeSimple": "Dignite.NotificationCenter.NotificationSubscriptionScopeDto",
                   "isOptional": false,
                   "defaultValue": null,
                   "constraintTypes": null,
@@ -3553,7 +3553,7 @@
               },
               "allowAnonymous": null,
               "authorizeDatas": [],
-              "implementFrom": "Dignite.Abp.NotificationCenter.INotificationSubscriptionAppService",
+              "implementFrom": "Dignite.NotificationCenter.INotificationSubscriptionAppService",
               "summary": null,
               "remarks": null,
               "description": null,
@@ -3568,9 +3568,9 @@
               "parametersOnMethod": [
                 {
                   "name": "input",
-                  "typeAsString": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto, Dignite.Abp.NotificationCenter.Application.Contracts",
-                  "type": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
-                  "typeSimple": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
+                  "typeAsString": "Dignite.NotificationCenter.NotificationSubscriptionScopeDto, Dignite.NotificationCenter.Application.Contracts",
+                  "type": "Dignite.NotificationCenter.NotificationSubscriptionScopeDto",
+                  "typeSimple": "Dignite.NotificationCenter.NotificationSubscriptionScopeDto",
                   "isOptional": false,
                   "defaultValue": null,
                   "summary": null,
@@ -3632,7 +3632,7 @@
               },
               "allowAnonymous": null,
               "authorizeDatas": [],
-              "implementFrom": "Dignite.Abp.NotificationCenter.INotificationSubscriptionAppService",
+              "implementFrom": "Dignite.NotificationCenter.INotificationSubscriptionAppService",
               "summary": null,
               "remarks": null,
               "description": null,
@@ -3640,20 +3640,20 @@
             }
           }
         },
-        "Dignite.Abp.NotificationCenter.UserNotificationController": {
+        "Dignite.NotificationCenter.UserNotificationController": {
           "controllerName": "UserNotification",
           "controllerGroupName": "UserNotification",
           "isRemoteService": true,
           "isIntegrationService": false,
           "apiVersion": null,
-          "type": "Dignite.Abp.NotificationCenter.UserNotificationController",
+          "type": "Dignite.NotificationCenter.UserNotificationController",
           "summary": null,
           "remarks": null,
           "description": null,
           "displayName": null,
           "interfaces": [
             {
-              "type": "Dignite.Abp.NotificationCenter.IUserNotificationAppService",
+              "type": "Dignite.NotificationCenter.IUserNotificationAppService",
               "name": "IUserNotificationAppService",
               "methods": [
                 {
@@ -3661,9 +3661,9 @@
                   "parametersOnMethod": [
                     {
                       "name": "input",
-                      "typeAsString": "Dignite.Abp.NotificationCenter.GetUserNotificationListInput, Dignite.Abp.NotificationCenter.Application.Contracts",
-                      "type": "Dignite.Abp.NotificationCenter.GetUserNotificationListInput",
-                      "typeSimple": "Dignite.Abp.NotificationCenter.GetUserNotificationListInput",
+                      "typeAsString": "Dignite.NotificationCenter.GetUserNotificationListInput, Dignite.NotificationCenter.Application.Contracts",
+                      "type": "Dignite.NotificationCenter.GetUserNotificationListInput",
+                      "typeSimple": "Dignite.NotificationCenter.GetUserNotificationListInput",
                       "isOptional": false,
                       "defaultValue": null,
                       "summary": null,
@@ -3672,8 +3672,8 @@
                     }
                   ],
                   "returnValue": {
-                    "type": "Volo.Abp.Application.Dtos.PagedResultDto<Dignite.Abp.NotificationCenter.UserNotificationDto>",
-                    "typeSimple": "Volo.Abp.Application.Dtos.PagedResultDto<Dignite.Abp.NotificationCenter.UserNotificationDto>",
+                    "type": "Volo.Abp.Application.Dtos.PagedResultDto<Dignite.NotificationCenter.UserNotificationDto>",
+                    "typeSimple": "Volo.Abp.Application.Dtos.PagedResultDto<Dignite.NotificationCenter.UserNotificationDto>",
                     "summary": null
                   }
                 },
@@ -3759,9 +3759,9 @@
               "parametersOnMethod": [
                 {
                   "name": "input",
-                  "typeAsString": "Dignite.Abp.NotificationCenter.GetUserNotificationListInput, Dignite.Abp.NotificationCenter.Application.Contracts",
-                  "type": "Dignite.Abp.NotificationCenter.GetUserNotificationListInput",
-                  "typeSimple": "Dignite.Abp.NotificationCenter.GetUserNotificationListInput",
+                  "typeAsString": "Dignite.NotificationCenter.GetUserNotificationListInput, Dignite.NotificationCenter.Application.Contracts",
+                  "type": "Dignite.NotificationCenter.GetUserNotificationListInput",
+                  "typeSimple": "Dignite.NotificationCenter.GetUserNotificationListInput",
                   "isOptional": false,
                   "defaultValue": null,
                   "summary": null,
@@ -3847,13 +3847,13 @@
                 }
               ],
               "returnValue": {
-                "type": "Volo.Abp.Application.Dtos.PagedResultDto<Dignite.Abp.NotificationCenter.UserNotificationDto>",
-                "typeSimple": "Volo.Abp.Application.Dtos.PagedResultDto<Dignite.Abp.NotificationCenter.UserNotificationDto>",
+                "type": "Volo.Abp.Application.Dtos.PagedResultDto<Dignite.NotificationCenter.UserNotificationDto>",
+                "typeSimple": "Volo.Abp.Application.Dtos.PagedResultDto<Dignite.NotificationCenter.UserNotificationDto>",
                 "summary": null
               },
               "allowAnonymous": null,
               "authorizeDatas": [],
-              "implementFrom": "Dignite.Abp.NotificationCenter.IUserNotificationAppService",
+              "implementFrom": "Dignite.NotificationCenter.IUserNotificationAppService",
               "summary": null,
               "remarks": null,
               "description": null,
@@ -3874,7 +3874,7 @@
               },
               "allowAnonymous": null,
               "authorizeDatas": [],
-              "implementFrom": "Dignite.Abp.NotificationCenter.IUserNotificationAppService",
+              "implementFrom": "Dignite.NotificationCenter.IUserNotificationAppService",
               "summary": null,
               "remarks": null,
               "description": null,
@@ -3923,7 +3923,7 @@
               },
               "allowAnonymous": null,
               "authorizeDatas": [],
-              "implementFrom": "Dignite.Abp.NotificationCenter.IUserNotificationAppService",
+              "implementFrom": "Dignite.NotificationCenter.IUserNotificationAppService",
               "summary": null,
               "remarks": null,
               "description": null,
@@ -3944,7 +3944,7 @@
               },
               "allowAnonymous": null,
               "authorizeDatas": [],
-              "implementFrom": "Dignite.Abp.NotificationCenter.IUserNotificationAppService",
+              "implementFrom": "Dignite.NotificationCenter.IUserNotificationAppService",
               "summary": null,
               "remarks": null,
               "description": null,
@@ -3993,7 +3993,7 @@
               },
               "allowAnonymous": null,
               "authorizeDatas": [],
-              "implementFrom": "Dignite.Abp.NotificationCenter.IUserNotificationAppService",
+              "implementFrom": "Dignite.NotificationCenter.IUserNotificationAppService",
               "summary": null,
               "remarks": null,
               "description": null,
@@ -4014,7 +4014,7 @@
               },
               "allowAnonymous": null,
               "authorizeDatas": [],
-              "implementFrom": "Dignite.Abp.NotificationCenter.IUserNotificationAppService",
+              "implementFrom": "Dignite.NotificationCenter.IUserNotificationAppService",
               "summary": null,
               "remarks": null,
               "description": null,
@@ -5733,7 +5733,7 @@
     }
   },
   "types": {
-    "Dignite.Abp.NotificationCenter.GetUserNotificationListInput": {
+    "Dignite.NotificationCenter.GetUserNotificationListInput": {
       "baseType": "Volo.Abp.Application.Dtos.PagedResultRequestDto",
       "isEnum": false,
       "enumNames": null,
@@ -5794,7 +5794,7 @@
       "description": null,
       "displayName": null
     },
-    "Dignite.Abp.NotificationCenter.NotificationSubscriptionDto": {
+    "Dignite.NotificationCenter.NotificationSubscriptionDto": {
       "baseType": null,
       "isEnum": false,
       "enumNames": null,
@@ -5903,7 +5903,7 @@
       "description": null,
       "displayName": null
     },
-    "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto": {
+    "Dignite.NotificationCenter.NotificationSubscriptionScopeDto": {
       "baseType": null,
       "isEnum": false,
       "enumNames": null,
@@ -5964,7 +5964,7 @@
       "description": null,
       "displayName": null
     },
-    "Dignite.Abp.NotificationCenter.UserNotificationDto": {
+    "Dignite.NotificationCenter.UserNotificationDto": {
       "baseType": "Volo.Abp.Application.Dtos.EntityDto<System.Guid>",
       "isEnum": false,
       "enumNames": null,

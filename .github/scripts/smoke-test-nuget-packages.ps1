@@ -16,15 +16,15 @@ $packageIds = @(
     'Dignite.Abp.Notifications.Emailing.Identity',
     'Dignite.Abp.Notifications.Identity',
     'Dignite.Abp.Notifications.SignalR',
-    'Dignite.Abp.NotificationCenter.Domain.Shared',
-    'Dignite.Abp.NotificationCenter.Domain',
-    'Dignite.Abp.NotificationCenter.Application.Contracts',
-    'Dignite.Abp.NotificationCenter.Application',
-    'Dignite.Abp.NotificationCenter.HttpApi',
-    'Dignite.Abp.NotificationCenter.HttpApi.Client',
-    'Dignite.Abp.NotificationCenter.EntityFrameworkCore',
-    'Dignite.Abp.NotificationCenter.MongoDB',
-    'Dignite.Abp.NotificationCenter.Web'
+    'Dignite.NotificationCenter.Domain.Shared',
+    'Dignite.NotificationCenter.Domain',
+    'Dignite.NotificationCenter.Application.Contracts',
+    'Dignite.NotificationCenter.Application',
+    'Dignite.NotificationCenter.HttpApi',
+    'Dignite.NotificationCenter.HttpApi.Client',
+    'Dignite.NotificationCenter.EntityFrameworkCore',
+    'Dignite.NotificationCenter.MongoDB',
+    'Dignite.NotificationCenter.Web'
 )
 
 foreach ($packageId in $packageIds) {
@@ -74,15 +74,15 @@ public static class PackageSurface
         typeof(Dignite.Abp.Notifications.Emailing.Identity.AbpNotificationsEmailingIdentityModule),
         typeof(Dignite.Abp.Notifications.Identity.AbpNotificationsIdentityModule),
         typeof(Dignite.Abp.Notifications.SignalR.AbpNotificationsSignalRModule),
-        typeof(Dignite.Abp.NotificationCenter.AbpNotificationCenterDomainSharedModule),
-        typeof(Dignite.Abp.NotificationCenter.AbpNotificationCenterDomainModule),
-        typeof(Dignite.Abp.NotificationCenter.AbpNotificationCenterApplicationContractsModule),
-        typeof(Dignite.Abp.NotificationCenter.AbpNotificationCenterApplicationModule),
-        typeof(Dignite.Abp.NotificationCenter.AbpNotificationCenterHttpApiModule),
-        typeof(Dignite.Abp.NotificationCenter.AbpNotificationCenterHttpApiClientModule),
-        typeof(Dignite.Abp.NotificationCenter.EntityFrameworkCore.AbpNotificationCenterEntityFrameworkCoreModule),
-        typeof(Dignite.Abp.NotificationCenter.MongoDB.AbpNotificationCenterMongoDbModule),
-        typeof(Dignite.Abp.NotificationCenter.Web.AbpNotificationCenterWebModule)
+        typeof(Dignite.NotificationCenter.NotificationCenterDomainSharedModule),
+        typeof(Dignite.NotificationCenter.NotificationCenterDomainModule),
+        typeof(Dignite.NotificationCenter.NotificationCenterApplicationContractsModule),
+        typeof(Dignite.NotificationCenter.NotificationCenterApplicationModule),
+        typeof(Dignite.NotificationCenter.NotificationCenterHttpApiModule),
+        typeof(Dignite.NotificationCenter.NotificationCenterHttpApiClientModule),
+        typeof(Dignite.NotificationCenter.EntityFrameworkCore.NotificationCenterEntityFrameworkCoreModule),
+        typeof(Dignite.NotificationCenter.MongoDB.NotificationCenterMongoDbModule),
+        typeof(Dignite.NotificationCenter.Web.NotificationCenterWebModule)
     ];
 }
 '@
