@@ -15,17 +15,13 @@ public class UserNotificationAppService : ApplicationService, IUserNotificationA
 {
     protected INotificationStore Store { get; }
 
-    protected NotificationSubscriptionManager SubscriptionManager { get; }
-
     protected INotificationDefinitionManager DefinitionManager { get; }
 
     public UserNotificationAppService(
         INotificationStore store,
-        NotificationSubscriptionManager subscriptionManager,
         INotificationDefinitionManager definitionManager)
     {
         Store = store;
-        SubscriptionManager = subscriptionManager;
         DefinitionManager = definitionManager;
     }
 
@@ -42,9 +38,9 @@ public class UserNotificationAppService : ApplicationService, IUserNotificationA
         return new PagedResultDto<UserNotificationDto>(totalCount, items.Select(MapToDto).ToList());
     }
 
-    public virtual Task<int> GetNotificationCountAsync(UserNotificationState? state = null)
+    public virtual Task<int> GetUnreadCountAsync()
     {
-        return Store.GetUserNotificationCountAsync(CurrentUser.GetId(), state);
+        return Store.GetUserNotificationCountAsync(CurrentUser.GetId(), UserNotificationState.Unread);
     }
 
     public virtual Task MarkAsReadAsync(Guid notificationId)
@@ -64,95 +60,9 @@ public class UserNotificationAppService : ApplicationService, IUserNotificationA
         return Store.DeleteUserNotificationAsync(CurrentUser.GetId(), notificationId);
     }
 
-    public virtual Task DeleteAllAsync(UserNotificationState? state = null)
+    public virtual Task DeleteAllReadAsync()
     {
-        return Store.DeleteAllUserNotificationsAsync(CurrentUser.GetId(), state);
-    }
-
-    public virtual async Task<ListResultDto<NotificationSubscriptionDto>> GetSubscriptionsAsync()
-    {
-        var userId = CurrentUser.GetId();
-
-        var available = await DefinitionManager.GetAllAvailableAsync(userId);
-        var subscribed = await Store.GetSubscriptionsAsync(userId);
-        var availableByName = available.ToDictionary(definition => definition.Name, StringComparer.Ordinal);
-        var definitionWideSubscriptions = subscribed
-            .Where(subscription => subscription.EntityTypeName == null && subscription.EntityId == null)
-            .Select(subscription => subscription.NotificationName)
-            .ToHashSet(StringComparer.Ordinal);
-
-        var dtos = available.Select(definition => new NotificationSubscriptionDto
-        {
-            NotificationName = definition.Name,
-            DisplayName = definition.DisplayName.Localize(StringLocalizerFactory).Value,
-            Description = definition.Description?.Localize(StringLocalizerFactory)?.Value,
-            IsSubscribed = definitionWideSubscriptions.Contains(definition.Name)
-        }).ToList();
-
-        foreach (var subscription in subscribed.Where(subscription =>
-                     subscription.EntityTypeName != null || subscription.EntityId != null))
-        {
-            availableByName.TryGetValue(subscription.NotificationName, out var definition);
-            dtos.Add(new NotificationSubscriptionDto
-            {
-                NotificationName = subscription.NotificationName,
-                EntityTypeName = subscription.EntityTypeName,
-                EntityId = subscription.EntityId,
-                DisplayName = definition?.DisplayName.Localize(StringLocalizerFactory).Value,
-                Description = definition?.Description?.Localize(StringLocalizerFactory)?.Value,
-                IsSubscribed = true
-            });
-        }
-
-        foreach (var subscription in subscribed.Where(subscription =>
-                     subscription.EntityTypeName == null && subscription.EntityId == null
-                     && !availableByName.ContainsKey(subscription.NotificationName)))
-        {
-            dtos.Add(new NotificationSubscriptionDto
-            {
-                NotificationName = subscription.NotificationName,
-                IsSubscribed = true
-            });
-        }
-
-        return new ListResultDto<NotificationSubscriptionDto>(dtos);
-    }
-
-    public virtual Task SubscribeAsync(string notificationName)
-    {
-        return SubscriptionManager.SubscribeAsync(CurrentUser.GetId(), notificationName);
-    }
-
-    public virtual Task UnsubscribeAsync(string notificationName)
-    {
-        return SubscriptionManager.UnsubscribeAsync(CurrentUser.GetId(), notificationName);
-    }
-
-    public virtual Task SubscribeScopedAsync(NotificationSubscriptionScopeDto input)
-    {
-        return SubscriptionManager.SubscribeAsync(
-            CurrentUser.GetId(), input.NotificationName, CreateEntityIdentifier(input));
-    }
-
-    public virtual Task UnsubscribeScopedAsync(NotificationSubscriptionScopeDto input)
-    {
-        return SubscriptionManager.UnsubscribeAsync(
-            CurrentUser.GetId(), input.NotificationName, CreateEntityIdentifier(input));
-    }
-
-    protected virtual NotificationEntityIdentifier? CreateEntityIdentifier(NotificationSubscriptionScopeDto input)
-    {
-        if (input.EntityTypeName == null && input.EntityId == null)
-        {
-            return null;
-        }
-
-        if (input.EntityTypeName == null || input.EntityId == null)
-        {
-            throw new ArgumentException("EntityTypeName and EntityId must either both be supplied or both be null.", nameof(input));
-        }
-
-        return new NotificationEntityIdentifier(input.EntityTypeName, input.EntityId);
+        return Store.DeleteAllUserNotificationsAsync(CurrentUser.GetId(), UserNotificationState.Read);
     }
 
     protected virtual UserNotificationDto MapToDto(UserNotificationWithNotification source)
