@@ -340,49 +340,45 @@ channel delivery. Cancellation remains a boundary for stopping new work, not com
 
 #### Retention and lifecycle cleanup
 
-Notification Center retention is opt-in and best-effort. The ABP periodic cleanup worker is disabled by default, so
-upgrading preserves the historical behavior of retaining inbox and base payload rows until an application or user
-explicitly deletes them. Enable it only after setting retention windows that match your operational and legal
-requirements:
+Notification Center **does not auto-expire anything**. A `UserNotification` inbox row lives until its owner deletes
+it (the bell UI's per-row delete) or the host removes it; a `Notification` payload row lives until the host removes
+it. This mirrors a device notification center — entries stay until the user swipes them away. Retention is not a
+behavior the module schedules on the host's behalf.
 
-```csharp
-Configure<NotificationRetentionOptions>(options =>
-{
-    options.IsCleanupEnabled = true;
-    options.CleanupBatchSize = 500;              // max rows deleted per record kind and pass
-    options.CleanupWorkerPeriod = TimeSpan.FromHours(6);
-    options.CleanupWorkerLockName = NotificationRetentionOptions.DefaultCleanupWorkerLockName;
-    options.CleanupWorkerLockTimeout = TimeSpan.Zero; // skip immediately when another instance owns the cycle
-    options.ReadUserNotificationRetention = TimeSpan.FromDays(180); // null disables read-inbox cleanup
-    options.OrphanNotificationRetention = TimeSpan.FromDays(30);    // null disables orphan-payload cleanup
-});
+Inbox growth (`publishes × recipients`) is real, but *when* to delete, *which tenant context* to delete in, and
+*which instance* runs the scan in a cluster are host-infrastructure decisions a library cannot make correctly from
+the inside. A host that needs time-based cleanup schedules it itself — an ABP `AsyncPeriodicBackgroundWorkerBase`, a
+database agent job, whatever already fits its operations — honoring two rules the store relies on:
+
+- **Never delete `Unread` rows.** Only aged `Read` inbox rows are safe to remove; deleting an unread row silently
+  drops a notification and corrupts the bell's unread count.
+- **Delete a `Notification` payload only once no inbox row references it.** The payload is shared across every
+  recipient's inbox row, so an orphan check must precede its deletion.
+
+Relational example, run per tenant context the host owns (`CurrentTenant.Change(tenantId)` for each tenant, plus the
+host `null` scope), in bounded batches on a large store. Table names use the configurable
+`NotificationCenterDbProperties.DbTablePrefix` (default `Abp`):
+
+```sql
+-- 1) Age out READ inbox rows; Unread (State = 0) rows are always retained.
+DELETE FROM AbpUserNotifications
+WHERE State = 1 AND CreationTime < @cutoff;
+
+-- 2) Delete payloads no inbox row references any more.
+DELETE FROM AbpNotifications n
+WHERE n.CreationTime < @cutoff
+  AND NOT EXISTS (SELECT 1 FROM AbpUserNotifications u WHERE u.NotificationId = n.Id);
 ```
 
-`NotificationRetentionManager.CleanupAsync(cancellationToken)` deletes, in bounded batches: `Read` inbox rows older
-than `ReadUserNotificationRetention` (`Unread` rows are always retained), and `Notification` payload rows older than
-`OrphanNotificationRetention` once no inbox row references them. A host can invoke it directly or enable the worker.
-There is no deletion cursor, dry-run mode, deletion contributor, quarantine marker, or retention metric — those were
-removed as over-engineering for an in-app inbox.
+Scope every statement by `TenantId`. On the MongoDB provider, prefer a two-step orphan check (collect unreferenced
+payload ids, then delete) over a cross-collection join.
 
 | Record | Owner | Deletion rule |
 |---|---|---|
-| `UserNotification` inbox row | Notification Center / current user | Users delete their own rows. Cleanup deletes `Read` rows older than `ReadUserNotificationRetention`; `Unread` rows are always retained. |
-| `Notification` base payload | Notification Center retention cleanup | Deleted when older than `OrphanNotificationRetention` and no inbox row still references it. |
+| `UserNotification` inbox row | Notification Center / current user | Users delete their own rows via the inbox. A host may additionally age out `Read` rows; `Unread` rows must be retained. |
+| `Notification` base payload | Host retention job | Delete when older than the host's window **and** no inbox row still references it. |
 | `NotificationSubscription` | User subscription settings | Not time-based. Delete only by the exact subscription identity through the subscription APIs. |
 | ABP event inbox/outbox records | ABP distributed event bus | Use ABP's status-aware event-box cleanup windows. Do not add TTL deletes that bypass processed/in-progress state. |
-
-#### The retention worker in clustered deployments
-
-The retention cleanup scanner is registered through ABP's background-worker manager as an
-`AsyncPeriodicBackgroundWorkerBase`. Every cycle gets a fresh dependency-injection scope, observes the application
-shutdown token, and tries its stable lock without waiting by default; a lock miss skips the cycle.
-
-`Volo.Abp.DistributedLocking.Abstractions` supplies only a process-local default lock. Multiple application
-instances therefore require a real ABP distributed-lock provider (for example, the provider already used by the
-host's background jobs). All instances that scan the same notification store must use the same
-`CleanupWorkerLockName` and the same `AbpDistributedLockOptions.KeyPrefix`. For a dedicated-worker deployment,
-keep ABP workers enabled only in the worker process (`AbpBackgroundWorkerOptions.IsEnabled = false` on web/API
-replicas), or leave them enabled and set `IsCleanupEnabled = false` on replicas that should not run the scanner.
 
 ## Defining and publishing a notification
 
@@ -673,7 +669,7 @@ source-level changes:
 | `IUserNotificationManager` / `UserNotificationManager` | removed | Use `INotificationStore` for inbox queries and state mutations. |
 | `INotificationSubscriptionManager` | concrete `NotificationSubscriptionManager` | Use the manager only for validated subscription mutations; use `INotificationStore` for reads. |
 | Subscription-manager read methods | removed | Use `INotificationStore.GetSubscriptionsAsync` / `IsSubscribedAsync` directly in query paths. |
-| `INotificationRetentionCleanupService` / `NotificationRetentionCleanupService` | `NotificationRetentionManager` | Inject the concrete domain manager for manual cleanup. |
+| `INotificationRetentionCleanupService` / `NotificationRetentionCleanupService` / `NotificationRetentionManager` | removed | Schedule inbox/payload cleanup in the host — see "Retention and lifecycle cleanup". |
 
 `INotificationDefinitionManager` remains intentionally replaceable because consuming hosts can provide a custom
 definition registry and availability policy; startup resolves that replacement before definition initialization.
@@ -717,9 +713,6 @@ Configure<NotificationEmailOptions>(options =>
     // Used when an email address resolver does not supply a recipient culture.
     options.DefaultCulture = "en-US";
 });
-
-// Retention cleanup is opt-in — see "Retention and lifecycle cleanup" above.
-Configure<NotificationRetentionOptions>(options => options.IsCleanupEnabled = true);
 
 // EF Core Notification Center hosts can opt in to ABP's transactional outbox so the persisted
 // inbox rows and NotificationDeliveryRequestedEto outbox records commit together.

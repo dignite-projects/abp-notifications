@@ -13,9 +13,9 @@ changes.
 > This pre-stable line explored a much larger feature surface (per-recipient delivery reliability with leases /
 > retries / dead-lettering / force-delivery, per-user delivery preferences + quiet hours, large-audience broadcast
 > orchestration, payload schema-versioning + upcasters, opt-in definition payload/entity contracts, a replaceable
-> batch eligibility evaluator + trusted-recipient bypass API, distribution metrics, and a prepared multi-job
-> fan-out) and then **cut all of it before release** as over-engineering for a best-effort in-app notification
-> module. None of it shipped, so it is not documented as removed below. The module's positioning is deliberately
+> batch eligibility evaluator + trusted-recipient bypass API, distribution metrics, a prepared multi-job
+> fan-out, and a scheduled retention/lifecycle-cleanup worker + options) and then **cut all of it before release**
+> as over-engineering for a best-effort in-app notification module. None of it shipped, so it is not documented as removed below. The module's positioning is deliberately
 > "best-effort in-app notifications": delivery is fire-once (the inbox row is authoritative), and distributed-systems
 > machinery (delivery reliability/retries, broadcast jobs, schema-evolution upcasters) is intentionally absent.
 
@@ -33,9 +33,6 @@ changes.
   historical row cannot fail a whole inbox page. MVC and Angular render it with a localized fallback. (A
   strict-vs-tolerant read-mode switch existed briefly pre-release; it was cut because every real read boundary
   already chose tolerant, so strict mode had no caller. Not documented as removed below, per the note above.)
-- Opt-in Notification Center retention cleanup (`NotificationRetentionOptions` + a default-disabled ABP periodic
-  worker, or a direct `NotificationRetentionManager.CleanupAsync` call). Cleanup deletes aged read inbox rows and
-  orphaned payload rows in bounded batches.
 - A bounded recipient pipeline: `INotificationStore.GetSubscriptionUserIdsAsync` keyset paging plus bounded inbox
   multi-insert. Explicit fan-outs above `NotificationDistributionOptions.DirectDistributionUserThreshold` run on a
   single background job whose distributor batches recipients internally (`RecipientBatchSize`).
@@ -45,8 +42,8 @@ changes.
 - **Breaking application/domain API alignment before 10.0.0 stable.** Current-user inbox services are now
   `IUserNotificationAppService` / `UserNotificationAppService`, and `GetCountAsync` is `GetNotificationCountAsync`.
   Pass-through manager interfaces and `UserNotificationManager` were removed; application reads now use
-  `INotificationStore` while the concrete `NotificationSubscriptionManager` owns validated subscription mutation,
-  and `NotificationRetentionManager` owns cleanup. REST routes are unchanged.
+  `INotificationStore` while the concrete `NotificationSubscriptionManager` owns validated subscription mutation.
+  REST routes are unchanged.
 - **Breaking options split before 10.0.0 stable.** The catch-all `NotificationOptions` type was replaced by
   `NotificationDefinitionOptions` (provider registration) and `NotificationDistributionOptions` (inline/background
   threshold + `RecipientBatchSize`, capped by `MaxBatchSize` = 10,000, validated on startup). Custom constructors
