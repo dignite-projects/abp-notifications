@@ -113,7 +113,7 @@ export const packageSurface = {
     tempRoot,
     'node_modules',
     '@dignite',
-    'abp.ng.notification-center',
+    'ng.notification-center',
     'package.json',
   );
   const installedPackage = JSON.parse(readFileSync(installedPackageJsonPath, 'utf8'));

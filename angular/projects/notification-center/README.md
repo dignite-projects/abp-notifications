@@ -1,6 +1,6 @@
 # @dignite/ng.notification-center
 
-Angular UI library for the **Dignite ABP Notification Center** — a notification **bell** (unread
+Angular UI library for the **Dignite Notification Center** — a notification **bell** (unread
 badge + dropdown) and a **subscriptions** management component, plus the ABP-generated API proxies
 (`UserNotificationService` + `NotificationSubscriptionService` + DTOs/enums) over `/api/notification-center`. It mirrors the module's MVC UI for
 Angular consumers and is packaged like ABP's own `@abp/ng.*` libraries: a main entry point plus a
