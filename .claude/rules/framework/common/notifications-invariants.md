@@ -5,6 +5,32 @@
 > implementation that shipped with the exact bugs described below —
 > these are not style preferences, they're the reasons this repo exists. Do not reintroduce them.
 
+## The subtraction that shaped these rules
+
+Many rules below read as prohibitions ("removed", "don't reintroduce X") because X was actually built
+and then taken back out. After the from-scratch rewrite, an **agent-driven issue spree (#54–#88)** grew
+this module toward a *distributed delivery platform*: per-recipient/per-channel delivery state machines
+with leases, idempotency keys, and retries; large-audience broadcast orchestration with progress
+persistence; schema-versioned payloads with upcaster chains; a replaceable recipient-eligibility policy
+engine plus a trusted-system bypass; definition→payload/entity type contracts; retention cleanup;
+per-recipient delivery telemetry. Four subtraction rounds (**PRs #99–#103**) removed roughly **17k net
+lines** of it.
+
+The error was not "all wrong" — it was **the right fixes wrapped in the wrong-scale infrastructure**.
+Roughly a third of #54–#88 was genuine and was kept, several as the hard invariants below: the stable
+`[NotificationDataType]` discriminator + tolerant reads (§1), entity-scoped subscription identity (§6),
+delivery-time permission/feature gating (§7), bounded batching + keyset paging (§8), the MongoDB outbox,
+notifier cancellation (§3/§4), and ABP-convention alignment. The subtraction was surgical: strip the
+distributed-systems shell, keep the correctness fixes inside it.
+
+The north star is this module's identity — **best-effort, in-app notification**: a durable inbox plus
+fire-once channel delivery, not an at-least-once delivery platform. If a proposed feature only earns its
+keep for a delivery platform (reliability guarantees, replayable schema evolution, pluggable policy,
+broadcast scale, delivery metrics), it does not belong here. Test each addition against that identity —
+not against "what a mature notification system has." The later user-facing API pass (controller split,
+merged subscription endpoints, `GetUnreadCountAsync`/`DeleteAllReadAsync`) applied the same instinct at
+the surface level: narrow to intent, don't preserve breadth for its own sake.
+
 ## 1. `NotificationData` serialization: stable discriminator, System.Text.Json only
 
 **Never** use `data.GetType().AssemblyQualifiedName`/`.FullName` or `Type.GetType(...)` as the
