@@ -95,7 +95,7 @@ Implement against the generic repository, with `[Authorize(...)]` on mutating me
 
 ## 8. Add Tests
 
-In `notification-center/test/Dignite.Abp.NotificationCenter.Tests/`, inheriting
+In `notification-center/test/Dignite.Abp.NotificationCenter.EntityFrameworkCore.Tests/`, inheriting
 `NotificationCenterTestBase`. Use this repo's actual test-naming convention (descriptive sentence,
 not `Should_X_When_Y`) — see `framework/testing/patterns.md`.
 

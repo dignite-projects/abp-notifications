@@ -30,7 +30,7 @@
   </Folder>
   <Folder Name="/notification-center/test/">
     <Project Path="notification-center/test/Dignite.Abp.NotificationCenter.TestBase/Dignite.Abp.NotificationCenter.TestBase.csproj" />
-    <Project Path="notification-center/test/Dignite.Abp.NotificationCenter.Tests/Dignite.Abp.NotificationCenter.Tests.csproj" />
+    <Project Path="notification-center/test/Dignite.Abp.NotificationCenter.EntityFrameworkCore.Tests/Dignite.Abp.NotificationCenter.EntityFrameworkCore.Tests.csproj" />
     <Project Path="notification-center/test/Dignite.Abp.NotificationCenter.MongoDB.Tests/Dignite.Abp.NotificationCenter.MongoDB.Tests.csproj" />
   </Folder>
 </Solution>

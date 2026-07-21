@@ -22,7 +22,7 @@ dotnet test Dignite.Abp.Notifications.slnx
 # A single test project (e.g. iterate on Core without starting the embedded mongod that the
 # MongoDB provider tests need)
 dotnet test core/test/Dignite.Abp.Notifications.Tests
-dotnet test notification-center/test/Dignite.Abp.NotificationCenter.Tests
+dotnet test notification-center/test/Dignite.Abp.NotificationCenter.EntityFrameworkCore.Tests
 ```
 
 ## Central package management — adding/updating a NuGet dependency
