@@ -44,7 +44,7 @@ public class NotificationBellViewComponent : ViewComponent
 
     protected virtual async Task<NotificationBellViewModel> CreateViewModelAsync()
     {
-        var unreadCount = await UserNotificationAppService.GetNotificationCountAsync(UserNotificationState.Unread);
+        var unreadCount = await UserNotificationAppService.GetUnreadCountAsync();
         var recent = await UserNotificationAppService.GetListAsync(new GetUserNotificationListInput
         {
             State = UserNotificationState.Unread,

@@ -1,13 +1,17 @@
 (function () {
     'use strict';
 
-    // ABP's dynamic JavaScript service proxy for the NotificationCenter API. It's generated at
+    // ABP's dynamic JavaScript service proxies for the NotificationCenter API. They're generated at
     // /Abp/ServiceProxyScript and included on every ABP MVC page by default, so we call the application
-    // service directly (dignite.abp.notificationCenter.notifications.*) instead of hand-writing fetch():
-    // abp.ajax handles antiforgery, authentication and error reporting, and this surface auto-tracks the
-    // C# INotificationAppService (no URLs to keep in sync).
-    function api() {
-        return dignite.abp.notificationCenter.notifications;
+    // services directly instead of hand-writing fetch(): abp.ajax handles antiforgery, authentication and
+    // error reporting, and this surface auto-tracks the C# app services (no URLs to keep in sync). The inbox
+    // and subscriptions are two controllers, so there are two proxy objects (paths follow the controller names).
+    function inboxApi() {
+        return dignite.abp.notificationCenter.userNotification;
+    }
+
+    function subscriptionApi() {
+        return dignite.abp.notificationCenter.notificationSubscription;
     }
 
     function refreshDropdown(bell) {
@@ -84,7 +88,7 @@
             var href = item.getAttribute('href');
             e.preventDefault();
             if (notificationId) {
-                api().markAsRead(notificationId).then(function () {
+                inboxApi().markAsRead(notificationId).then(function () {
                     setBadgeCount(getBadgeCount() - 1);
                     item.classList.remove('dignite-notification-unread');
                     if (hasLink && href) {
@@ -106,7 +110,7 @@
         var markAllLink = e.target.closest('.dignite-notification-mark-all-read');
         if (markAllLink) {
             e.preventDefault();
-            api().markAllAsRead().then(function () {
+            inboxApi().markAllAsRead().then(function () {
                 setBadgeCount(0);
                 var bell = markAllLink.closest('.dignite-notification-bell');
                 if (bell) {
@@ -133,7 +137,7 @@
             entityTypeName: entityTypeName,
             entityId: entityId
         };
-        var request = toggle.checked ? api().subscribeScoped(scope) : api().unsubscribeScoped(scope);
+        var request = toggle.checked ? subscriptionApi().subscribe(scope) : subscriptionApi().unsubscribe(scope);
         // abp.ajax already surfaces the error to the user; just revert the checkbox if the call failed.
         request.then(null, function () {
             toggle.checked = !toggle.checked;

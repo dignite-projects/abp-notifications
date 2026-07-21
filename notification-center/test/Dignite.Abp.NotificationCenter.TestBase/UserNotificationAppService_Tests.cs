@@ -12,8 +12,9 @@ using Xunit;
 namespace Dignite.Abp.NotificationCenter;
 
 /// <summary>
-/// Provider-agnostic <see cref="IUserNotificationAppService"/> scenarios, run against both the EF Core
-/// and MongoDB providers via the thin subclasses in each provider test project.
+/// Provider-agnostic inbox (<see cref="IUserNotificationAppService"/>) and subscription
+/// (<see cref="INotificationSubscriptionAppService"/>) scenarios, run against both the EF Core and MongoDB
+/// providers via the thin subclasses in each provider test project.
 /// </summary>
 public abstract class UserNotificationAppService_Tests<TStartupModule> : NotificationCenterTestBase<TStartupModule>
     where TStartupModule : IAbpModule
@@ -128,15 +129,36 @@ public abstract class UserNotificationAppService_Tests<TStartupModule> : Notific
             await WithUnitOfWorkAsync(async () =>
             {
                 var appService = GetRequiredService<IUserNotificationAppService>();
-                (await appService.GetNotificationCountAsync(UserNotificationState.Unread)).ShouldBe(1);
+                (await appService.GetUnreadCountAsync()).ShouldBe(1);
                 await appService.MarkAsReadAsync(notificationId);
             });
 
             await WithUnitOfWorkAsync(async () =>
             {
                 var appService = GetRequiredService<IUserNotificationAppService>();
-                (await appService.GetNotificationCountAsync(UserNotificationState.Unread)).ShouldBe(0);
-                (await appService.GetNotificationCountAsync(UserNotificationState.Read)).ShouldBe(1);
+                (await appService.GetUnreadCountAsync()).ShouldBe(0);
+                (await appService.GetListAsync(new GetUserNotificationListInput { State = UserNotificationState.Read }))
+                    .TotalCount.ShouldBe(1);
+            });
+        }
+    }
+
+    [Fact]
+    public async Task Deleting_all_read_removes_read_notifications_and_preserves_unread()
+    {
+        await SeedNotificationAsync(new MessageNotificationData("read me"), UserNotificationState.Read);
+        await SeedNotificationAsync(new MessageNotificationData("still unread"), UserNotificationState.Unread);
+
+        using (ChangeCurrentUser(_userId))
+        {
+            await WithUnitOfWorkAsync(() =>
+                GetRequiredService<IUserNotificationAppService>().DeleteAllReadAsync());
+
+            await WithUnitOfWorkAsync(async () =>
+            {
+                var appService = GetRequiredService<IUserNotificationAppService>();
+                (await appService.GetListAsync(new GetUserNotificationListInput())).TotalCount.ShouldBe(1);
+                (await appService.GetUnreadCountAsync()).ShouldBe(1);
             });
         }
     }
@@ -148,12 +170,13 @@ public abstract class UserNotificationAppService_Tests<TStartupModule> : Notific
         {
             await WithUnitOfWorkAsync(async () =>
             {
-                await GetRequiredService<IUserNotificationAppService>().SubscribeAsync("order.shipped");
+                await GetRequiredService<INotificationSubscriptionAppService>().SubscribeAsync(
+                    new NotificationSubscriptionScopeDto { NotificationName = "order.shipped" });
             });
 
             await WithUnitOfWorkAsync(async () =>
             {
-                var subscriptions = await GetRequiredService<IUserNotificationAppService>().GetSubscriptionsAsync();
+                var subscriptions = await GetRequiredService<INotificationSubscriptionAppService>().GetSubscriptionsAsync();
                 var subscription = subscriptions.Items.Single(s => s.NotificationName == "order.shipped");
                 subscription.IsSubscribed.ShouldBeTrue();
                 subscription.DisplayName.ShouldBe("Order Shipped");
@@ -168,18 +191,18 @@ public abstract class UserNotificationAppService_Tests<TStartupModule> : Notific
         {
             await WithUnitOfWorkAsync(async () =>
             {
-                var appService = GetRequiredService<IUserNotificationAppService>();
-                await appService.SubscribeScopedAsync(new NotificationSubscriptionScopeDto
+                var appService = GetRequiredService<INotificationSubscriptionAppService>();
+                await appService.SubscribeAsync(new NotificationSubscriptionScopeDto
                 {
                     NotificationName = "order.shipped"
                 });
-                await appService.SubscribeScopedAsync(new NotificationSubscriptionScopeDto
+                await appService.SubscribeAsync(new NotificationSubscriptionScopeDto
                 {
                     NotificationName = "order.shipped",
                     EntityTypeName = "Demo.Order",
                     EntityId = "42"
                 });
-                await appService.SubscribeScopedAsync(new NotificationSubscriptionScopeDto
+                await appService.SubscribeAsync(new NotificationSubscriptionScopeDto
                 {
                     NotificationName = "order.shipped",
                     EntityTypeName = "Demo.Order",
@@ -189,7 +212,7 @@ public abstract class UserNotificationAppService_Tests<TStartupModule> : Notific
 
             await WithUnitOfWorkAsync(async () =>
             {
-                var appService = GetRequiredService<IUserNotificationAppService>();
+                var appService = GetRequiredService<INotificationSubscriptionAppService>();
                 var rows = (await appService.GetSubscriptionsAsync()).Items
                     .Where(subscription => subscription.NotificationName == "order.shipped")
                     .ToList();
@@ -205,7 +228,7 @@ public abstract class UserNotificationAppService_Tests<TStartupModule> : Notific
                     subscription.EntityTypeName == "Demo.Order" && subscription.EntityId == "99"
                     && subscription.IsSubscribed);
 
-                await appService.UnsubscribeScopedAsync(new NotificationSubscriptionScopeDto
+                await appService.UnsubscribeAsync(new NotificationSubscriptionScopeDto
                 {
                     NotificationName = "order.shipped",
                     EntityTypeName = "Demo.Order",
@@ -215,7 +238,7 @@ public abstract class UserNotificationAppService_Tests<TStartupModule> : Notific
 
             await WithUnitOfWorkAsync(async () =>
             {
-                var rows = (await GetRequiredService<IUserNotificationAppService>().GetSubscriptionsAsync()).Items
+                var rows = (await GetRequiredService<INotificationSubscriptionAppService>().GetSubscriptionsAsync()).Items
                     .Where(subscription => subscription.NotificationName == "order.shipped")
                     .ToList();
 

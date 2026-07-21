@@ -6,16 +6,16 @@ namespace Dignite.Abp.NotificationCenter.Web.Components.NotificationSubscription
 
 public class NotificationSubscriptionsViewComponent : ViewComponent
 {
-    protected IUserNotificationAppService UserNotificationAppService { get; }
+    protected INotificationSubscriptionAppService SubscriptionAppService { get; }
 
-    public NotificationSubscriptionsViewComponent(IUserNotificationAppService userNotificationAppService)
+    public NotificationSubscriptionsViewComponent(INotificationSubscriptionAppService subscriptionAppService)
     {
-        UserNotificationAppService = userNotificationAppService;
+        SubscriptionAppService = subscriptionAppService;
     }
 
     public virtual async Task<IViewComponentResult> InvokeAsync()
     {
-        var result = await UserNotificationAppService.GetSubscriptionsAsync();
+        var result = await SubscriptionAppService.GetSubscriptionsAsync();
         return View(
             "~/Dignite/Abp/NotificationCenter/Web/Components/NotificationSubscriptions/Default.cshtml",
             result.Items.ToList());

@@ -1,18 +1,19 @@
 using System;
 using System.Threading.Tasks;
-using Dignite.Abp.Notifications;
 using Volo.Abp.Application.Dtos;
 using Volo.Abp.Application.Services;
 
 namespace Dignite.Abp.NotificationCenter;
 
-/// <summary>Headless inbox + subscription API for the current user.</summary>
+/// <summary>Headless inbox API for the current user's received notifications. Subscriptions live on
+/// <see cref="INotificationSubscriptionAppService"/>.</summary>
 public interface IUserNotificationAppService : IApplicationService
 {
     Task<PagedResultDto<UserNotificationDto>> GetListAsync(GetUserNotificationListInput input);
 
-    /// <summary>Gets the current user's notification count, optionally filtered by state.</summary>
-    Task<int> GetNotificationCountAsync(UserNotificationState? state = null);
+    /// <summary>Gets the current user's unread notification count (for the bell badge). Any other count comes from
+    /// <see cref="GetListAsync"/>'s <c>TotalCount</c> with the desired state filter.</summary>
+    Task<int> GetUnreadCountAsync();
 
     Task MarkAsReadAsync(Guid notificationId);
 
@@ -20,17 +21,7 @@ public interface IUserNotificationAppService : IApplicationService
 
     Task DeleteAsync(Guid notificationId);
 
-    Task DeleteAllAsync(UserNotificationState? state = null);
-
-    Task<ListResultDto<NotificationSubscriptionDto>> GetSubscriptionsAsync();
-
-    Task SubscribeAsync(string notificationName);
-
-    Task UnsubscribeAsync(string notificationName);
-
-    /// <summary>Subscribes the current user to exactly the supplied definition-wide or entity scope.</summary>
-    Task SubscribeScopedAsync(NotificationSubscriptionScopeDto input);
-
-    /// <summary>Removes exactly the supplied definition-wide or entity scope.</summary>
-    Task UnsubscribeScopedAsync(NotificationSubscriptionScopeDto input);
+    /// <summary>Deletes all of the current user's read notifications. Unread ones are preserved — delete those
+    /// individually via <see cref="DeleteAsync"/>.</summary>
+    Task DeleteAllReadAsync();
 }

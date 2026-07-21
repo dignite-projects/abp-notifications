@@ -54,7 +54,7 @@ Core:
 | `Dignite.Abp.NotificationCenter.Domain.Shared` | Enums / constants (`NotificationSeverity`, `UserNotificationState`). |
 | `Dignite.Abp.NotificationCenter.Domain` | Aggregates: `Notification`, `UserNotification`, `NotificationSubscription`. |
 | `Dignite.Abp.NotificationCenter.Application` / `.Application.Contracts` | Inbox / subscription app service + DTOs. |
-| `Dignite.Abp.NotificationCenter.HttpApi` | REST controller at `/api/notifications`. |
+| `Dignite.Abp.NotificationCenter.HttpApi` | REST controllers at `/api/notification-center`. |
 | `Dignite.Abp.NotificationCenter.HttpApi.Client` | C# client proxies for remote consumers. |
 | `Dignite.Abp.NotificationCenter.EntityFrameworkCore` | `INotificationStore` on EF Core (+ `NotificationCenterDbContext`). |
 | `Dignite.Abp.NotificationCenter.MongoDB` | `INotificationStore` on MongoDB. |
@@ -155,7 +155,7 @@ public class MyHostModule : AbpModule { }
 ### 2. Full Notification Center — inbox, subscriptions, read/unread, REST API
 
 Also install the Notification Center plus a persistence provider (EF Core or MongoDB). This adds a
-persistent per-user inbox, subscriptions, read/unread state, and the `/api/notifications` REST API.
+persistent per-user inbox, subscriptions, read/unread state, and the `/api/notification-center` REST API.
 
 ```csharp
 [DependsOn(
@@ -164,7 +164,7 @@ persistent per-user inbox, subscriptions, read/unread state, and the `/api/notif
     // typeof(AbpNotificationsEmailingIdentityModule),          // optional: UserId -> Email via ABP Identity
     typeof(AbpNotificationsIdentityModule),                    // optional: permission gating
     typeof(AbpNotificationCenterApplicationModule),            // inbox / subscription logic
-    typeof(AbpNotificationCenterHttpApiModule),                // REST API at /api/notifications
+    typeof(AbpNotificationCenterHttpApiModule),                // REST API at /api/notification-center
     typeof(AbpNotificationCenterEntityFrameworkCoreModule),    // persistence (or ...MongoDbModule)
     typeof(AbpNotificationCenterWebModule)                     // optional: MVC bell + subscriptions UI
 )]
@@ -628,30 +628,28 @@ that mode.
 
 ## REST API (Notification Center)
 
-`NotificationsController` exposes the current user's inbox and subscriptions under
-`/api/notifications`:
+Two controllers expose the current user's notification center under `/api/notification-center`:
+`UserNotificationController` (the inbox) and `NotificationSubscriptionController` (subscriptions).
 
 | Method & route | Purpose |
 |---|---|
-| `GET /api/notifications` | List the caller's notifications (paged; filter by state / date) |
-| `GET /api/notifications/count` | Notification count (optionally by state) |
-| `POST /api/notifications/{id}/mark-as-read` | Mark one notification read |
-| `POST /api/notifications/mark-all-as-read` | Mark all read |
-| `DELETE /api/notifications/{id}` | Delete one |
-| `DELETE /api/notifications` | Delete all (optionally by state) |
-| `GET /api/notifications/subscriptions` | List the caller's subscriptions |
-| `POST /api/notifications/subscriptions` | Subscribe to all entities for a notification name (compatibility endpoint) |
-| `DELETE /api/notifications/subscriptions/{name}` | Unsubscribe from all entities for a name (compatibility endpoint) |
-| `POST /api/notifications/subscription-scopes` | Subscribe to the definition-wide or exact entity scope in the JSON body |
-| `DELETE /api/notifications/subscription-scopes` | Unsubscribe only the definition-wide or exact entity scope in the query |
+| `GET /api/notification-center/notifications` | List the caller's notifications (paged; filter by state / date) |
+| `GET /api/notification-center/notifications/unread-count` | Unread notification count (for the bell badge) |
+| `POST /api/notification-center/notifications/{id}/mark-as-read` | Mark one notification read |
+| `POST /api/notification-center/notifications/mark-all-as-read` | Mark all read |
+| `DELETE /api/notification-center/notifications/{id}` | Delete one |
+| `DELETE /api/notification-center/notifications/read` | Delete all **read** notifications (unread are preserved) |
+| `GET /api/notification-center/subscriptions` | List the caller's subscriptions |
+| `POST /api/notification-center/subscriptions` | Subscribe to the definition-wide or exact entity scope in the JSON body |
+| `DELETE /api/notification-center/subscriptions` | Unsubscribe only the definition-wide or exact entity scope in the query |
 
 All endpoints are scoped to the authenticated caller. Use `...HttpApi.Client` for a typed C# proxy, or the
 ABP-generated Angular services.
 
-The scoped request contains `notificationName` plus optional `entityTypeName` and `entityId`; the two
-entity fields must be supplied together. `GET subscriptions` returns the definition-wide row for each
-available definition and every persisted entity-specific row separately, so clients must use the full
-three-field scope rather than infer state from a flattened notification name.
+The subscribe/unsubscribe request contains `notificationName` plus optional `entityTypeName` and `entityId`; the
+two entity fields must be supplied together (a definition-wide subscription omits both). `GET subscriptions`
+returns the definition-wide row for each available definition and every persisted entity-specific row separately,
+so clients must use the full three-field scope rather than infer state from a flattened notification name.
 
 For subscription-driven distribution, a notification without an entity matches only definition-wide
 subscriptions. A notification for a concrete entity matches the union of definition-wide subscriptions
@@ -659,13 +657,18 @@ and that exact entity scope; a user present in both receives one inbox row and o
 
 ### Pre-stable application/domain API migration
 
-The REST routes above are unchanged. Recompile consuming code and regenerate ABP clients after applying these
-source-level changes:
+This pre-stable revision moves the REST surface under the `/api/notification-center` prefix and splits the
+user-facing service/controller into an inbox half and a subscription half. Recompile consuming code, update
+hard-coded URLs, and regenerate ABP clients (JS / Angular proxies) after applying these source-level changes:
 
 | Before | Now | Consumer action |
 |---|---|---|
+| `NotificationsController` @ `/api/notifications` | `UserNotificationController` @ `/api/notification-center/notifications` + `NotificationSubscriptionController` @ `/api/notification-center/subscriptions` | Update hard-coded URLs; regenerate JS / Angular proxies. |
+| `IUserNotificationAppService` (inbox + subscriptions) | `IUserNotificationAppService` (inbox) + `INotificationSubscriptionAppService` (subscriptions) | Inject the subscription service for `GetSubscriptions` / `Subscribe` / `Unsubscribe`. |
+| `SubscribeScopedAsync(dto)` / `UnsubscribeScopedAsync(dto)` (+ the name-only `…Async(string)` overloads) | `SubscribeAsync(dto)` / `UnsubscribeAsync(dto)` | One method each; a definition-wide subscription leaves both entity fields null. |
 | `INotificationAppService` / `NotificationAppService` | `IUserNotificationAppService` / `UserNotificationAppService` | Rename injected service types and replacements. |
-| `GetCountAsync` | `GetNotificationCountAsync` | Rename C# calls; the route remains `GET /api/notifications/count`. |
+| `GetCountAsync` (count by state) | `GetUnreadCountAsync()` (no parameter) | Now unread-only, for the bell badge; get other counts from `GetListAsync`'s `TotalCount`. Route: `GET /api/notification-center/notifications/unread-count`. |
+| `DeleteAllAsync(state?)` | `DeleteAllReadAsync()` (no parameter) | Bulk delete now removes only read notifications; delete unread ones individually via `DeleteAsync`. Route: `DELETE /api/notification-center/notifications/read`. |
 | `IUserNotificationManager` / `UserNotificationManager` | removed | Use `INotificationStore` for inbox queries and state mutations. |
 | `INotificationSubscriptionManager` | concrete `NotificationSubscriptionManager` | Use the manager only for validated subscription mutations; use `INotificationStore` for reads. |
 | Subscription-manager read methods | removed | Use `INotificationStore.GetSubscriptionsAsync` / `IsSubscribedAsync` directly in query paths. |
@@ -681,14 +684,14 @@ definition registry and availability policy; startup resolves that replacement b
   subscriptions page. Configure the hub URL and per-type rendering via `NotificationCenterWebOptions`
   — `SignalRHubUrl`, `DataViewComponents` (keyed by discriminator), and `EntityLinkResolvers`.
 - **Angular** (`angular/projects/notification-center`): an ABP-generated proxy service plus bell and
-  subscriptions components, built against `/api/notifications` and the SignalR hub.
+  subscriptions components, built against `/api/notification-center` and the SignalR hub.
 
 Both bells open a SignalR connection to `/signalr-hubs/notifications` and refresh from the REST inbox when a
 `ReceiveNotification` message arrives or the connection reconnects (auto-reconnect handled by the SignalR client);
 the REST inbox is always the authoritative source, since SignalR does not replay missed notifications. If the
 SignalR notifier isn't installed or `@microsoft/signalr` isn't loaded, the bell degrades to a non-live view. MVC
 reads the hub URL from `NotificationCenterWebOptions.SignalRHubUrl`; for remote deployments point that (or the
-Angular API URL) at the externally reachable hub while keeping `/api/notifications` as the inbox source.
+Angular API URL) at the externally reachable hub while keeping `/api/notification-center/notifications` as the inbox source.
 
 ## Configuration
 
