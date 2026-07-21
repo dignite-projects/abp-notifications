@@ -67,7 +67,7 @@ namespace Dignite.NotificationCenter.Web.Host.Migrations
 
                     b.HasIndex("TenantId", "NotificationName", "CreationTime");
 
-                    b.ToTable("AbpNotifications", (string)null);
+                    b.ToTable("NotifNotifications", (string)null);
                 });
 
             modelBuilder.Entity("Dignite.NotificationCenter.NotificationSubscription", b =>
@@ -125,7 +125,7 @@ namespace Dignite.NotificationCenter.Web.Host.Migrations
                     b.HasIndex("TenantKey", "UserId", "NotificationNameKey", "ScopeKey")
                         .IsUnique();
 
-                    b.ToTable("AbpNotificationSubscriptions", (string)null);
+                    b.ToTable("NotifNotificationSubscriptions", (string)null);
                 });
 
             modelBuilder.Entity("Dignite.NotificationCenter.UserNotification", b =>
@@ -163,7 +163,7 @@ namespace Dignite.NotificationCenter.Web.Host.Migrations
 
                     b.HasIndex("TenantId", "UserId", "State", "CreationTime");
 
-                    b.ToTable("AbpUserNotifications", (string)null);
+                    b.ToTable("NotifUserNotifications", (string)null);
                 });
 
             modelBuilder.Entity("Volo.Abp.AuditLogging.AuditLog", b =>
