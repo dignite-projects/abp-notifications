@@ -53,7 +53,7 @@ jobs:
 
       # EF Core provider - runs against in-memory Sqlite, no external database dependency.
       - name: Run NotificationCenter (EF Core) tests
-        run: dotnet test notification-center/test/Dignite.NotificationCenter.Tests/Dignite.NotificationCenter.Tests.csproj --no-build --configuration Release --verbosity normal
+        run: dotnet test notification-center/test/Dignite.NotificationCenter.EntityFrameworkCore.Tests/Dignite.NotificationCenter.EntityFrameworkCore.Tests.csproj --no-build --configuration Release --verbosity normal
 
       # MongoDB provider - starts an embedded mongod via MongoSandbox (MongoSandbox8.runtime.linux-x64
       # is pinned in Directory.Packages.props and resolves fine on this runner); no external
