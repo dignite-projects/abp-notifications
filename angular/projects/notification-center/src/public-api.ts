@@ -1,5 +1,5 @@
 /*
- * Public API Surface of @dignite/abp.ng.notification-center
+ * Public API Surface of @dignite/ng.notification-center
  *
  * The API service + DTOs/enums are ABP-generated proxies (`abp generate-proxy -t ng -m notification-center`);
  * regenerate them with the backend running rather than hand-editing. The components are hand-written UI on top.

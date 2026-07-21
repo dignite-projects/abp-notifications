@@ -17,10 +17,10 @@ import {
     <table class="abp-notification-subscriptions-table">
       <thead>
         <tr>
-          <th>{{ 'AbpNotificationCenter::NotificationType' | abpLocalization }}</th>
-          <th>{{ 'AbpNotificationCenter::SubscriptionScope' | abpLocalization }}</th>
-          <th>{{ 'AbpNotificationCenter::Description' | abpLocalization }}</th>
-          <th>{{ 'AbpNotificationCenter::Subscribed' | abpLocalization }}</th>
+          <th>{{ 'NotificationCenter::NotificationType' | abpLocalization }}</th>
+          <th>{{ 'NotificationCenter::SubscriptionScope' | abpLocalization }}</th>
+          <th>{{ 'NotificationCenter::Description' | abpLocalization }}</th>
+          <th>{{ 'NotificationCenter::Subscribed' | abpLocalization }}</th>
         </tr>
       </thead>
       <tbody>
@@ -31,7 +31,7 @@ import {
               @if (s.entityTypeName) {
                 <code>{{ s.entityTypeName }} / {{ s.entityId }}</code>
               } @else {
-                {{ 'AbpNotificationCenter::AllEntities' | abpLocalization }}
+                {{ 'NotificationCenter::AllEntities' | abpLocalization }}
               }
             </td>
             <td>{{ s.description }}</td>

@@ -41,7 +41,7 @@ import {
         ngbDropdownToggle
         [class.dropdown-toggle]="false"
         aria-haspopup="true"
-        [attr.aria-label]="'AbpNotificationCenter::Notifications' | abpLocalization"
+        [attr.aria-label]="'NotificationCenter::Notifications' | abpLocalization"
       >
         <i aria-hidden="true" class="lpx-icon fas fa-bell"></i>
         @if (unreadCount > 0) {
@@ -54,15 +54,15 @@ import {
         [class.d-block]="smallScreen && notificationDropdown.isOpen()"
       >
         <div class="abp-notification-dropdown-header">
-          <strong>{{ 'AbpNotificationCenter::Notifications' | abpLocalization }}</strong>
+          <strong>{{ 'NotificationCenter::Notifications' | abpLocalization }}</strong>
           @if (unreadCount > 0) {
             <a href="#" (click)="markAllAsRead(); $event.preventDefault()">{{
-              'AbpNotificationCenter::MarkAllAsRead' | abpLocalization
+              'NotificationCenter::MarkAllAsRead' | abpLocalization
             }}</a>
           }
         </div>
         @if (notifications.length === 0) {
-          <div class="abp-notification-empty">{{ 'AbpNotificationCenter::NoUnreadNotifications' | abpLocalization }}</div>
+          <div class="abp-notification-empty">{{ 'NotificationCenter::NoUnreadNotifications' | abpLocalization }}</div>
         } @else {
           @for (n of notifications; track n.id) {
             <div

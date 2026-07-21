@@ -46,20 +46,20 @@ jobs:
       - name: Build
         run: dotnet build Dignite.Abp.Notifications.slnx --no-restore --configuration Release
 
-      # Dignite.Abp.NotificationCenter.TestBase is IsTestProject=false (shared scenarios, no
+      # Dignite.NotificationCenter.TestBase is IsTestProject=false (shared scenarios, no
       # runner) - it is exercised indirectly via the two projects below, never run directly.
       - name: Run Notifications (core) tests
         run: dotnet test core/test/Dignite.Abp.Notifications.Tests/Dignite.Abp.Notifications.Tests.csproj --no-build --configuration Release --verbosity normal
 
       # EF Core provider - runs against in-memory Sqlite, no external database dependency.
       - name: Run NotificationCenter (EF Core) tests
-        run: dotnet test notification-center/test/Dignite.Abp.NotificationCenter.Tests/Dignite.Abp.NotificationCenter.Tests.csproj --no-build --configuration Release --verbosity normal
+        run: dotnet test notification-center/test/Dignite.NotificationCenter.Tests/Dignite.NotificationCenter.Tests.csproj --no-build --configuration Release --verbosity normal
 
       # MongoDB provider - starts an embedded mongod via MongoSandbox (MongoSandbox8.runtime.linux-x64
       # is pinned in Directory.Packages.props and resolves fine on this runner); no external
       # MongoDB install needed.
       - name: Run NotificationCenter (MongoDB) tests
-        run: dotnet test notification-center/test/Dignite.Abp.NotificationCenter.MongoDB.Tests/Dignite.Abp.NotificationCenter.MongoDB.Tests.csproj --no-build --configuration Release --verbosity normal
+        run: dotnet test notification-center/test/Dignite.NotificationCenter.MongoDB.Tests/Dignite.NotificationCenter.MongoDB.Tests.csproj --no-build --configuration Release --verbosity normal
 
       - name: Pack NuGet packages
         run: dotnet pack Dignite.Abp.Notifications.slnx --no-build --configuration Release --output ./artifacts-ci/nuget

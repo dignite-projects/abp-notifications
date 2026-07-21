@@ -18,7 +18,7 @@ paths:
 
 ## 1. Domain Layer
 
-Add the entity under `notification-center/src/Dignite.Abp.NotificationCenter.Domain/`, at the
+Add the entity under `notification-center/src/Dignite.NotificationCenter.Domain/`, at the
 namespace-mirrored path (see `template/app.md`'s file layout convention). Match the existing shape
 — `BasicAggregateRoot<Guid>`, explicit `IMultiTenant`, protected setters + a protected empty ctor
 for the ORM, a public ctor that takes all required state, behavior methods instead of public
@@ -70,7 +70,7 @@ builder.Entity<Widget>(b =>
 });
 ```
 
-Add the equivalent mapping in `Dignite.Abp.NotificationCenter.MongoDB` too — both stores back the
+Add the equivalent mapping in `Dignite.NotificationCenter.MongoDB` too — both stores back the
 same `INotificationStore` abstraction and must stay in sync.
 
 **Do not add a `Migrations/` folder or run `dotnet ef migrations add` in this repo** — there is no
@@ -95,7 +95,7 @@ Implement against the generic repository, with `[Authorize(...)]` on mutating me
 
 ## 8. Add Tests
 
-In `notification-center/test/Dignite.Abp.NotificationCenter.EntityFrameworkCore.Tests/`, inheriting
+In `notification-center/test/Dignite.NotificationCenter.EntityFrameworkCore.Tests/`, inheriting
 `NotificationCenterTestBase`. Use this repo's actual test-naming convention (descriptive sentence,
 not `Should_X_When_Y`) — see `framework/testing/patterns.md`.
 

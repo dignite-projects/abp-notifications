@@ -77,9 +77,9 @@ Core and MongoDB. `notification-center/test` is therefore three projects, not on
 
 | Project | Role |
 |---|---|
-| `Dignite.Abp.NotificationCenter.TestBase` | Shared, provider-independent. Holds `AbpNotificationCenterTestBaseModule`, the generic `NotificationCenterTestBase<TStartupModule>`, test objects (`OrderShippedNotificationData`, `TestNotificationDefinitionProvider`, the embedded `HistoricalPayloadFixtures` used by tolerant-read tests), and the **abstract** scenario classes — `NotificationStore_Tests<T>`, `UserNotificationAppService_Tests<T>`, `NotificationDistribution_Tests<T>`, and `Notification_Outbox_Tests<T>`. Marked `<IsTestProject>false</IsTestProject>` — it has no runner, so `dotnet test` on the solution must not try to execute it. |
-| `Dignite.Abp.NotificationCenter.EntityFrameworkCore.Tests` | EF Core / in-memory Sqlite provider. Thin subclasses of every abstract scenario, bound to `AbpNotificationCenterEntityFrameworkCoreTestModule`. |
-| `Dignite.Abp.NotificationCenter.MongoDB.Tests` | MongoDB provider. Thin subclasses of every abstract scenario, tagged `[Collection(MongoTestCollection.Name)]`. Most bind to `AbpNotificationCenterMongoDbTestModule`; the outbox scenario binds to the separate `AbpNotificationCenterMongoDbOutboxTestModule` and adds MongoDB-specific facts (both event boxes configured, ABP collection names + the unique `MessageId` index, concurrent inbox redelivery collapsing to one record). |
+| `Dignite.NotificationCenter.TestBase` | Shared, provider-independent. Holds `NotificationCenterTestBaseModule`, the generic `NotificationCenterTestBase<TStartupModule>`, test objects (`OrderShippedNotificationData`, `TestNotificationDefinitionProvider`, the embedded `HistoricalPayloadFixtures` used by tolerant-read tests), and the **abstract** scenario classes — `NotificationStore_Tests<T>`, `UserNotificationAppService_Tests<T>`, `NotificationDistribution_Tests<T>`, and `Notification_Outbox_Tests<T>`. Marked `<IsTestProject>false</IsTestProject>` — it has no runner, so `dotnet test` on the solution must not try to execute it. |
+| `Dignite.NotificationCenter.EntityFrameworkCore.Tests` | EF Core / in-memory Sqlite provider. Thin subclasses of every abstract scenario, bound to `NotificationCenterEntityFrameworkCoreTestModule`. |
+| `Dignite.NotificationCenter.MongoDB.Tests` | MongoDB provider. Thin subclasses of every abstract scenario, tagged `[Collection(MongoTestCollection.Name)]`. Most bind to `NotificationCenterMongoDbTestModule`; the outbox scenario binds to the separate `NotificationCenterMongoDbOutboxTestModule` and adds MongoDB-specific facts (both event boxes configured, ABP collection names + the unique `MessageId` index, concurrent inbox redelivery collapsing to one record). |
 
 **Both providers run the transactional outbox contract.** `Notification_Outbox_Tests<T>` is a shared
 scenario, not an EF-only one: MongoDB wires the outbox through `UseNotificationCenterMongoDbOutbox()`.
@@ -158,7 +158,7 @@ context.Services.AddSingleton(emailSender);
 
 When a test needs a concrete `NotificationData` subclass, define a small test-only one (see
 `OrderShippedNotificationData` in
-`notification-center/test/Dignite.Abp.NotificationCenter.TestBase/OrderShippedNotificationData.cs`)
+`notification-center/test/Dignite.NotificationCenter.TestBase/OrderShippedNotificationData.cs`)
 tagged with its own `[NotificationDataType("Test.OrderShipped")]` — don't reuse a production type
 just because it's convenient, and don't skip the discriminator (that's exactly what
 `notifications-invariants.md` §1 tests are meant to catch).
