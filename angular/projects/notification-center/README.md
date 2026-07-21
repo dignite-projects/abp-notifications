@@ -1,8 +1,8 @@
 # @dignite/abp.ng.notification-center
 
 Angular UI library for the **Dignite ABP Notification Center** — a notification **bell** (unread
-badge + dropdown) and a **subscriptions** management component, plus the ABP-generated API proxy
-(`NotificationsService` + DTOs/enums) over `/api/notifications`. It mirrors the module's MVC UI for
+badge + dropdown) and a **subscriptions** management component, plus the ABP-generated API proxies
+(`UserNotificationService` + `NotificationSubscriptionService` + DTOs/enums) over `/api/notification-center`. It mirrors the module's MVC UI for
 Angular consumers and is packaged like ABP's own `@abp/ng.*` libraries: a main entry point plus a
 `/config` secondary entry point.
 
@@ -16,7 +16,7 @@ The npm package version stays in lockstep with the repository's NuGet package ve
 
 | Import | Contents |
 |---|---|
-| `@dignite/abp.ng.notification-center` | `NotificationBellComponent` (`<abp-notification-bell>`), `NotificationSubscriptionsComponent`, and ABP-generated inbox, preference, and delivery API proxies + DTOs/enums. |
+| `@dignite/abp.ng.notification-center` | `NotificationBellComponent` (`<abp-notification-bell>`), `NotificationSubscriptionsComponent`, and the ABP-generated inbox + subscription API proxies (`UserNotificationService`, `NotificationSubscriptionService`) + DTOs/enums. |
 | `@dignite/abp.ng.notification-center/config` | `provideNotificationCenterConfig()` — registers the navigation-menu entry into the host — plus the `eNotificationCenterRouteNames` route-name enum. Call the provider once in `app.config.ts`. |
 
 ## Usage

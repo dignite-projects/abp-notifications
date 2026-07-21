@@ -1,13 +1,13 @@
 import { TestBed } from '@angular/core/testing';
 import { of } from 'rxjs';
-import { NotificationsService } from '../proxy/dignite/abp/notification-center';
+import { NotificationSubscriptionService } from '../proxy/dignite/abp/notification-center';
 import { NotificationSubscriptionsComponent } from './notification-subscriptions.component';
 
 describe('NotificationSubscriptionsComponent', () => {
   const notificationService = {
     getSubscriptions: vi.fn(() => of({ items: [] })),
-    subscribeScoped: vi.fn(() => of(undefined)),
-    unsubscribeScoped: vi.fn(() => of(undefined)),
+    subscribe: vi.fn(() => of(undefined)),
+    unsubscribe: vi.fn(() => of(undefined)),
   };
 
   beforeEach(() => {
@@ -16,7 +16,7 @@ describe('NotificationSubscriptionsComponent', () => {
       set: { template: '', imports: [] },
     });
     TestBed.configureTestingModule({
-      providers: [{ provide: NotificationsService, useValue: notificationService }],
+      providers: [{ provide: NotificationSubscriptionService, useValue: notificationService }],
     });
   });
 
@@ -31,7 +31,7 @@ describe('NotificationSubscriptionsComponent', () => {
 
     component.toggle(subscription, true);
 
-    expect(notificationService.subscribeScoped).toHaveBeenCalledWith({
+    expect(notificationService.subscribe).toHaveBeenCalledWith({
       notificationName: 'order.shipped',
       entityTypeName: 'Demo.Order',
       entityId: '42',
@@ -57,7 +57,7 @@ describe('NotificationSubscriptionsComponent', () => {
     expect(component.scopeKey(definitionWide)).not.toBe(component.scopeKey(entitySpecific));
     component.toggle(entitySpecific, false);
 
-    expect(notificationService.unsubscribeScoped).toHaveBeenCalledWith({
+    expect(notificationService.unsubscribe).toHaveBeenCalledWith({
       notificationName: 'order.shipped',
       entityTypeName: 'Demo.Order',
       entityId: '42',

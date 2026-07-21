@@ -4,7 +4,7 @@ import { AuthService, EnvironmentService, LocalizationPipe } from '@abp/ng.core'
 import { NgbDropdownModule } from '@ng-bootstrap/ng-bootstrap';
 import { HubConnection, HubConnectionBuilder } from '@microsoft/signalr';
 import { Router } from '@angular/router';
-import { NotificationsService, UserNotificationDto } from '../proxy/dignite/abp/notification-center';
+import { UserNotificationService, UserNotificationDto } from '../proxy/dignite/abp/notification-center';
 import { NotificationSeverity, UserNotificationState } from '../proxy/dignite/abp/notifications';
 import { NotificationDataComponentsService } from '../notification-data/notification-data-components.service';
 import { NotificationDataPayload } from '../notification-data/notification-data-payload';
@@ -111,7 +111,7 @@ export class NotificationBellComponent implements OnInit, OnDestroy {
   notifications: UserNotificationDto[] = [];
 
   private markingNotificationIds = new Set<string>();
-  private notificationService = inject(NotificationsService);
+  private notificationService = inject(UserNotificationService);
   private notificationDataComponents = inject(NotificationDataComponentsService);
   private notificationEntityLinks = inject(NotificationEntityLinksService);
   private authService = inject(AuthService);
@@ -138,7 +138,7 @@ export class NotificationBellComponent implements OnInit, OnDestroy {
 
   /** Public: a host app can force a refresh after local actions. SignalR updates are handled by this component. */
   refresh(): void {
-    this.notificationService.getNotificationCount(UserNotificationState.Unread).subscribe(c => {
+    this.notificationService.getUnreadCount().subscribe(c => {
       this.unreadCount = c;
       this.changeDetectorRef.markForCheck();
     });

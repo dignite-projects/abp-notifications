@@ -82,7 +82,8 @@ try {
     `import {
   NotificationBellComponent,
   NotificationSubscriptionsComponent,
-  NotificationsService,
+  UserNotificationService,
+  NotificationSubscriptionService,
 } from '@dignite/abp.ng.notification-center';
 import {
   eNotificationCenterRouteNames,
@@ -92,7 +93,8 @@ import {
 export const packageSurface = {
   NotificationBellComponent,
   NotificationSubscriptionsComponent,
-  NotificationsService,
+  UserNotificationService,
+  NotificationSubscriptionService,
   provideNotificationCenterConfig,
   notificationsRoute: eNotificationCenterRouteNames.Notifications,
 };

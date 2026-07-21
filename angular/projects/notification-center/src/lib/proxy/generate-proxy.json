@@ -3418,13 +3418,235 @@
       "rootPath": "notification-center",
       "remoteServiceName": "NotificationCenter",
       "controllers": {
-        "Dignite.Abp.NotificationCenter.NotificationsController": {
-          "controllerName": "Notifications",
-          "controllerGroupName": "Notifications",
+        "Dignite.Abp.NotificationCenter.NotificationSubscriptionController": {
+          "controllerName": "NotificationSubscription",
+          "controllerGroupName": "NotificationSubscription",
           "isRemoteService": true,
           "isIntegrationService": false,
           "apiVersion": null,
-          "type": "Dignite.Abp.NotificationCenter.NotificationsController",
+          "type": "Dignite.Abp.NotificationCenter.NotificationSubscriptionController",
+          "summary": null,
+          "remarks": null,
+          "description": null,
+          "displayName": null,
+          "interfaces": [
+            {
+              "type": "Dignite.Abp.NotificationCenter.INotificationSubscriptionAppService",
+              "name": "INotificationSubscriptionAppService",
+              "methods": [
+                {
+                  "name": "GetSubscriptionsAsync",
+                  "parametersOnMethod": [],
+                  "returnValue": {
+                    "type": "Volo.Abp.Application.Dtos.ListResultDto<Dignite.Abp.NotificationCenter.NotificationSubscriptionDto>",
+                    "typeSimple": "Volo.Abp.Application.Dtos.ListResultDto<Dignite.Abp.NotificationCenter.NotificationSubscriptionDto>",
+                    "summary": null
+                  }
+                },
+                {
+                  "name": "SubscribeAsync",
+                  "parametersOnMethod": [
+                    {
+                      "name": "input",
+                      "typeAsString": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto, Dignite.Abp.NotificationCenter.Application.Contracts",
+                      "type": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
+                      "typeSimple": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
+                      "isOptional": false,
+                      "defaultValue": null,
+                      "summary": null,
+                      "description": null,
+                      "displayName": null
+                    }
+                  ],
+                  "returnValue": {
+                    "type": "System.Void",
+                    "typeSimple": "System.Void",
+                    "summary": null
+                  }
+                },
+                {
+                  "name": "UnsubscribeAsync",
+                  "parametersOnMethod": [
+                    {
+                      "name": "input",
+                      "typeAsString": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto, Dignite.Abp.NotificationCenter.Application.Contracts",
+                      "type": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
+                      "typeSimple": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
+                      "isOptional": false,
+                      "defaultValue": null,
+                      "summary": null,
+                      "description": null,
+                      "displayName": null
+                    }
+                  ],
+                  "returnValue": {
+                    "type": "System.Void",
+                    "typeSimple": "System.Void",
+                    "summary": null
+                  }
+                }
+              ]
+            }
+          ],
+          "actions": {
+            "GetSubscriptionsAsync": {
+              "uniqueName": "GetSubscriptionsAsync",
+              "name": "GetSubscriptionsAsync",
+              "httpMethod": "GET",
+              "url": "api/notification-center/subscriptions",
+              "supportedVersions": [],
+              "parametersOnMethod": [],
+              "parameters": [],
+              "returnValue": {
+                "type": "Volo.Abp.Application.Dtos.ListResultDto<Dignite.Abp.NotificationCenter.NotificationSubscriptionDto>",
+                "typeSimple": "Volo.Abp.Application.Dtos.ListResultDto<Dignite.Abp.NotificationCenter.NotificationSubscriptionDto>",
+                "summary": null
+              },
+              "allowAnonymous": null,
+              "authorizeDatas": [],
+              "implementFrom": "Dignite.Abp.NotificationCenter.INotificationSubscriptionAppService",
+              "summary": null,
+              "remarks": null,
+              "description": null,
+              "displayName": null
+            },
+            "SubscribeAsyncByInput": {
+              "uniqueName": "SubscribeAsyncByInput",
+              "name": "SubscribeAsync",
+              "httpMethod": "POST",
+              "url": "api/notification-center/subscriptions",
+              "supportedVersions": [],
+              "parametersOnMethod": [
+                {
+                  "name": "input",
+                  "typeAsString": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto, Dignite.Abp.NotificationCenter.Application.Contracts",
+                  "type": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
+                  "typeSimple": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
+                  "isOptional": false,
+                  "defaultValue": null,
+                  "summary": null,
+                  "description": null,
+                  "displayName": null
+                }
+              ],
+              "parameters": [
+                {
+                  "nameOnMethod": "input",
+                  "name": "input",
+                  "jsonName": null,
+                  "type": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
+                  "typeSimple": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
+                  "isOptional": false,
+                  "defaultValue": null,
+                  "constraintTypes": null,
+                  "bindingSourceId": "Body",
+                  "descriptorName": "",
+                  "summary": null,
+                  "description": null,
+                  "displayName": null
+                }
+              ],
+              "returnValue": {
+                "type": "System.Void",
+                "typeSimple": "System.Void",
+                "summary": null
+              },
+              "allowAnonymous": null,
+              "authorizeDatas": [],
+              "implementFrom": "Dignite.Abp.NotificationCenter.INotificationSubscriptionAppService",
+              "summary": null,
+              "remarks": null,
+              "description": null,
+              "displayName": null
+            },
+            "UnsubscribeAsyncByInput": {
+              "uniqueName": "UnsubscribeAsyncByInput",
+              "name": "UnsubscribeAsync",
+              "httpMethod": "DELETE",
+              "url": "api/notification-center/subscriptions",
+              "supportedVersions": [],
+              "parametersOnMethod": [
+                {
+                  "name": "input",
+                  "typeAsString": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto, Dignite.Abp.NotificationCenter.Application.Contracts",
+                  "type": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
+                  "typeSimple": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
+                  "isOptional": false,
+                  "defaultValue": null,
+                  "summary": null,
+                  "description": null,
+                  "displayName": null
+                }
+              ],
+              "parameters": [
+                {
+                  "nameOnMethod": "input",
+                  "name": "NotificationName",
+                  "jsonName": null,
+                  "type": "System.String",
+                  "typeSimple": "string",
+                  "isOptional": false,
+                  "defaultValue": null,
+                  "constraintTypes": null,
+                  "bindingSourceId": "Query",
+                  "descriptorName": "input",
+                  "summary": null,
+                  "description": null,
+                  "displayName": null
+                },
+                {
+                  "nameOnMethod": "input",
+                  "name": "EntityTypeName",
+                  "jsonName": null,
+                  "type": "System.String",
+                  "typeSimple": "string",
+                  "isOptional": false,
+                  "defaultValue": null,
+                  "constraintTypes": null,
+                  "bindingSourceId": "Query",
+                  "descriptorName": "input",
+                  "summary": null,
+                  "description": null,
+                  "displayName": null
+                },
+                {
+                  "nameOnMethod": "input",
+                  "name": "EntityId",
+                  "jsonName": null,
+                  "type": "System.String",
+                  "typeSimple": "string",
+                  "isOptional": false,
+                  "defaultValue": null,
+                  "constraintTypes": null,
+                  "bindingSourceId": "Query",
+                  "descriptorName": "input",
+                  "summary": null,
+                  "description": null,
+                  "displayName": null
+                }
+              ],
+              "returnValue": {
+                "type": "System.Void",
+                "typeSimple": "System.Void",
+                "summary": null
+              },
+              "allowAnonymous": null,
+              "authorizeDatas": [],
+              "implementFrom": "Dignite.Abp.NotificationCenter.INotificationSubscriptionAppService",
+              "summary": null,
+              "remarks": null,
+              "description": null,
+              "displayName": null
+            }
+          }
+        },
+        "Dignite.Abp.NotificationCenter.UserNotificationController": {
+          "controllerName": "UserNotification",
+          "controllerGroupName": "UserNotification",
+          "isRemoteService": true,
+          "isIntegrationService": false,
+          "apiVersion": null,
+          "type": "Dignite.Abp.NotificationCenter.UserNotificationController",
           "summary": null,
           "remarks": null,
           "description": null,
@@ -3456,20 +3678,8 @@
                   }
                 },
                 {
-                  "name": "GetNotificationCountAsync",
-                  "parametersOnMethod": [
-                    {
-                      "name": "state",
-                      "typeAsString": "System.Nullable`1[[Dignite.Abp.Notifications.UserNotificationState, Dignite.Abp.Notifications.Abstractions, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null]], System.Private.CoreLib",
-                      "type": "Dignite.Abp.Notifications.UserNotificationState?",
-                      "typeSimple": "enum?",
-                      "isOptional": true,
-                      "defaultValue": null,
-                      "summary": null,
-                      "description": null,
-                      "displayName": null
-                    }
-                  ],
+                  "name": "GetUnreadCountAsync",
+                  "parametersOnMethod": [],
                   "returnValue": {
                     "type": "System.Int32",
                     "typeSimple": "number",
@@ -3528,113 +3738,8 @@
                   }
                 },
                 {
-                  "name": "DeleteAllAsync",
-                  "parametersOnMethod": [
-                    {
-                      "name": "state",
-                      "typeAsString": "System.Nullable`1[[Dignite.Abp.Notifications.UserNotificationState, Dignite.Abp.Notifications.Abstractions, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null]], System.Private.CoreLib",
-                      "type": "Dignite.Abp.Notifications.UserNotificationState?",
-                      "typeSimple": "enum?",
-                      "isOptional": true,
-                      "defaultValue": null,
-                      "summary": null,
-                      "description": null,
-                      "displayName": null
-                    }
-                  ],
-                  "returnValue": {
-                    "type": "System.Void",
-                    "typeSimple": "System.Void",
-                    "summary": null
-                  }
-                },
-                {
-                  "name": "GetSubscriptionsAsync",
+                  "name": "DeleteAllReadAsync",
                   "parametersOnMethod": [],
-                  "returnValue": {
-                    "type": "Volo.Abp.Application.Dtos.ListResultDto<Dignite.Abp.NotificationCenter.NotificationSubscriptionDto>",
-                    "typeSimple": "Volo.Abp.Application.Dtos.ListResultDto<Dignite.Abp.NotificationCenter.NotificationSubscriptionDto>",
-                    "summary": null
-                  }
-                },
-                {
-                  "name": "SubscribeAsync",
-                  "parametersOnMethod": [
-                    {
-                      "name": "notificationName",
-                      "typeAsString": "System.String, System.Private.CoreLib",
-                      "type": "System.String",
-                      "typeSimple": "string",
-                      "isOptional": false,
-                      "defaultValue": null,
-                      "summary": null,
-                      "description": null,
-                      "displayName": null
-                    }
-                  ],
-                  "returnValue": {
-                    "type": "System.Void",
-                    "typeSimple": "System.Void",
-                    "summary": null
-                  }
-                },
-                {
-                  "name": "UnsubscribeAsync",
-                  "parametersOnMethod": [
-                    {
-                      "name": "notificationName",
-                      "typeAsString": "System.String, System.Private.CoreLib",
-                      "type": "System.String",
-                      "typeSimple": "string",
-                      "isOptional": false,
-                      "defaultValue": null,
-                      "summary": null,
-                      "description": null,
-                      "displayName": null
-                    }
-                  ],
-                  "returnValue": {
-                    "type": "System.Void",
-                    "typeSimple": "System.Void",
-                    "summary": null
-                  }
-                },
-                {
-                  "name": "SubscribeScopedAsync",
-                  "parametersOnMethod": [
-                    {
-                      "name": "input",
-                      "typeAsString": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto, Dignite.Abp.NotificationCenter.Application.Contracts",
-                      "type": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
-                      "typeSimple": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
-                      "isOptional": false,
-                      "defaultValue": null,
-                      "summary": null,
-                      "description": null,
-                      "displayName": null
-                    }
-                  ],
-                  "returnValue": {
-                    "type": "System.Void",
-                    "typeSimple": "System.Void",
-                    "summary": null
-                  }
-                },
-                {
-                  "name": "UnsubscribeScopedAsync",
-                  "parametersOnMethod": [
-                    {
-                      "name": "input",
-                      "typeAsString": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto, Dignite.Abp.NotificationCenter.Application.Contracts",
-                      "type": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
-                      "typeSimple": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
-                      "isOptional": false,
-                      "defaultValue": null,
-                      "summary": null,
-                      "description": null,
-                      "displayName": null
-                    }
-                  ],
                   "returnValue": {
                     "type": "System.Void",
                     "typeSimple": "System.Void",
@@ -3649,7 +3754,7 @@
               "uniqueName": "GetListAsyncByInput",
               "name": "GetListAsync",
               "httpMethod": "GET",
-              "url": "api/notifications",
+              "url": "api/notification-center/notifications",
               "supportedVersions": [],
               "parametersOnMethod": [
                 {
@@ -3754,42 +3859,14 @@
               "description": null,
               "displayName": null
             },
-            "GetNotificationCountAsyncByState": {
-              "uniqueName": "GetNotificationCountAsyncByState",
-              "name": "GetNotificationCountAsync",
+            "GetUnreadCountAsync": {
+              "uniqueName": "GetUnreadCountAsync",
+              "name": "GetUnreadCountAsync",
               "httpMethod": "GET",
-              "url": "api/notifications/count",
+              "url": "api/notification-center/notifications/unread-count",
               "supportedVersions": [],
-              "parametersOnMethod": [
-                {
-                  "name": "state",
-                  "typeAsString": "System.Nullable`1[[Dignite.Abp.Notifications.UserNotificationState, Dignite.Abp.Notifications.Abstractions, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null]], System.Private.CoreLib",
-                  "type": "Dignite.Abp.Notifications.UserNotificationState?",
-                  "typeSimple": "enum?",
-                  "isOptional": true,
-                  "defaultValue": null,
-                  "summary": null,
-                  "description": null,
-                  "displayName": null
-                }
-              ],
-              "parameters": [
-                {
-                  "nameOnMethod": "state",
-                  "name": "state",
-                  "jsonName": null,
-                  "type": "Dignite.Abp.Notifications.UserNotificationState?",
-                  "typeSimple": "enum?",
-                  "isOptional": false,
-                  "defaultValue": null,
-                  "constraintTypes": null,
-                  "bindingSourceId": "ModelBinding",
-                  "descriptorName": "",
-                  "summary": null,
-                  "description": null,
-                  "displayName": null
-                }
-              ],
+              "parametersOnMethod": [],
+              "parameters": [],
               "returnValue": {
                 "type": "System.Int32",
                 "typeSimple": "number",
@@ -3807,7 +3884,7 @@
               "uniqueName": "MarkAsReadAsyncByNotificationId",
               "name": "MarkAsReadAsync",
               "httpMethod": "POST",
-              "url": "api/notifications/{notificationId}/mark-as-read",
+              "url": "api/notification-center/notifications/{notificationId}/mark-as-read",
               "supportedVersions": [],
               "parametersOnMethod": [
                 {
@@ -3856,7 +3933,7 @@
               "uniqueName": "MarkAllAsReadAsync",
               "name": "MarkAllAsReadAsync",
               "httpMethod": "POST",
-              "url": "api/notifications/mark-all-as-read",
+              "url": "api/notification-center/notifications/mark-all-as-read",
               "supportedVersions": [],
               "parametersOnMethod": [],
               "parameters": [],
@@ -3877,7 +3954,7 @@
               "uniqueName": "DeleteAsyncByNotificationId",
               "name": "DeleteAsync",
               "httpMethod": "DELETE",
-              "url": "api/notifications/{notificationId}",
+              "url": "api/notification-center/notifications/{notificationId}",
               "supportedVersions": [],
               "parametersOnMethod": [
                 {
@@ -3922,289 +3999,14 @@
               "description": null,
               "displayName": null
             },
-            "DeleteAllAsyncByState": {
-              "uniqueName": "DeleteAllAsyncByState",
-              "name": "DeleteAllAsync",
+            "DeleteAllReadAsync": {
+              "uniqueName": "DeleteAllReadAsync",
+              "name": "DeleteAllReadAsync",
               "httpMethod": "DELETE",
-              "url": "api/notifications",
-              "supportedVersions": [],
-              "parametersOnMethod": [
-                {
-                  "name": "state",
-                  "typeAsString": "System.Nullable`1[[Dignite.Abp.Notifications.UserNotificationState, Dignite.Abp.Notifications.Abstractions, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null]], System.Private.CoreLib",
-                  "type": "Dignite.Abp.Notifications.UserNotificationState?",
-                  "typeSimple": "enum?",
-                  "isOptional": true,
-                  "defaultValue": null,
-                  "summary": null,
-                  "description": null,
-                  "displayName": null
-                }
-              ],
-              "parameters": [
-                {
-                  "nameOnMethod": "state",
-                  "name": "state",
-                  "jsonName": null,
-                  "type": "Dignite.Abp.Notifications.UserNotificationState?",
-                  "typeSimple": "enum?",
-                  "isOptional": false,
-                  "defaultValue": null,
-                  "constraintTypes": null,
-                  "bindingSourceId": "ModelBinding",
-                  "descriptorName": "",
-                  "summary": null,
-                  "description": null,
-                  "displayName": null
-                }
-              ],
-              "returnValue": {
-                "type": "System.Void",
-                "typeSimple": "System.Void",
-                "summary": null
-              },
-              "allowAnonymous": null,
-              "authorizeDatas": [],
-              "implementFrom": "Dignite.Abp.NotificationCenter.IUserNotificationAppService",
-              "summary": null,
-              "remarks": null,
-              "description": null,
-              "displayName": null
-            },
-            "GetSubscriptionsAsync": {
-              "uniqueName": "GetSubscriptionsAsync",
-              "name": "GetSubscriptionsAsync",
-              "httpMethod": "GET",
-              "url": "api/notifications/subscriptions",
+              "url": "api/notification-center/notifications/read",
               "supportedVersions": [],
               "parametersOnMethod": [],
               "parameters": [],
-              "returnValue": {
-                "type": "Volo.Abp.Application.Dtos.ListResultDto<Dignite.Abp.NotificationCenter.NotificationSubscriptionDto>",
-                "typeSimple": "Volo.Abp.Application.Dtos.ListResultDto<Dignite.Abp.NotificationCenter.NotificationSubscriptionDto>",
-                "summary": null
-              },
-              "allowAnonymous": null,
-              "authorizeDatas": [],
-              "implementFrom": "Dignite.Abp.NotificationCenter.IUserNotificationAppService",
-              "summary": null,
-              "remarks": null,
-              "description": null,
-              "displayName": null
-            },
-            "SubscribeAsyncByNotificationName": {
-              "uniqueName": "SubscribeAsyncByNotificationName",
-              "name": "SubscribeAsync",
-              "httpMethod": "POST",
-              "url": "api/notifications/subscriptions",
-              "supportedVersions": [],
-              "parametersOnMethod": [
-                {
-                  "name": "notificationName",
-                  "typeAsString": "System.String, System.Private.CoreLib",
-                  "type": "System.String",
-                  "typeSimple": "string",
-                  "isOptional": false,
-                  "defaultValue": null,
-                  "summary": null,
-                  "description": null,
-                  "displayName": null
-                }
-              ],
-              "parameters": [
-                {
-                  "nameOnMethod": "notificationName",
-                  "name": "notificationName",
-                  "jsonName": null,
-                  "type": "System.String",
-                  "typeSimple": "string",
-                  "isOptional": false,
-                  "defaultValue": null,
-                  "constraintTypes": null,
-                  "bindingSourceId": "ModelBinding",
-                  "descriptorName": "",
-                  "summary": null,
-                  "description": null,
-                  "displayName": null
-                }
-              ],
-              "returnValue": {
-                "type": "System.Void",
-                "typeSimple": "System.Void",
-                "summary": null
-              },
-              "allowAnonymous": null,
-              "authorizeDatas": [],
-              "implementFrom": "Dignite.Abp.NotificationCenter.IUserNotificationAppService",
-              "summary": null,
-              "remarks": null,
-              "description": null,
-              "displayName": null
-            },
-            "UnsubscribeAsyncByNotificationName": {
-              "uniqueName": "UnsubscribeAsyncByNotificationName",
-              "name": "UnsubscribeAsync",
-              "httpMethod": "DELETE",
-              "url": "api/notifications/subscriptions/{notificationName}",
-              "supportedVersions": [],
-              "parametersOnMethod": [
-                {
-                  "name": "notificationName",
-                  "typeAsString": "System.String, System.Private.CoreLib",
-                  "type": "System.String",
-                  "typeSimple": "string",
-                  "isOptional": false,
-                  "defaultValue": null,
-                  "summary": null,
-                  "description": null,
-                  "displayName": null
-                }
-              ],
-              "parameters": [
-                {
-                  "nameOnMethod": "notificationName",
-                  "name": "notificationName",
-                  "jsonName": null,
-                  "type": "System.String",
-                  "typeSimple": "string",
-                  "isOptional": false,
-                  "defaultValue": null,
-                  "constraintTypes": [],
-                  "bindingSourceId": "Path",
-                  "descriptorName": "",
-                  "summary": null,
-                  "description": null,
-                  "displayName": null
-                }
-              ],
-              "returnValue": {
-                "type": "System.Void",
-                "typeSimple": "System.Void",
-                "summary": null
-              },
-              "allowAnonymous": null,
-              "authorizeDatas": [],
-              "implementFrom": "Dignite.Abp.NotificationCenter.IUserNotificationAppService",
-              "summary": null,
-              "remarks": null,
-              "description": null,
-              "displayName": null
-            },
-            "SubscribeScopedAsyncByInput": {
-              "uniqueName": "SubscribeScopedAsyncByInput",
-              "name": "SubscribeScopedAsync",
-              "httpMethod": "POST",
-              "url": "api/notifications/subscription-scopes",
-              "supportedVersions": [],
-              "parametersOnMethod": [
-                {
-                  "name": "input",
-                  "typeAsString": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto, Dignite.Abp.NotificationCenter.Application.Contracts",
-                  "type": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
-                  "typeSimple": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
-                  "isOptional": false,
-                  "defaultValue": null,
-                  "summary": null,
-                  "description": null,
-                  "displayName": null
-                }
-              ],
-              "parameters": [
-                {
-                  "nameOnMethod": "input",
-                  "name": "input",
-                  "jsonName": null,
-                  "type": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
-                  "typeSimple": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
-                  "isOptional": false,
-                  "defaultValue": null,
-                  "constraintTypes": null,
-                  "bindingSourceId": "Body",
-                  "descriptorName": "",
-                  "summary": null,
-                  "description": null,
-                  "displayName": null
-                }
-              ],
-              "returnValue": {
-                "type": "System.Void",
-                "typeSimple": "System.Void",
-                "summary": null
-              },
-              "allowAnonymous": null,
-              "authorizeDatas": [],
-              "implementFrom": "Dignite.Abp.NotificationCenter.IUserNotificationAppService",
-              "summary": null,
-              "remarks": null,
-              "description": null,
-              "displayName": null
-            },
-            "UnsubscribeScopedAsyncByInput": {
-              "uniqueName": "UnsubscribeScopedAsyncByInput",
-              "name": "UnsubscribeScopedAsync",
-              "httpMethod": "DELETE",
-              "url": "api/notifications/subscription-scopes",
-              "supportedVersions": [],
-              "parametersOnMethod": [
-                {
-                  "name": "input",
-                  "typeAsString": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto, Dignite.Abp.NotificationCenter.Application.Contracts",
-                  "type": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
-                  "typeSimple": "Dignite.Abp.NotificationCenter.NotificationSubscriptionScopeDto",
-                  "isOptional": false,
-                  "defaultValue": null,
-                  "summary": null,
-                  "description": null,
-                  "displayName": null
-                }
-              ],
-              "parameters": [
-                {
-                  "nameOnMethod": "input",
-                  "name": "NotificationName",
-                  "jsonName": null,
-                  "type": "System.String",
-                  "typeSimple": "string",
-                  "isOptional": false,
-                  "defaultValue": null,
-                  "constraintTypes": null,
-                  "bindingSourceId": "Query",
-                  "descriptorName": "input",
-                  "summary": null,
-                  "description": null,
-                  "displayName": null
-                },
-                {
-                  "nameOnMethod": "input",
-                  "name": "EntityTypeName",
-                  "jsonName": null,
-                  "type": "System.String",
-                  "typeSimple": "string",
-                  "isOptional": false,
-                  "defaultValue": null,
-                  "constraintTypes": null,
-                  "bindingSourceId": "Query",
-                  "descriptorName": "input",
-                  "summary": null,
-                  "description": null,
-                  "displayName": null
-                },
-                {
-                  "nameOnMethod": "input",
-                  "name": "EntityId",
-                  "jsonName": null,
-                  "type": "System.String",
-                  "typeSimple": "string",
-                  "isOptional": false,
-                  "defaultValue": null,
-                  "constraintTypes": null,
-                  "bindingSourceId": "Query",
-                  "descriptorName": "input",
-                  "summary": null,
-                  "description": null,
-                  "displayName": null
-                }
-              ],
               "returnValue": {
                 "type": "System.Void",
                 "typeSimple": "System.Void",
@@ -6342,22 +6144,6 @@
       "enumValues": null,
       "genericArguments": null,
       "properties": [
-        {
-          "name": "SchemaVersion",
-          "jsonName": null,
-          "type": "System.Int32",
-          "typeSimple": "number",
-          "isRequired": false,
-          "minLength": null,
-          "maxLength": null,
-          "minimum": null,
-          "maximum": null,
-          "regex": null,
-          "isNullable": false,
-          "summary": null,
-          "description": null,
-          "displayName": null
-        },
         {
           "name": "ExtensionData",
           "jsonName": null,
