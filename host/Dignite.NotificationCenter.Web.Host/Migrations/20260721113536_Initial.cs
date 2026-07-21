@@ -220,45 +220,6 @@ namespace Dignite.NotificationCenter.Web.Host.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "AbpNotifications",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "TEXT", nullable: false),
-                    ConcurrencyStamp = table.Column<string>(type: "TEXT", maxLength: 40, nullable: false),
-                    TenantId = table.Column<Guid>(type: "TEXT", nullable: true),
-                    NotificationName = table.Column<string>(type: "TEXT", maxLength: 256, nullable: false),
-                    Data = table.Column<string>(type: "TEXT", nullable: true),
-                    EntityTypeName = table.Column<string>(type: "TEXT", maxLength: 512, nullable: true),
-                    EntityId = table.Column<string>(type: "TEXT", maxLength: 128, nullable: true),
-                    Severity = table.Column<byte>(type: "INTEGER", nullable: false),
-                    CreationTime = table.Column<DateTime>(type: "TEXT", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_AbpNotifications", x => x.Id);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "AbpNotificationSubscriptions",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "TEXT", nullable: false),
-                    TenantId = table.Column<Guid>(type: "TEXT", nullable: true),
-                    TenantKey = table.Column<Guid>(type: "TEXT", nullable: false),
-                    UserId = table.Column<Guid>(type: "TEXT", nullable: false),
-                    NotificationName = table.Column<string>(type: "TEXT", maxLength: 256, nullable: false),
-                    NotificationNameKey = table.Column<string>(type: "TEXT", unicode: false, fixedLength: true, maxLength: 64, nullable: false),
-                    EntityTypeName = table.Column<string>(type: "TEXT", maxLength: 512, nullable: true),
-                    EntityId = table.Column<string>(type: "TEXT", maxLength: 128, nullable: true),
-                    ScopeKey = table.Column<string>(type: "TEXT", unicode: false, fixedLength: true, maxLength: 64, nullable: false),
-                    CreationTime = table.Column<DateTime>(type: "TEXT", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_AbpNotificationSubscriptions", x => x.Id);
-                });
-
-            migrationBuilder.CreateTable(
                 name: "AbpOrganizationUnits",
                 columns: table => new
                 {
@@ -475,22 +436,6 @@ namespace Dignite.NotificationCenter.Web.Host.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "AbpUserNotifications",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "TEXT", nullable: false),
-                    TenantId = table.Column<Guid>(type: "TEXT", nullable: true),
-                    UserId = table.Column<Guid>(type: "TEXT", nullable: false),
-                    NotificationId = table.Column<Guid>(type: "TEXT", nullable: false),
-                    State = table.Column<byte>(type: "INTEGER", nullable: false),
-                    CreationTime = table.Column<DateTime>(type: "TEXT", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_AbpUserNotifications", x => x.Id);
-                });
-
-            migrationBuilder.CreateTable(
                 name: "AbpUsers",
                 columns: table => new
                 {
@@ -531,6 +476,61 @@ namespace Dignite.NotificationCenter.Web.Host.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_AbpUsers", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "NotifNotifications",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "TEXT", nullable: false),
+                    ConcurrencyStamp = table.Column<string>(type: "TEXT", maxLength: 40, nullable: false),
+                    TenantId = table.Column<Guid>(type: "TEXT", nullable: true),
+                    NotificationName = table.Column<string>(type: "TEXT", maxLength: 256, nullable: false),
+                    Data = table.Column<string>(type: "TEXT", nullable: true),
+                    EntityTypeName = table.Column<string>(type: "TEXT", maxLength: 512, nullable: true),
+                    EntityId = table.Column<string>(type: "TEXT", maxLength: 128, nullable: true),
+                    Severity = table.Column<byte>(type: "INTEGER", nullable: false),
+                    CreationTime = table.Column<DateTime>(type: "TEXT", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_NotifNotifications", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "NotifNotificationSubscriptions",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "TEXT", nullable: false),
+                    TenantId = table.Column<Guid>(type: "TEXT", nullable: true),
+                    TenantKey = table.Column<Guid>(type: "TEXT", nullable: false),
+                    UserId = table.Column<Guid>(type: "TEXT", nullable: false),
+                    NotificationName = table.Column<string>(type: "TEXT", maxLength: 256, nullable: false),
+                    NotificationNameKey = table.Column<string>(type: "TEXT", unicode: false, fixedLength: true, maxLength: 64, nullable: false),
+                    EntityTypeName = table.Column<string>(type: "TEXT", maxLength: 512, nullable: true),
+                    EntityId = table.Column<string>(type: "TEXT", maxLength: 128, nullable: true),
+                    ScopeKey = table.Column<string>(type: "TEXT", unicode: false, fixedLength: true, maxLength: 64, nullable: false),
+                    CreationTime = table.Column<DateTime>(type: "TEXT", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_NotifNotificationSubscriptions", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "NotifUserNotifications",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "TEXT", nullable: false),
+                    TenantId = table.Column<Guid>(type: "TEXT", nullable: true),
+                    UserId = table.Column<Guid>(type: "TEXT", nullable: false),
+                    NotificationId = table.Column<Guid>(type: "TEXT", nullable: false),
+                    State = table.Column<byte>(type: "INTEGER", nullable: false),
+                    CreationTime = table.Column<DateTime>(type: "TEXT", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_NotifUserNotifications", x => x.Id);
                 });
 
             migrationBuilder.CreateTable(
@@ -1055,37 +1055,6 @@ namespace Dignite.NotificationCenter.Web.Host.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_AbpNotifications_CreationTime",
-                table: "AbpNotifications",
-                column: "CreationTime");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_AbpNotifications_TenantId_CreationTime",
-                table: "AbpNotifications",
-                columns: new[] { "TenantId", "CreationTime" });
-
-            migrationBuilder.CreateIndex(
-                name: "IX_AbpNotifications_TenantId_NotificationName_CreationTime",
-                table: "AbpNotifications",
-                columns: new[] { "TenantId", "NotificationName", "CreationTime" });
-
-            migrationBuilder.CreateIndex(
-                name: "IX_AbpNotificationSubscriptions_TenantKey_NotificationNameKey_ScopeKey",
-                table: "AbpNotificationSubscriptions",
-                columns: new[] { "TenantKey", "NotificationNameKey", "ScopeKey" });
-
-            migrationBuilder.CreateIndex(
-                name: "IX_AbpNotificationSubscriptions_TenantKey_UserId_NotificationNameKey",
-                table: "AbpNotificationSubscriptions",
-                columns: new[] { "TenantKey", "UserId", "NotificationNameKey" });
-
-            migrationBuilder.CreateIndex(
-                name: "IX_AbpNotificationSubscriptions_TenantKey_UserId_NotificationNameKey_ScopeKey",
-                table: "AbpNotificationSubscriptions",
-                columns: new[] { "TenantKey", "UserId", "NotificationNameKey", "ScopeKey" },
-                unique: true);
-
-            migrationBuilder.CreateIndex(
                 name: "IX_AbpOrganizationUnitRoles_RoleId_OrganizationUnitId",
                 table: "AbpOrganizationUnitRoles",
                 columns: new[] { "RoleId", "OrganizationUnitId" });
@@ -1197,32 +1166,6 @@ namespace Dignite.NotificationCenter.Web.Host.Migrations
                 columns: new[] { "LoginProvider", "ProviderKey" });
 
             migrationBuilder.CreateIndex(
-                name: "IX_AbpUserNotifications_State_CreationTime",
-                table: "AbpUserNotifications",
-                columns: new[] { "State", "CreationTime" });
-
-            migrationBuilder.CreateIndex(
-                name: "IX_AbpUserNotifications_TenantId_NotificationId",
-                table: "AbpUserNotifications",
-                columns: new[] { "TenantId", "NotificationId" });
-
-            migrationBuilder.CreateIndex(
-                name: "IX_AbpUserNotifications_TenantId_State_CreationTime",
-                table: "AbpUserNotifications",
-                columns: new[] { "TenantId", "State", "CreationTime" });
-
-            migrationBuilder.CreateIndex(
-                name: "IX_AbpUserNotifications_TenantId_UserId_State_CreationTime",
-                table: "AbpUserNotifications",
-                columns: new[] { "TenantId", "UserId", "State", "CreationTime" });
-
-            migrationBuilder.CreateIndex(
-                name: "IX_AbpUserNotifications_UserId_NotificationId",
-                table: "AbpUserNotifications",
-                columns: new[] { "UserId", "NotificationId" },
-                unique: true);
-
-            migrationBuilder.CreateIndex(
                 name: "IX_AbpUserOrganizationUnits_UserId_OrganizationUnitId",
                 table: "AbpUserOrganizationUnits",
                 columns: new[] { "UserId", "OrganizationUnitId" });
@@ -1256,6 +1199,63 @@ namespace Dignite.NotificationCenter.Web.Host.Migrations
                 name: "IX_AbpUsers_UserName",
                 table: "AbpUsers",
                 column: "UserName");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_NotifNotifications_CreationTime",
+                table: "NotifNotifications",
+                column: "CreationTime");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_NotifNotifications_TenantId_CreationTime",
+                table: "NotifNotifications",
+                columns: new[] { "TenantId", "CreationTime" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_NotifNotifications_TenantId_NotificationName_CreationTime",
+                table: "NotifNotifications",
+                columns: new[] { "TenantId", "NotificationName", "CreationTime" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_NotifNotificationSubscriptions_TenantKey_NotificationNameKey_ScopeKey",
+                table: "NotifNotificationSubscriptions",
+                columns: new[] { "TenantKey", "NotificationNameKey", "ScopeKey" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_NotifNotificationSubscriptions_TenantKey_UserId_NotificationNameKey",
+                table: "NotifNotificationSubscriptions",
+                columns: new[] { "TenantKey", "UserId", "NotificationNameKey" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_NotifNotificationSubscriptions_TenantKey_UserId_NotificationNameKey_ScopeKey",
+                table: "NotifNotificationSubscriptions",
+                columns: new[] { "TenantKey", "UserId", "NotificationNameKey", "ScopeKey" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_NotifUserNotifications_State_CreationTime",
+                table: "NotifUserNotifications",
+                columns: new[] { "State", "CreationTime" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_NotifUserNotifications_TenantId_NotificationId",
+                table: "NotifUserNotifications",
+                columns: new[] { "TenantId", "NotificationId" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_NotifUserNotifications_TenantId_State_CreationTime",
+                table: "NotifUserNotifications",
+                columns: new[] { "TenantId", "State", "CreationTime" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_NotifUserNotifications_TenantId_UserId_State_CreationTime",
+                table: "NotifUserNotifications",
+                columns: new[] { "TenantId", "UserId", "State", "CreationTime" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_NotifUserNotifications_UserId_NotificationId",
+                table: "NotifUserNotifications",
+                columns: new[] { "UserId", "NotificationId" },
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_OpenIddictApplications_ClientId",
@@ -1328,12 +1328,6 @@ namespace Dignite.NotificationCenter.Web.Host.Migrations
                 name: "AbpLinkUsers");
 
             migrationBuilder.DropTable(
-                name: "AbpNotifications");
-
-            migrationBuilder.DropTable(
-                name: "AbpNotificationSubscriptions");
-
-            migrationBuilder.DropTable(
                 name: "AbpOrganizationUnitRoles");
 
             migrationBuilder.DropTable(
@@ -1373,9 +1367,6 @@ namespace Dignite.NotificationCenter.Web.Host.Migrations
                 name: "AbpUserLogins");
 
             migrationBuilder.DropTable(
-                name: "AbpUserNotifications");
-
-            migrationBuilder.DropTable(
                 name: "AbpUserOrganizationUnits");
 
             migrationBuilder.DropTable(
@@ -1389,6 +1380,15 @@ namespace Dignite.NotificationCenter.Web.Host.Migrations
 
             migrationBuilder.DropTable(
                 name: "AbpUserTokens");
+
+            migrationBuilder.DropTable(
+                name: "NotifNotifications");
+
+            migrationBuilder.DropTable(
+                name: "NotifNotificationSubscriptions");
+
+            migrationBuilder.DropTable(
+                name: "NotifUserNotifications");
 
             migrationBuilder.DropTable(
                 name: "OpenIddictScopes");
