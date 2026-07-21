@@ -1,2 +1,3 @@
 export * from './models';
-export * from './notifications.service';
+export * from './notification-subscription.service';
+export * from './user-notification.service';

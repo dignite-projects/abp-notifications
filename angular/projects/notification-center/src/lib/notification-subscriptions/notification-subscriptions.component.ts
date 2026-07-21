@@ -1,7 +1,7 @@
 import { Component, OnInit, inject } from '@angular/core';
 import { LocalizationPipe } from '@abp/ng.core';
 import {
-  NotificationsService,
+  NotificationSubscriptionService,
   NotificationSubscriptionDto,
   NotificationSubscriptionScopeDto,
 } from '../proxy/dignite/abp/notification-center';
@@ -57,7 +57,7 @@ import {
 export class NotificationSubscriptionsComponent implements OnInit {
   subscriptions: NotificationSubscriptionDto[] = [];
 
-  private notificationService = inject(NotificationsService);
+  private notificationService = inject(NotificationSubscriptionService);
 
   ngOnInit(): void {
     this.notificationService.getSubscriptions().subscribe(r => (this.subscriptions = r.items));
@@ -66,8 +66,8 @@ export class NotificationSubscriptionsComponent implements OnInit {
   toggle(subscription: NotificationSubscriptionDto, subscribe: boolean): void {
     const scope = this.toScope(subscription);
     const request = subscribe
-      ? this.notificationService.subscribeScoped(scope)
-      : this.notificationService.unsubscribeScoped(scope);
+      ? this.notificationService.subscribe(scope)
+      : this.notificationService.unsubscribe(scope);
     request.subscribe(() => (subscription.isSubscribed = subscribe));
   }
 
