@@ -22,7 +22,7 @@ solely to run/demo the whole stack end-to-end. A real consuming application stil
 - Tests: xUnit + Shouldly + NSubstitute + `Volo.Abp.TestBase` (Autofac); EF Core tests run against
   in-memory Sqlite, MongoDB tests against an embedded mongod (MongoSandbox). The
   `NotificationCenter` store/app-service scenarios are written once in a shared `*.TestBase` project
-  and run against both providers — see `.Codex/rules/framework/testing/patterns.md`.
+  and run against both providers — see `.claude/rules/framework/testing/patterns.md`.
 - License: LGPL-3.0-only.
 
 ## Solution layout
@@ -75,7 +75,7 @@ Source files live at `<Project>/<mirrored namespace path>/File.cs` (every `.cspr
 
 ## Coding rules
 
-Detailed conventions live in `.Codex/rules/` and load automatically:
+Detailed conventions live in `.claude/rules/` and load automatically:
 
 - `framework/common/abp-core.md`, `framework/common/notifications-invariants.md`, and
   `template/app.md` are **always loaded** (core ABP conventions + this repo's hard architectural
@@ -83,8 +83,8 @@ Detailed conventions live in `.Codex/rules/` and load automatically:
 - Everything else is **path-scoped** via `paths:` frontmatter — e.g. DDD patterns for
   `*.Domain/**/*.cs`, EF Core for `*DbContext*.cs`, tests for `test/**`.
 
-Read `.Codex/rules/template/app.md` first for the layer map and the "add a feature" flow, then
-`.Codex/rules/framework/common/notifications-invariants.md` before touching `NotificationData`,
+Read `.claude/rules/template/app.md` first for the layer map and the "add a feature" flow, then
+`.claude/rules/framework/common/notifications-invariants.md` before touching `NotificationData`,
 any Notifier, or a service's DI lifetime — those invariants exist because violating them is
 exactly what this rewrite was started to fix.
 
@@ -128,8 +128,8 @@ migration step.
 
 Usage and the architecture overview (layering, the two operation modes, the
 publish→distribute→notify flow, extension points) live in the root `README.md`. The "why" behind
-the hard invariants lives inline in `.Codex/rules/framework/common/notifications-invariants.md` —
+the hard invariants lives inline in `.claude/rules/framework/common/notifications-invariants.md` —
 this repo is a from-scratch rewrite of a legacy implementation, and those invariants encode the
 exact bugs that rewrite set out to fix.
 
-<!-- .Codex/rules/ adapted from D:\dignite-studio\astar-insatsu — that repo's frontend/product rules were dropped as not applicable here (this repo has no frontend and is itself the product). -->
+<!-- .claude/rules/ adapted from D:\dignite-studio\astar-insatsu — that repo's frontend/product rules were dropped as not applicable here (this repo has no frontend and is itself the product). -->
