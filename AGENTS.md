@@ -35,8 +35,8 @@ One `.slnx` solution — **`Dignite.Abp.Notifications.slnx`** — aggregates bot
   `notification-center/src/{Domain.Shared, Domain, Application.Contracts, Application, HttpApi,
   HttpApi.Client, EntityFrameworkCore, MongoDB, Web}` + `notification-center/test`. `Web` is the MVC UI
   library (bell ViewComponent + subscriptions page); `HttpApi` exposes explicit controllers under
-  `/api/notifications` (`NotificationsController` + `AddApplicationPartIfNotExists`, not conventional/auto
-  API controllers).
+  `/api/notification-center` (`UserNotificationController` for the inbox + `NotificationSubscriptionController`
+  for subscriptions + `AddApplicationPartIfNotExists`, not conventional/auto API controllers).
 
 The two module trees are still **independently distributable** (that boundary is enforced by project
 references / module `[DependsOn]` and per-project NuGet packaging, not by the solution): Core never
