@@ -38,6 +38,7 @@ using Volo.Abp.PermissionManagement;
 using Volo.Abp.PermissionManagement.HttpApi;
 using Volo.Abp.PermissionManagement.Identity;
 using Volo.Abp.Swashbuckle;
+using Volo.Abp.UI.Navigation;
 using Volo.Abp.UI.Navigation.Urls;
 using Volo.Abp.Validation.Localization;
 using Volo.Abp.VirtualFileSystem;
@@ -200,6 +201,7 @@ public class HostModule : AbpModule
         ConfigureEfCore(context);
         ConfigureNotificationCenterOutbox();
         ConfigureNotificationCenterUi();
+        ConfigureMenu();
 
         if (hostingEnvironment.IsDevelopment())
         {
@@ -223,6 +225,14 @@ public class HostModule : AbpModule
         {
             options.DataViewComponents["Demo.OrderShipped"] = typeof(OrderShippedNotificationDataViewComponent);
             options.EntityLinkResolvers["Demo.Order"] = orderId => $"/Orders/{orderId}";
+        });
+    }
+
+    private void ConfigureMenu()
+    {
+        Configure<AbpNavigationOptions>(options =>
+        {
+            options.MenuContributors.Add(new HostMenuContributor());
         });
     }
 
