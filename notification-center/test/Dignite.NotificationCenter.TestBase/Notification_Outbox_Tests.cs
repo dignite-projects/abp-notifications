@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using Dignite.Abp.Notifications;
 using Microsoft.Extensions.DependencyInjection;
@@ -84,6 +86,64 @@ public abstract class Notification_Outbox_Tests<TStartupModule> : NotificationCe
                 (await GetOutboxCountAsync()).ShouldBeGreaterThan(0);
             });
         }
+    }
+
+    [Fact]
+    public async Task Draining_the_event_boxes_round_trips_the_delivery_request_with_its_concrete_data()
+    {
+        var notificationId = Guid.NewGuid();
+        var recipientId = Guid.NewGuid();
+
+        await WithUnitOfWorkAsync(async () =>
+        {
+            await GetRequiredService<INotificationDistributor>()
+                .DistributeAsync(NewNotification(notificationId), new[] { recipientId });
+        }, isTransactional: true);
+
+        var eventBusOptions = GetRequiredService<IOptions<AbpDistributedEventBusOptions>>().Value;
+        var outboxConfig = eventBusOptions.Outboxes.Values.Single();
+        var outbox = (IEventOutbox)ServiceProvider.GetRequiredService(outboxConfig.ImplementationType);
+
+        var waitingEvents = new List<OutgoingEventInfo>();
+        await WithUnitOfWorkAsync(async () =>
+        {
+            waitingEvents.AddRange(await outbox.GetWaitingEventsAsync(int.MaxValue));
+        });
+        var deliveryEvent = waitingEvents
+            .Single(waiting => waiting.EventName == "Dignite.Abp.Notifications.NotificationDeliveryRequested");
+
+        // ABP wrote these bytes with plain System.Text.Json and no app-level options. The wire envelope must
+        // still carry the stable discriminator and never a CLR type name (invariants §1).
+        var wireJson = Encoding.UTF8.GetString(deliveryEvent.EventData);
+        wireJson.ShouldContain("Dignite.Message");
+        wireJson.ShouldNotContain(nameof(MessageNotificationData));
+        wireJson.ShouldNotContain("Version=");
+
+        // Drain the outbox exactly as ABP's OutboxSender does — the deserialize inside this call is what a
+        // live NotificationData property on the ETO used to break. With an inbox configured the event hops
+        // into the inbox instead of firing handlers directly, so drain that too (the second plain-STJ read).
+        var eventBus = (ISupportsEventBoxes)GetRequiredService<IDistributedEventBus>();
+        await WithUnitOfWorkAsync(() => eventBus.PublishManyFromOutboxAsync(new[] { deliveryEvent }, outboxConfig));
+
+        var inboxConfig = eventBusOptions.Inboxes.Values.Single();
+        var inbox = (IEventInbox)ServiceProvider.GetRequiredService(inboxConfig.ImplementationType);
+        await WithUnitOfWorkAsync(async () =>
+        {
+            foreach (var incomingEvent in await inbox.GetWaitingEventsAsync(int.MaxValue))
+            {
+                await eventBus.ProcessFromInboxAsync(incomingEvent, inboxConfig);
+            }
+        });
+
+        var received = GetRequiredService<ReceivedNotificationDeliveries>().Items.ShouldHaveSingleItem();
+        received.UserId.ShouldBe(recipientId);
+        received.NotificationId.ShouldBe(notificationId);
+
+        // Hydrate exactly as a notifier does; the concrete payload type and its members must survive.
+        var payload = NotificationPayload.FromRequest(
+            received,
+            GetRequiredService<INotificationDataSerializer>());
+        payload.Data.ShouldBeOfType<MessageNotificationData>().Message.ShouldBe("hi");
     }
 
     [Fact]

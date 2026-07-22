@@ -120,36 +120,37 @@ public class NotificationDataSerializationTests
     }
 
     [Fact]
-    public void Notification_data_nested_in_an_eto_round_trips_polymorphically()
+    public void Eto_round_trips_through_default_stj_as_abp_event_boxes_serialize_it()
     {
-        var registry = NotificationTestObjects.CreateRegistry(typeof(OrderShippedNotificationData));
-        var options = CreateJsonOptions(registry);
-        var eto = NewEvent(new OrderShippedNotificationData
+        var serializer = NotificationTestObjects.CreateSerializer(typeof(OrderShippedNotificationData));
+        var eto = NewEvent(serializer.Serialize(new OrderShippedNotificationData
         {
             OrderNumber = "SO-7",
             ItemCount = 2
-        });
+        }));
 
-        var json = JsonSerializer.Serialize(eto, options);
-        var back = JsonSerializer.Deserialize<NotificationDeliveryRequestedEto>(json, options)!;
+        // ABP's event bus and its outbox/inbox serialize ETOs with plain System.Text.Json and no options
+        // (LocalDistributedEventBus.Serialize / PublishFromOutboxAsync) — the contract must survive exactly
+        // this round trip, with no converter registered anywhere.
+        var wireBytes = JsonSerializer.SerializeToUtf8Bytes(eto);
+        var back = JsonSerializer.Deserialize<NotificationDeliveryRequestedEto>(wireBytes)!;
 
-        back.Data.ShouldBeOfType<OrderShippedNotificationData>().OrderNumber.ShouldBe("SO-7");
+        var data = serializer.Deserialize(back.DataJson).ShouldBeOfType<OrderShippedNotificationData>();
+        data.OrderNumber.ShouldBe("SO-7");
+        data.ItemCount.ShouldBe(2);
     }
 
     [Fact]
     public void Unknown_producer_type_becomes_unsupported_on_the_consumer()
     {
-        var producerRegistry = NotificationTestObjects.CreateRegistry(typeof(OrderShippedNotificationData));
-        var consumerRegistry = NotificationTestObjects.CreateRegistry();
-        var producerOptions = CreateJsonOptions(producerRegistry);
-        var consumerOptions = CreateJsonOptions(consumerRegistry);
-        var json = JsonSerializer.Serialize(
-            NewEvent(new OrderShippedNotificationData { OrderNumber = "SO-7", ItemCount = 2 }),
-            producerOptions);
+        var producer = NotificationTestObjects.CreateSerializer(typeof(OrderShippedNotificationData));
+        var consumer = NotificationTestObjects.CreateSerializer();
+        var wireBytes = JsonSerializer.SerializeToUtf8Bytes(
+            NewEvent(producer.Serialize(new OrderShippedNotificationData { OrderNumber = "SO-7", ItemCount = 2 })));
 
-        var received = JsonSerializer.Deserialize<NotificationDeliveryRequestedEto>(json, consumerOptions)!;
+        var received = JsonSerializer.Deserialize<NotificationDeliveryRequestedEto>(wireBytes)!;
 
-        var unsupported = received.Data.ShouldBeOfType<UnsupportedNotificationData>();
+        var unsupported = consumer.Deserialize(received.DataJson).ShouldBeOfType<UnsupportedNotificationData>();
         unsupported.Reason.ShouldBe(UnsupportedNotificationDataReason.UnknownDiscriminator);
         unsupported.OriginalDiscriminator.ShouldBe("Test.OrderShipped");
     }
@@ -174,14 +175,7 @@ public class NotificationDataSerializationTests
         serializer.Deserialize(string.Empty).ShouldBeNull();
     }
 
-    private static JsonSerializerOptions CreateJsonOptions(INotificationDataTypeRegistry registry)
-    {
-        var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
-        options.Converters.Add(new NotificationDataJsonConverter(registry));
-        return options;
-    }
-
-    private static NotificationDeliveryRequestedEto NewEvent(NotificationData data)
+    private static NotificationDeliveryRequestedEto NewEvent(string? dataJson)
     {
         var notificationId = Guid.NewGuid();
         var userId = Guid.NewGuid();
@@ -190,7 +184,7 @@ public class NotificationDataSerializationTests
         {
             NotificationId = notificationId,
             NotificationName = "test",
-            Data = data,
+            DataJson = dataJson,
             Severity = NotificationSeverity.Info,
             CreationTime = DateTime.UtcNow,
             UserId = userId,

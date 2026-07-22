@@ -18,14 +18,15 @@ public class SignalRNotifierTests
         clients.User(Arg.Any<string>()).Returns(clientProxy);
         var hubContext = Substitute.For<IHubContext<NotificationsHub>>();
         hubContext.Clients.Returns(clients);
-        var notifier = new SignalRNotifier(hubContext);
+        var serializer = NotificationTestObjects.CreateSerializer();
+        var notifier = new SignalRNotifier(hubContext, serializer);
         var cancellationToken = new CancellationTokenSource().Token;
         var userId = Guid.NewGuid();
         var request = new NotificationDeliveryRequestedEto
         {
             NotificationId = Guid.NewGuid(),
             NotificationName = "test",
-            Data = new MessageNotificationData("hi"),
+            DataJson = serializer.Serialize(new MessageNotificationData("hi")),
             Severity = NotificationSeverity.Info,
             CreationTime = DateTime.UtcNow,
             UserId = userId,
@@ -40,7 +41,9 @@ public class SignalRNotifierTests
             Arg.Is<object[]>(arguments =>
                 arguments.Length == 1
                 && arguments[0] != null
-                && ((NotificationPayload)arguments[0]).NotificationId == request.NotificationId),
+                && ((NotificationPayload)arguments[0]).NotificationId == request.NotificationId
+                && ((NotificationPayload)arguments[0]).Data is MessageNotificationData
+                && ((MessageNotificationData)((NotificationPayload)arguments[0]).Data!).Message == "hi"),
             cancellationToken);
     }
 }

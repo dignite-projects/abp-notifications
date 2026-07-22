@@ -19,6 +19,9 @@ namespace Dignite.Abp.Notifications;
 
 public class EmailNotifier_Tests
 {
+    private static readonly NotificationDataSerializer DataSerializer =
+        NotificationTestObjects.CreateSerializer(typeof(OrderShippedNotificationData));
+
     [Fact]
     public void Email_notifier_exposes_the_canonical_channel_contract()
     {
@@ -26,6 +29,7 @@ public class EmailNotifier_Tests
             Substitute.For<IEmailSender>(),
             new[] { Substitute.For<IEmailNotificationAddressResolver>() },
             CreateDefaultBuilder(),
+            DataSerializer,
             NullLogger<EmailNotifier>.Instance,
             Options.Create(new NotificationEmailOptions()));
 
@@ -55,6 +59,7 @@ public class EmailNotifier_Tests
             emailSender,
             new[] { resolver },
             CreateDefaultBuilder(),
+            DataSerializer,
             NullLogger<EmailNotifier>.Instance,
             Options.Create(new NotificationEmailOptions()));
         await DeliverAsync(notifier, userWithEmail, userWithoutEmail);
@@ -83,6 +88,7 @@ public class EmailNotifier_Tests
             emailSender,
             new[] { resolver },
             CreateDefaultBuilder(),
+            DataSerializer,
             NullLogger<EmailNotifier>.Instance,
             Options.Create(new NotificationEmailOptions()));
         await DeliverAsync(notifier, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
@@ -107,6 +113,7 @@ public class EmailNotifier_Tests
             emailSender,
             new[] { resolver },
             CreateDefaultBuilder(),
+            DataSerializer,
             NullLogger<EmailNotifier>.Instance,
             Options.Create(new NotificationEmailOptions()));
         await Should.ThrowAsync<InvalidOperationException>(
@@ -127,6 +134,7 @@ public class EmailNotifier_Tests
             emailSender,
             new[] { resolver },
             CreateDefaultBuilder(),
+            DataSerializer,
             NullLogger<EmailNotifier>.Instance,
             Options.Create(new NotificationEmailOptions()));
 
@@ -153,6 +161,7 @@ public class EmailNotifier_Tests
             emailSender,
             new[] { resolver },
             builder,
+            DataSerializer,
             NullLogger<EmailNotifier>.Instance,
             Options.Create(new NotificationEmailOptions()));
         var tenantId = Guid.NewGuid();
@@ -185,6 +194,7 @@ public class EmailNotifier_Tests
             emailSender,
             new[] { resolver },
             builder,
+            DataSerializer,
             NullLogger<EmailNotifier>.Instance,
             Options.Create(new NotificationEmailOptions()));
 
@@ -209,6 +219,7 @@ public class EmailNotifier_Tests
             emailSender,
             new[] { resolver },
             builder,
+            DataSerializer,
             NullLogger<EmailNotifier>.Instance,
             Options.Create(new NotificationEmailOptions { DefaultCulture = "en-US" }));
 
@@ -240,6 +251,7 @@ public class EmailNotifier_Tests
             emailSender,
             new[] { resolver },
             builder,
+            DataSerializer,
             NullLogger<EmailNotifier>.Instance,
             Options.Create(new NotificationEmailOptions { DefaultCulture = "en-US" }));
 
@@ -263,6 +275,7 @@ public class EmailNotifier_Tests
             emailSender,
             new[] { resolver },
             builder,
+            DataSerializer,
             NullLogger<EmailNotifier>.Instance,
             Options.Create(new NotificationEmailOptions { DefaultCulture = "not a culture!" }));
 
@@ -300,6 +313,7 @@ public class EmailNotifier_Tests
             emailSender,
             new[] { resolver },
             new ThrowingEmailBuilder(),
+            DataSerializer,
             NullLogger<EmailNotifier>.Instance,
             Options.Create(new NotificationEmailOptions()));
         var previousCulture = CultureInfo.CurrentCulture;
@@ -331,6 +345,7 @@ public class EmailNotifier_Tests
             emailSender,
             new[] { resolver },
             CreateDefaultBuilder(),
+            DataSerializer,
             NullLogger<EmailNotifier>.Instance,
             Options.Create(new NotificationEmailOptions()));
         await notifier.DeliverAsync(CreateRequest(userId, tenantId: tenantId));
@@ -414,6 +429,7 @@ public class EmailNotifier_Tests
             emailSender,
             new IEmailNotificationAddressResolver[] { fallback, business },
             CreateDefaultBuilder(),
+            DataSerializer,
             NullLogger<EmailNotifier>.Instance,
             Options.Create(new NotificationEmailOptions()));
 
@@ -436,6 +452,7 @@ public class EmailNotifier_Tests
             emailSender,
             new IEmailNotificationAddressResolver[] { passes, fallback },
             CreateDefaultBuilder(),
+            DataSerializer,
             NullLogger<EmailNotifier>.Instance,
             Options.Create(new NotificationEmailOptions()));
 
@@ -456,6 +473,7 @@ public class EmailNotifier_Tests
             emailSender,
             Array.Empty<IEmailNotificationAddressResolver>(),
             CreateDefaultBuilder(),
+            DataSerializer,
             NullLogger<EmailNotifier>.Instance,
             Options.Create(new NotificationEmailOptions()));
 
@@ -480,6 +498,7 @@ public class EmailNotifier_Tests
                 emailSender,
                 chain,
                 CreateDefaultBuilder(),
+                DataSerializer,
                 NullLogger<EmailNotifier>.Instance,
                 Options.Create(new NotificationEmailOptions()));
 
@@ -519,6 +538,7 @@ public class EmailNotifier_Tests
             emailSender,
             new[] { resolver },
             CreateDefaultBuilder(),
+            DataSerializer,
             NullLogger<EmailNotifier>.Instance,
             Options.Create(new NotificationEmailOptions()));
 
@@ -541,7 +561,7 @@ public class EmailNotifier_Tests
         {
             NotificationId = notificationId,
             NotificationName = "order.shipped",
-            Data = data ?? new MessageNotificationData("Shipped!"),
+            DataJson = DataSerializer.Serialize(data ?? new MessageNotificationData("Shipped!")),
             Severity = NotificationSeverity.Info,
             CreationTime = DateTime.UtcNow,
             UserId = userId,

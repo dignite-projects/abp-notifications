@@ -27,8 +27,10 @@ public class AbpNotificationsAbstractionsModule : AbpModule
             options.Add<UnsupportedNotificationData>();
         });
 
-        // Abstractions is the deployment boundary shared by Core and independently hosted Notifier plugins.
-        // Register here (once) so old/new distributed-event consumers get the same tolerant read behavior.
+        // Registers the polymorphic NotificationData converter on ABP's IJsonSerializer options for every
+        // app-level JSON boundary (e.g. HttpApi.Client proxies reading UserNotificationDto.Data). It does NOT
+        // cover the distributed event bus: ABP serializes ETOs with plain System.Text.Json, which is why
+        // NotificationDeliveryRequestedEto carries pre-serialized DataJson instead of a live NotificationData.
         context.Services
             .AddOptions<AbpSystemTextJsonSerializerOptions>()
             .Configure<INotificationDataTypeRegistry>((options, registry) =>

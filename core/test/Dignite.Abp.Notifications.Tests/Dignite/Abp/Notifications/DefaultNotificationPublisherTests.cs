@@ -231,6 +231,7 @@ public class DefaultNotificationPublisherTests
                     Store,
                     definitionManager,
                     EventBus,
+                    NotificationTestObjects.CreateSerializer(),
                     CurrentTenant,
                     NullLogger<DefaultNotificationDistributor>.Instance,
                     Options.Create(new NotificationDistributionOptions())),

@@ -31,13 +31,20 @@ public class NotificationPayload
     {
     }
 
-    public static NotificationPayload FromRequest(NotificationDeliveryRequestedEto request)
+    /// <summary>
+    /// Builds the per-user view from a delivery request, hydrating <see cref="Data"/> from the request's
+    /// pre-serialized <see cref="NotificationDeliveryRequestedEto.DataJson"/> envelope. The read is tolerant:
+    /// an unknown or malformed payload becomes <see cref="UnsupportedNotificationData"/> instead of throwing.
+    /// </summary>
+    public static NotificationPayload FromRequest(
+        NotificationDeliveryRequestedEto request,
+        INotificationDataSerializer dataSerializer)
     {
         return new NotificationPayload
         {
             NotificationId = request.NotificationId,
             NotificationName = request.NotificationName,
-            Data = request.Data,
+            Data = dataSerializer.Deserialize(request.DataJson),
             Severity = request.Severity,
             CreationTime = request.CreationTime,
             EntityTypeName = request.EntityTypeName,

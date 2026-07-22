@@ -338,7 +338,7 @@ public class DefaultNotificationDistributorTests
         published.EntityId.ShouldBe("1001");
 
         // The per-user view forwards entity identity but must still drop the recipient list (invariants §4).
-        var payload = NotificationPayload.FromRequest(published);
+        var payload = NotificationPayload.FromRequest(published, NotificationTestObjects.CreateSerializer());
         payload.EntityTypeName.ShouldBe("Demo.Order");
         payload.EntityId.ShouldBe("1001");
         typeof(NotificationPayload).GetProperty("UserIds").ShouldBeNull();
@@ -443,6 +443,7 @@ public class DefaultNotificationDistributorTests
             store,
             definitionManager,
             eventBus,
+            NotificationTestObjects.CreateSerializer(),
             currentTenant ?? new TestCurrentTenant(),
             logger ?? NullLogger<DefaultNotificationDistributor>.Instance,
             Options.Create(options ?? new NotificationDistributionOptions()));

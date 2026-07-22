@@ -35,6 +35,8 @@ public class EmailNotifier :
 
     protected INotificationEmailBuilder EmailBuilder { get; }
 
+    protected INotificationDataSerializer DataSerializer { get; }
+
     protected ILogger<EmailNotifier> Logger { get; }
 
     protected NotificationEmailOptions EmailOptions { get; }
@@ -43,11 +45,13 @@ public class EmailNotifier :
         IEmailSender emailSender,
         IEnumerable<IEmailNotificationAddressResolver> addressResolvers,
         INotificationEmailBuilder emailBuilder,
+        INotificationDataSerializer dataSerializer,
         ILogger<EmailNotifier> logger,
         IOptions<NotificationEmailOptions> emailOptions)
     {
         EmailSender = emailSender;
         EmailBuilder = emailBuilder;
+        DataSerializer = dataSerializer;
         Logger = logger;
         EmailOptions = emailOptions.Value;
 
@@ -79,7 +83,7 @@ public class EmailNotifier :
         }
 
         return DeliverToUserAsync(
-            NotificationPayload.FromRequest(request),
+            NotificationPayload.FromRequest(request, DataSerializer),
             request.UserId,
             request.TenantId,
             cancellationToken);

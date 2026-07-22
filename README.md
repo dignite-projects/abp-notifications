@@ -597,7 +597,7 @@ public class WebPushNotifier
         NotificationDeliveryRequestedEto request,
         CancellationToken cancellationToken = default)
     {
-        var payload = NotificationPayload.FromRequest(request);
+        var payload = NotificationPayload.FromRequest(request, _dataSerializer);
         await _webPush.SendAsync(request.UserId, payload, cancellationToken);
     }
 }
@@ -605,6 +605,12 @@ public class WebPushNotifier
 
 `DeliverAsync` handles one recipient/channel request and observes cancellation. Delivery is best-effort: to skip a
 recipient (e.g. no address), simply return; throwing is logged and dropped by the Core handler, not retried.
+
+The event carries the payload pre-serialized as discriminator-tagged JSON (`request.DataJson`) so it survives any
+transport serializer — ABP's event bus (outbox/inbox included) serializes ETOs with plain `System.Text.Json`, without
+the application's JSON options. Inject `INotificationDataSerializer` (it ships with Abstractions) and hydrate through
+`NotificationPayload.FromRequest`; the read is tolerant, so an unknown or malformed payload becomes
+`UnsupportedNotificationData` instead of throwing.
 
 Use `UseChannels(...)` only for external delivery channels. If a definition omits `UseChannels(...)`,
 it is NotificationCenter inbox-only: the notification is persisted for the recipient to read later,

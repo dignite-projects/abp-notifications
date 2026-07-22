@@ -43,12 +43,20 @@ Newtonsoft.Json anywhere in this pipeline.
 - Discriminators use ordinal, case-sensitive comparison and must form a one-to-one mapping with CLR
   payload types. Registering one key for two types, or one type under two keys, fails during startup;
   repeating the exact same key/type pair is the only supported idempotent repeat.
-- All serialization — storage (EF Core / MongoDB), the distributed event bus, and the HTTP API —
-  must go through the shared `INotificationDataTypeRegistry` / `NotificationDataJsonConverter`
-  (registered once, globally, on `AbpSystemTextJsonSerializerOptions` in
-  `AbpNotificationsAbstractionsModule.ConfigureServices`, so independently hosted Notifiers receive it too),
-  not a one-off converter or a hand-rolled switch
-  statement in a specific layer.
+- All serialization goes through the shared `INotificationDataTypeRegistry` /
+  `NotificationDataJsonConverter` / `INotificationDataSerializer` — never a one-off converter or a
+  hand-rolled switch statement in a specific layer. Storage (EF Core / MongoDB) and the HTTP API use
+  the converter registered once, globally, on `AbpSystemTextJsonSerializerOptions` in
+  `AbpNotificationsAbstractionsModule.ConfigureServices` (so remote `HttpApi.Client` consumers get it too).
+- **The distributed event bus never sees a live `NotificationData`.** ABP serializes ETOs with plain
+  `System.Text.Json` and *no* app-level options — the transactional outbox/inbox included — so a
+  polymorphic/abstract member on an ETO is lossy on write and throws on read
+  (`NotSupportedException` while draining the box; issue #118). `NotificationDeliveryRequestedEto`
+  therefore carries the payload pre-serialized as `DataJson`, produced via
+  `INotificationDataSerializer.Serialize` at the distributor publish boundary and hydrated via
+  `INotificationDataSerializer.Deserialize` (`NotificationPayload.FromRequest(request, dataSerializer)`)
+  at the notifier boundary. Keep every ETO a flat, default-STJ-round-trippable POCO; never put an
+  abstract/polymorphic member back on one.
 - The payload envelope carries only the stable `type` discriminator — no `schemaVersion`, no upcaster chain.
   (An earlier design added event-sourcing-style schema versioning + N→N+1 upcasters; it was removed as
   over-engineering — notifications are read-once, not a replayable event stream. Don't reintroduce it.)

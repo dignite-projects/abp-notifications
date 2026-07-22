@@ -48,7 +48,9 @@ public class NotificationChannelRouting_Tests
     [Fact]
     public void SignalR_notifier_exposes_the_canonical_channel_contract()
     {
-        var notifier = new SignalRNotifier(Substitute.For<IHubContext<NotificationsHub>>());
+        var notifier = new SignalRNotifier(
+            Substitute.For<IHubContext<NotificationsHub>>(),
+            NotificationTestObjects.CreateSerializer());
 
         notifier.Name.ShouldBe(SignalRNotifier.ChannelName);
         notifier.ShouldBeAssignableTo<INotificationNotifier>();
@@ -81,6 +83,7 @@ public class NotificationChannelRouting_Tests
             store,
             definitionManager,
             eventBus,
+            NotificationTestObjects.CreateSerializer(),
             currentTenant,
             NullLogger<DefaultNotificationDistributor>.Instance,
             Options.Create(new NotificationDistributionOptions()));

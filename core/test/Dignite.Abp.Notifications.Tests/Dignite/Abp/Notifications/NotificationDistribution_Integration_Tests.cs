@@ -51,7 +51,9 @@ public class NotificationDistribution_Integration_Tests : DigniteAbpNotification
         {
             item.NotificationName.ShouldBe(TestNotificationDefinitionProvider.Plain);
             item.Channel.ShouldBe("SignalR");
-            item.Data.ShouldBeOfType<MessageNotificationData>().Message.ShouldBe("hi");
+            // The ETO carries the payload as discriminator-tagged JSON; consumers hydrate it tolerantly.
+            GetRequiredService<INotificationDataSerializer>().Deserialize(item.DataJson)
+                .ShouldBeOfType<MessageNotificationData>().Message.ShouldBe("hi");
         }
     }
 
