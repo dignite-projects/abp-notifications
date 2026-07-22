@@ -513,7 +513,7 @@ and throwing is logged and dropped by the Core handler (not retried). The Core-o
 the transport adapter, so a channel plugin does not implement an event-handler interface.
 
 - **SignalR** — clients connect to the hub at `/signalr-hubs/notifications` (an ABP `AbpHub`, mapped
-  **automatically**; the host must *not* call `MapHub`) and receive a trimmed `NotificationDelivery`
+  **automatically**; the host must *not* call `MapHub`) and receive a trimmed `NotificationPayload`
   with the recipient list stripped, so siblings' user IDs never leak to each other.
 - **Emailing** — resolves each recipient's email address and sends via ABP's `IEmailSender`. Addresses
   come from an ordered `IEmailNotificationAddressResolver` chain: `EmailNotifier` takes the first
@@ -597,7 +597,7 @@ public class WebPushNotifier
         NotificationDeliveryRequestedEto request,
         CancellationToken cancellationToken = default)
     {
-        var payload = NotificationDelivery.FromWorkItem(request);
+        var payload = NotificationPayload.FromRequest(request);
         await _webPush.SendAsync(request.UserId, payload, cancellationToken);
     }
 }

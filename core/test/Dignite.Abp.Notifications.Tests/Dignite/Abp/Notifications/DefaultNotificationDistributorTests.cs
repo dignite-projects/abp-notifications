@@ -84,9 +84,9 @@ public class DefaultNotificationDistributorTests
                 .Select(row => row.UserId)
                 .ToArray()));
 
-        var deliveryWorkItems = new List<NotificationDeliveryRequestedEto>();
+        var deliveryRequests = new List<NotificationDeliveryRequestedEto>();
         eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryRequestedEto>()))
-            .Do(call => deliveryWorkItems.Add(call.Arg<NotificationDeliveryRequestedEto>()));
+            .Do(call => deliveryRequests.Add(call.Arg<NotificationDeliveryRequestedEto>()));
 
         var distributor = CreateDistributor(
             store,
@@ -108,9 +108,9 @@ public class DefaultNotificationDistributorTests
         writeBatches.Count.ShouldBe(4);
         writeBatches.ShouldAllBe(batch => batch.Length <= 128);
         writeBatches.SelectMany(batch => batch).Distinct().Count().ShouldBe(512);
-        deliveryWorkItems.Count.ShouldBe(512);
-        deliveryWorkItems.Select(item => item.UserId).Distinct().Count().ShouldBe(512);
-        deliveryWorkItems.Select(item => item.UserId).ShouldNotContain(excludedUserId);
+        deliveryRequests.Count.ShouldBe(512);
+        deliveryRequests.Select(item => item.UserId).Distinct().Count().ShouldBe(512);
+        deliveryRequests.Select(item => item.UserId).ShouldNotContain(excludedUserId);
         await store.Received(1).InsertNotificationAsync(
             Arg.Any<NotificationInfo>(),
             Arg.Any<CancellationToken>());
@@ -338,10 +338,10 @@ public class DefaultNotificationDistributorTests
         published.EntityId.ShouldBe("1001");
 
         // The per-user view forwards entity identity but must still drop the recipient list (invariants §4).
-        var delivery = NotificationDelivery.FromWorkItem(published);
-        delivery.EntityTypeName.ShouldBe("Demo.Order");
-        delivery.EntityId.ShouldBe("1001");
-        typeof(NotificationDelivery).GetProperty("UserIds").ShouldBeNull();
+        var payload = NotificationPayload.FromRequest(published);
+        payload.EntityTypeName.ShouldBe("Demo.Order");
+        payload.EntityId.ShouldBe("1001");
+        typeof(NotificationPayload).GetProperty("UserIds").ShouldBeNull();
     }
 
     [Fact]

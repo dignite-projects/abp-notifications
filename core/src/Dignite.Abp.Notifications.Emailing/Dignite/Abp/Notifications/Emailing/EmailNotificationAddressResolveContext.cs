@@ -9,12 +9,12 @@ namespace Dignite.Abp.Notifications.Emailing;
 /// </summary>
 public class EmailNotificationAddressResolveContext
 {
-    public NotificationDelivery Notification { get; }
+    public NotificationPayload Notification { get; }
 
     public Guid UserId { get; }
 
     /// <summary>
-    /// The tenant that owns the notification, carried over from the delivery work item. A local
+    /// The tenant that owns the notification, carried over from the delivery request. A local
     /// repository-backed resolver does not need it — ABP's event bus has already entered this tenant before the
     /// notifier runs. It is exposed for resolvers that must forward the tenant across a boundary the ambient scope
     /// cannot cross, such as a remote user service.
@@ -22,7 +22,7 @@ public class EmailNotificationAddressResolveContext
     public Guid? TenantId { get; }
 
     public EmailNotificationAddressResolveContext(
-        NotificationDelivery notification,
+        NotificationPayload notification,
         Guid userId,
         Guid? tenantId)
     {

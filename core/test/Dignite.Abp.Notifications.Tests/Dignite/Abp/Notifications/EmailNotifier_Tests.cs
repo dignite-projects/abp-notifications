@@ -606,7 +606,7 @@ public class EmailNotifier_Tests
     private static NotificationEmailBuildContext CreateContext(NotificationData data)
     {
         return new NotificationEmailBuildContext(
-            new NotificationDelivery
+            new NotificationPayload
             {
                 NotificationId = Guid.NewGuid(),
                 NotificationName = "test.notification",
