@@ -3,8 +3,8 @@ services:
     image: dignite.notificationcenter.web/host-web:latest
     container_name: notificationcenter-host-web
     build:
-      context: ../../../
-      dockerfile: angular/Dockerfile.local
+      context: ../../../angular
+      dockerfile: Dockerfile.local
     ports:
       - "4200:80"
     depends_on:
@@ -18,8 +18,8 @@ services:
     image: dignite.notificationcenter.web/host-api:latest
     container_name: notificationcenter-host-api-container
     build:
-      context: ../../
-      dockerfile: Dignite.NotificationCenter.Web.Host/Dockerfile.local
+      context: ../../Dignite.NotificationCenter.Web.Host
+      dockerfile: Dockerfile.local
     environment:
       - ASPNETCORE_URLS=https://+:8081;http://+:8080;
       - Kestrel__Certificates__Default__Path=/app/certs/localhost.pfx
@@ -46,8 +46,8 @@ services:
     image: dignite.notificationcenter.web/host-api:latest
     container_name: notificationcenter-db-migrator
     build:
-      context: ../../
-      dockerfile: Dignite.NotificationCenter.Web.Host/Dockerfile.local
+      context: ../../Dignite.NotificationCenter.Web.Host
+      dockerfile: Dockerfile.local
     environment:
       - ConnectionStrings__Default=DataSource=/data/Host.db
     command:
@@ -62,7 +62,7 @@ services:
   sqlite:
     container_name: notificationcenter-sqlite-container
     image: alpine:latest
-    command: sh -c "apk add sqlite && touch /data/Host.db && sqlite3 /data/Host.db '.databases' && tail -f /dev/null"
+    command: sh -c "apk add sqlite && chmod 777 /data && touch /data/Host.db && chmod 666 /data/Host.db && sqlite3 /data/Host.db '.databases' && tail -f /dev/null"
     environment:
       - TZ=UTC
     volumes:
