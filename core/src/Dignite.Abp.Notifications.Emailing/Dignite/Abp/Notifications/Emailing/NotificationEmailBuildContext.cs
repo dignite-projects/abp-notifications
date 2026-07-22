@@ -5,7 +5,7 @@ namespace Dignite.Abp.Notifications.Emailing;
 
 public class NotificationEmailBuildContext
 {
-    public NotificationDelivery Notification { get; }
+    public NotificationPayload Notification { get; }
 
     public Guid UserId { get; }
 
@@ -20,7 +20,7 @@ public class NotificationEmailBuildContext
     public Guid? TenantId { get; }
 
     public NotificationEmailBuildContext(
-        NotificationDelivery notification,
+        NotificationPayload notification,
         Guid userId,
         string emailAddress,
         Guid? tenantId,

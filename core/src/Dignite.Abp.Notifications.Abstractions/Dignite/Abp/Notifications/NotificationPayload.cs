@@ -6,7 +6,7 @@ namespace Dignite.Abp.Notifications;
 /// The per-user view of a notification pushed to a client (e.g. over SignalR). It deliberately carries no
 /// aggregate recipient list, so a user never receives other users' ids.
 /// </summary>
-public class NotificationDelivery
+public class NotificationPayload
 {
     public Guid NotificationId { get; set; }
 
@@ -27,21 +27,21 @@ public class NotificationDelivery
     /// <summary>The entity's identifier, rendered as a string. Null when <see cref="EntityTypeName"/> is null.</summary>
     public string? EntityId { get; set; }
 
-    public NotificationDelivery()
+    public NotificationPayload()
     {
     }
 
-    public static NotificationDelivery FromWorkItem(NotificationDeliveryRequestedEto workItem)
+    public static NotificationPayload FromRequest(NotificationDeliveryRequestedEto request)
     {
-        return new NotificationDelivery
+        return new NotificationPayload
         {
-            NotificationId = workItem.NotificationId,
-            NotificationName = workItem.NotificationName,
-            Data = workItem.Data,
-            Severity = workItem.Severity,
-            CreationTime = workItem.CreationTime,
-            EntityTypeName = workItem.EntityTypeName,
-            EntityId = workItem.EntityId
+            NotificationId = request.NotificationId,
+            NotificationName = request.NotificationName,
+            Data = request.Data,
+            Severity = request.Severity,
+            CreationTime = request.CreationTime,
+            EntityTypeName = request.EntityTypeName,
+            EntityId = request.EntityId
         };
     }
 }

@@ -8,7 +8,7 @@ namespace Dignite.Abp.Notifications.SignalR;
 
 /// <summary>
 /// Relays single-recipient delivery requests to connected SignalR users. Recipients receive only a
-/// <see cref="NotificationDelivery"/>, which by construction omits every aggregate recipient list.
+/// <see cref="NotificationPayload"/>, which by construction omits every aggregate recipient list.
 /// </summary>
 [ExposeServices(
     typeof(INotificationNotifier),
@@ -29,18 +29,18 @@ public class SignalRNotifier :
     }
 
     public virtual async Task DeliverAsync(
-        NotificationDeliveryRequestedEto workItem,
+        NotificationDeliveryRequestedEto request,
         CancellationToken cancellationToken = default)
     {
-        if (!string.Equals(workItem.Channel, Name, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(request.Channel, Name, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException(
-                $"The {nameof(SignalRNotifier)} cannot deliver channel '{workItem.Channel}'.");
+                $"The {nameof(SignalRNotifier)} cannot deliver channel '{request.Channel}'.");
         }
 
-        await HubContext.Clients.User(workItem.UserId.ToString()).SendCoreAsync(
+        await HubContext.Clients.User(request.UserId.ToString()).SendCoreAsync(
             nameof(INotificationsClient.ReceiveNotification),
-            new object[] { NotificationDelivery.FromWorkItem(workItem) },
+            new object[] { NotificationPayload.FromRequest(request) },
             cancellationToken);
     }
 }

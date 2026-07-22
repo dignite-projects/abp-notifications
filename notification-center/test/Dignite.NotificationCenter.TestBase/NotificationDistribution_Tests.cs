@@ -308,9 +308,9 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
         });
 
         var eventBus = Substitute.For<IDistributedEventBus>();
-        var deliveryWorkItems = new List<NotificationDeliveryRequestedEto>();
+        var deliveryRequests = new List<NotificationDeliveryRequestedEto>();
         eventBus.WhenForAnyArgs(bus => bus.PublishAsync(Arg.Any<NotificationDeliveryRequestedEto>()))
-            .Do(call => deliveryWorkItems.Add(call.Arg<NotificationDeliveryRequestedEto>()));
+            .Do(call => deliveryRequests.Add(call.Arg<NotificationDeliveryRequestedEto>()));
         var notificationId = Guid.NewGuid();
         var distributor = CreateDistributor(eventBus, new NotificationDistributionOptions
         {
@@ -333,8 +333,8 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
                 .FindAsync(notificationId)).ShouldNotBeNull();
         });
 
-        deliveryWorkItems.Count.ShouldBe(recipientCount);
-        deliveryWorkItems.Select(item => item.UserId).Distinct().Count().ShouldBe(recipientCount);
+        deliveryRequests.Count.ShouldBe(recipientCount);
+        deliveryRequests.Select(item => item.UserId).Distinct().Count().ShouldBe(recipientCount);
     }
 
     [Fact]

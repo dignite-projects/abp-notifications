@@ -69,24 +69,24 @@ public class EmailNotifier :
     }
 
     public virtual Task DeliverAsync(
-        NotificationDeliveryRequestedEto workItem,
+        NotificationDeliveryRequestedEto request,
         CancellationToken cancellationToken = default)
     {
-        if (!string.Equals(workItem.Channel, Name, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(request.Channel, Name, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException(
-                $"The {nameof(EmailNotifier)} cannot deliver channel '{workItem.Channel}'.");
+                $"The {nameof(EmailNotifier)} cannot deliver channel '{request.Channel}'.");
         }
 
         return DeliverToUserAsync(
-            NotificationDelivery.FromWorkItem(workItem),
-            workItem.UserId,
-            workItem.TenantId,
+            NotificationPayload.FromRequest(request),
+            request.UserId,
+            request.TenantId,
             cancellationToken);
     }
 
     protected virtual async Task DeliverToUserAsync(
-        NotificationDelivery notification,
+        NotificationPayload notification,
         Guid userId,
         Guid? tenantId,
         CancellationToken cancellationToken)

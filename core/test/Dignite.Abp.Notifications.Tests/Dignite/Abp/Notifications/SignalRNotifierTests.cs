@@ -40,7 +40,7 @@ public class SignalRNotifierTests
             Arg.Is<object[]>(arguments =>
                 arguments.Length == 1
                 && arguments[0] != null
-                && ((NotificationDelivery)arguments[0]).NotificationId == request.NotificationId),
+                && ((NotificationPayload)arguments[0]).NotificationId == request.NotificationId),
             cancellationToken);
     }
 }

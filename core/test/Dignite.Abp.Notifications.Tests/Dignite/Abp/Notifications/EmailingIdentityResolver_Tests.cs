@@ -118,7 +118,7 @@ public class EmailingIdentityResolver_Tests
         Guid userId, Guid? tenantId = null, string? entityTypeName = null, string? entityId = null)
     {
         return new EmailNotificationAddressResolveContext(
-            new NotificationDelivery
+            new NotificationPayload
             {
                 NotificationId = Guid.NewGuid(),
                 NotificationName = "test.notification",

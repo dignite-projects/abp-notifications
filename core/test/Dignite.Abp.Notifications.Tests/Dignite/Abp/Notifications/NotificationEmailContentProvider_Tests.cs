@@ -38,7 +38,7 @@ public class NotificationEmailContentProvider_Tests
     private static NotificationEmailBuildContext Context(NotificationData data)
     {
         return new NotificationEmailBuildContext(
-            new NotificationDelivery
+            new NotificationPayload
             {
                 NotificationId = Guid.NewGuid(),
                 NotificationName = "test",

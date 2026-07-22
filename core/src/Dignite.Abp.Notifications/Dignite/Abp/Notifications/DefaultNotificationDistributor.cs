@@ -199,7 +199,7 @@ public class DefaultNotificationDistributor :
             foreach (var channel in channels)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                await DistributedEventBus.PublishAsync(CreateDeliveryWorkItem(notification, userId, channel));
+                await DistributedEventBus.PublishAsync(CreateDeliveryRequest(notification, userId, channel));
             }
         }
     }
@@ -229,7 +229,7 @@ public class DefaultNotificationDistributor :
         return channels.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
     }
 
-    protected virtual NotificationDeliveryRequestedEto CreateDeliveryWorkItem(
+    protected virtual NotificationDeliveryRequestedEto CreateDeliveryRequest(
         NotificationInfo notification,
         Guid userId,
         string channel)

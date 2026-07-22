@@ -57,8 +57,14 @@ changes.
   handler, not retried. The Core-owned distributed-event handler adapts transport, so channel plugins do not
   implement an event-handler interface.
 - **Breaking distributed-event contract.** The default distributor publishes single-recipient/channel
-  `NotificationDeliveryRequestedEto` (wire name `Dignite.Abp.Notifications.NotificationDeliveryWork`) instead of the
-  legacy batched aggregate event. Quiesce publication, drain old aggregate events, upgrade consumers, then producers.
+  `NotificationDeliveryRequestedEto` (wire name `Dignite.Abp.Notifications.NotificationDeliveryRequested`) instead of
+  the legacy batched aggregate event. Quiesce publication, drain old aggregate events, upgrade consumers, then producers.
+- **Breaking pre-stable naming cleanup.** The single-recipient payload type `NotificationDelivery` (added in
+  10.0.0-preview.2) is renamed to `NotificationPayload`, and its factory `FromWorkItem` to `FromRequest`, so the
+  "delivery" vocabulary names only the act while the payload type reads as content. The delivery event's wire name is
+  normalized from `Dignite.Abp.Notifications.NotificationDeliveryWork` to
+  `Dignite.Abp.Notifications.NotificationDeliveryRequested` to match its `NotificationDeliveryRequestedEto` contract
+  name. Recompile channel plugins/remote consumers and drain any in-flight events on the old wire name before upgrading.
 - **Breaking for MongoDB context implementers.** `INotificationCenterMongoDbContext` extends ABP's `IHasEventInbox`
   and `IHasEventOutbox`. Consumer-owned implementations must expose and model the two ABP event collections and
   configure both boxes against their custom context. Notification business records require no backfill or rename.

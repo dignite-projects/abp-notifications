@@ -6,10 +6,8 @@ namespace Dignite.Abp.Notifications;
 /// <summary>
 /// A best-effort delivery request for exactly one tenant, notification, recipient and channel. A channel
 /// notifier delivers it once and does not persist per-recipient delivery state.
-/// The event name intentionally retains its pre-stable wire value so mixed-version consumers continue to resolve
-/// the same distributed event while the CLR contract name is normalized.
 /// </summary>
-[EventName("Dignite.Abp.Notifications.NotificationDeliveryWork")]
+[EventName("Dignite.Abp.Notifications.NotificationDeliveryRequested")]
 [Serializable]
 public class NotificationDeliveryRequestedEto : IEventDataMayHaveTenantId
 {
