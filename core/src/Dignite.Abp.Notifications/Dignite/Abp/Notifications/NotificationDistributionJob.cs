@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Volo.Abp.BackgroundJobs;
 using Volo.Abp.DependencyInjection;
 using Volo.Abp.MultiTenancy;
+using Volo.Abp.Uow;
 
 namespace Dignite.Abp.Notifications;
 
@@ -16,28 +17,33 @@ public class NotificationDistributionJob : AsyncBackgroundJob<NotificationDistri
 
     protected ICurrentTenant CurrentTenant { get; }
 
+    protected IUnitOfWorkManager UnitOfWorkManager { get; }
+
     protected IHostApplicationLifetime? HostApplicationLifetime { get; }
 
     public NotificationDistributionJob(
         INotificationDistributor distributor,
-        ICurrentTenant currentTenant)
-        : this(distributor, currentTenant, null)
+        ICurrentTenant currentTenant,
+        IUnitOfWorkManager unitOfWorkManager)
+        : this(distributor, currentTenant, unitOfWorkManager, null)
     {
     }
 
     public NotificationDistributionJob(
         INotificationDistributor distributor,
         ICurrentTenant currentTenant,
+        IUnitOfWorkManager unitOfWorkManager,
         IHostApplicationLifetime? hostApplicationLifetime)
     {
         Distributor = distributor;
         CurrentTenant = currentTenant;
+        UnitOfWorkManager = unitOfWorkManager;
         HostApplicationLifetime = hostApplicationLifetime;
     }
 
     public override Task ExecuteAsync(NotificationDistributionJobArgs args)
     {
-        return ExecuteAsync(
+        return ExecuteWithCancellationAsync(
             args,
             HostApplicationLifetime?.ApplicationStopping ?? CancellationToken.None);
     }
@@ -45,11 +51,22 @@ public class NotificationDistributionJob : AsyncBackgroundJob<NotificationDistri
     /// <summary>
     /// Executes with explicit cancellation. ABP's background-job contract has no token parameter, so the normal
     /// override supplies the host shutdown token; direct/custom job runners can pass their own token.
+    /// Deliberately NOT named <c>ExecuteAsync</c>: ABP's <see cref="BackgroundJobExecuter"/> locates the job's
+    /// execute method by name via reflection, and a second public overload sharing that name throws
+    /// <see cref="System.Reflection.AmbiguousMatchException"/> at job-execution time — every background-dispatched
+    /// distribution (anything without explicit userIds, e.g. subscription-driven publish) would silently fail.
     /// </summary>
-    public virtual async Task ExecuteAsync(
+    public virtual async Task ExecuteWithCancellationAsync(
         NotificationDistributionJobArgs args,
         CancellationToken cancellationToken)
     {
+        // Unlike an AppService call, ABP's background-job worker does not open a Unit Of Work around a job's
+        // execution — Store.GetSubscriptionUserIdsAsync/InsertNotificationAsync/InsertUserNotificationsAsync all
+        // resolve a repository backed by a DbContext with no ambient UoW to keep it alive, so the query throws
+        // ObjectDisposedException the moment it actually runs against a real store (NullNotificationStore has no
+        // DbContext, so this was invisible until NotificationCenter is installed). Open one explicitly here so the
+        // notification insert, inbox rows, and the outbox event write for every recipient commit atomically.
+        using (var uow = UnitOfWorkManager.Begin(requiresNew: true))
         // Restore the tenant before invoking even a custom distributor. The default distributor independently
         // scopes its whole operation to Notification.TenantId so direct calls cannot mix tenant/host data either.
         // ABP's BackgroundJobExecuter wraps a job in
@@ -66,6 +83,8 @@ public class NotificationDistributionJob : AsyncBackgroundJob<NotificationDistri
                 args.UserIds,
                 args.ExcludedUserIds,
                 cancellationToken);
+
+            await uow.CompleteAsync(cancellationToken);
         }
     }
 }

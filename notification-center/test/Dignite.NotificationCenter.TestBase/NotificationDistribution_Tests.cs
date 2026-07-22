@@ -16,6 +16,7 @@ using Volo.Abp.Guids;
 using Volo.Abp.Modularity;
 using Volo.Abp.MultiTenancy;
 using Volo.Abp.Timing;
+using Volo.Abp.Uow;
 using Xunit;
 
 namespace Dignite.NotificationCenter;
@@ -70,7 +71,8 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
             {
                 var job = new NotificationDistributionJob(
                     distributor,
-                    GetRequiredService<ICurrentTenant>());
+                    GetRequiredService<ICurrentTenant>(),
+                    GetRequiredService<IUnitOfWorkManager>());
                 await job.ExecuteAsync(new NotificationDistributionJobArgs(notification, userIds, null));
             }
             else
@@ -416,7 +418,8 @@ public abstract class NotificationDistribution_Tests<TStartupModule> : Notificat
 
         await WithUnitOfWorkAsync(() => new NotificationDistributionJob(
                 distributor,
-                GetRequiredService<ICurrentTenant>())
+                GetRequiredService<ICurrentTenant>(),
+                GetRequiredService<IUnitOfWorkManager>())
             .ExecuteAsync(args));
 
         await WithUnitOfWorkAsync(async () =>

@@ -14,6 +14,7 @@ using Volo.Abp.Guids;
 using Volo.Abp.Localization;
 using Volo.Abp.MultiTenancy;
 using Volo.Abp.Timing;
+using Volo.Abp.Uow;
 using Xunit;
 
 namespace Dignite.Abp.Notifications;
@@ -31,6 +32,19 @@ public class DefaultNotificationPublisherTests
             new NotificationDefinition(
                 call.Arg<string>(),
                 new FixedLocalizableString(call.Arg<string>())));
+    }
+
+    // These tests substitute INotificationStore, so there's no real DbContext for a UoW to protect — just enough
+    // of a fake to satisfy NotificationDistributionJob's Begin(requiresNew: true)/CompleteAsync calls.
+    private static IUnitOfWorkManager CreateFakeUnitOfWorkManager()
+    {
+        var unitOfWork = Substitute.For<IUnitOfWork>();
+        var unitOfWorkManager = Substitute.For<IUnitOfWorkManager>();
+        // NotificationDistributionJob calls the Begin(bool, bool) convenience overload, but that's a static
+        // extension method (UnitOfWorkManagerExtensions.Begin) that forwards to this actual interface method —
+        // NSubstitute can only intercept the real member.
+        unitOfWorkManager.Begin(Arg.Any<AbpUnitOfWorkOptions>(), Arg.Any<bool>()).Returns(unitOfWork);
+        return unitOfWorkManager;
     }
 
     private DefaultNotificationPublisher CreatePublisher(int threshold, Guid? tenantId = null)
@@ -235,7 +249,8 @@ public class DefaultNotificationPublisherTests
                     CurrentTenant,
                     NullLogger<DefaultNotificationDistributor>.Instance,
                     Options.Create(new NotificationDistributionOptions())),
-                CurrentTenant);
+                CurrentTenant,
+                CreateFakeUnitOfWorkManager());
         }
 
         public Task ExecuteAsync(Guid? notificationTenantId)
@@ -315,9 +330,9 @@ public class DefaultNotificationPublisherTests
             TenantId = Guid.NewGuid()
         };
         var userIds = new[] { Guid.NewGuid() };
-        var job = new NotificationDistributionJob(distributor, currentTenant);
+        var job = new NotificationDistributionJob(distributor, currentTenant, CreateFakeUnitOfWorkManager());
 
-        await job.ExecuteAsync(
+        await job.ExecuteWithCancellationAsync(
             new NotificationDistributionJobArgs(notification, userIds, null),
             cancellation.Token);
 
@@ -327,5 +342,16 @@ public class DefaultNotificationPublisherTests
             null,
             cancellation.Token);
         currentTenant.Id.ShouldBeNull();
+    }
+
+    [Fact]
+    public void Job_type_exposes_exactly_one_public_ExecuteAsync_method()
+    {
+        // Volo.Abp.BackgroundJobs.BackgroundJobExecuter locates a job's execute method by name via reflection
+        // (Type.GetMethod("ExecuteAsync")), which throws AmbiguousMatchException if a second public overload
+        // shares that name — this is unreachable from a direct call in tests, only from the real background-job
+        // worker, which is exactly how the subscription-driven publish path silently stopped delivering in
+        // production. Keep any additional execute overload under a different name (e.g. ExecuteWithCancellationAsync).
+        Should.NotThrow(() => typeof(NotificationDistributionJob).GetMethod("ExecuteAsync"));
     }
 }
