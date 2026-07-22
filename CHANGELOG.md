@@ -59,6 +59,15 @@ changes.
 - **Breaking distributed-event contract.** The default distributor publishes single-recipient/channel
   `NotificationDeliveryRequestedEto` (wire name `Dignite.Abp.Notifications.NotificationDeliveryRequested`) instead of
   the legacy batched aggregate event. Quiesce publication, drain old aggregate events, upgrade consumers, then producers.
+- **Breaking distributed-event payload envelope.** `NotificationDeliveryRequestedEto.Data` (a live, abstract
+  `NotificationData`) is replaced by `DataJson`: the payload pre-serialized as discriminator-tagged JSON via
+  `INotificationDataSerializer` at the distributor publish boundary and hydrated at the notifier boundary
+  (`NotificationPayload.FromRequest(request, dataSerializer)`; both built-in notifiers inject the serializer). ABP's
+  event bus — including the transactional outbox/inbox — serializes ETOs with plain System.Text.Json and no
+  app-level options, so an abstract member cannot round-trip the box; a pre-serialized string survives any transport
+  and stays readable for non-.NET consumers. Recompile channel plugins and rebuild custom notifiers against the new
+  member. The rename is deliberate: pre-upgrade outbox rows (whose `Data` was written lossily) drain as a null
+  payload under the new contract instead of poisoning the sender with a type mismatch.
 - **Breaking pre-stable naming cleanup.** The single-recipient payload type `NotificationDelivery` (added in
   10.0.0-preview.2) is renamed to `NotificationPayload`, and its factory `FromWorkItem` to `FromRequest`, so the
   "delivery" vocabulary names only the act while the payload type reads as content. The delivery event's wire name is
@@ -81,6 +90,12 @@ changes.
 
 ### Fixed
 
+- Hosts routing the distributed event bus through ABP's transactional outbox (`UseNotificationCenterEfCoreOutbox()`
+  / `UseNotificationCenterMongoDbOutbox()`) could never deliver to SignalR or email: draining
+  `NotificationDeliveryRequestedEto` from the box threw `System.NotSupportedException` on the abstract `Data`
+  member (ABP deserializes outbox/inbox payloads with plain System.Text.Json), and the write side had already
+  dropped the derived payload fields. Fixed by the `DataJson` envelope above; the shared outbox contract tests now
+  drain both event boxes and assert the concrete payload survives. ([#118](https://github.com/dignite-projects/abp-notifications/issues/118))
 - Notification definition names and `NotificationData` discriminators use explicit ordinal, case-sensitive
   registration and lookup. Conflicting registrations fail during application startup with both providers or CLR
   mappings identified instead of silently replacing an earlier value. Definition providers are discovered across

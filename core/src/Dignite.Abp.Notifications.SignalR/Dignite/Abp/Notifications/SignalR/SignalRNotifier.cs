@@ -21,11 +21,16 @@ public class SignalRNotifier :
 
     protected IHubContext<NotificationsHub> HubContext { get; }
 
+    protected INotificationDataSerializer DataSerializer { get; }
+
     public string Name => ChannelName;
 
-    public SignalRNotifier(IHubContext<NotificationsHub> hubContext)
+    public SignalRNotifier(
+        IHubContext<NotificationsHub> hubContext,
+        INotificationDataSerializer dataSerializer)
     {
         HubContext = hubContext;
+        DataSerializer = dataSerializer;
     }
 
     public virtual async Task DeliverAsync(
@@ -40,7 +45,7 @@ public class SignalRNotifier :
 
         await HubContext.Clients.User(request.UserId.ToString()).SendCoreAsync(
             nameof(INotificationsClient.ReceiveNotification),
-            new object[] { NotificationPayload.FromRequest(request) },
+            new object[] { NotificationPayload.FromRequest(request, DataSerializer) },
             cancellationToken);
     }
 }

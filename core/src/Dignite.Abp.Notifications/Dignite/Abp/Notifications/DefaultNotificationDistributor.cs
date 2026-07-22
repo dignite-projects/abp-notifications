@@ -22,6 +22,8 @@ public class DefaultNotificationDistributor :
 
     protected IDistributedEventBus DistributedEventBus { get; }
 
+    protected INotificationDataSerializer DataSerializer { get; }
+
     protected ICurrentTenant CurrentTenant { get; }
 
     protected ILogger<DefaultNotificationDistributor> Logger { get; }
@@ -32,6 +34,7 @@ public class DefaultNotificationDistributor :
         INotificationStore store,
         INotificationDefinitionManager definitionManager,
         IDistributedEventBus distributedEventBus,
+        INotificationDataSerializer dataSerializer,
         ICurrentTenant currentTenant,
         ILogger<DefaultNotificationDistributor> logger,
         IOptions<NotificationDistributionOptions> options)
@@ -39,6 +42,7 @@ public class DefaultNotificationDistributor :
         Store = store;
         DefinitionManager = definitionManager;
         DistributedEventBus = distributedEventBus;
+        DataSerializer = dataSerializer;
         CurrentTenant = currentTenant;
         Logger = logger;
         Options = options.Value;
@@ -234,11 +238,13 @@ public class DefaultNotificationDistributor :
         Guid userId,
         string channel)
     {
+        // The ETO must stay a flat, default-STJ-serializable POCO (ABP's outbox/inbox serializes it without the
+        // app's JSON options), so the polymorphic payload crosses the wire as a discriminator-tagged string.
         return new NotificationDeliveryRequestedEto
         {
             NotificationId = notification.Id,
             NotificationName = notification.NotificationName,
-            Data = notification.Data,
+            DataJson = DataSerializer.Serialize(notification.Data),
             Severity = notification.Severity,
             CreationTime = notification.CreationTime,
             UserId = userId,
