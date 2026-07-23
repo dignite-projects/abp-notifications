@@ -7,7 +7,7 @@ Angular consumers and is packaged like ABP's own `@abp/ng.*` libraries: a main e
 `/config` secondary entry point.
 
 ```bash
-npm install @dignite/ng.notification-center@10.0.0-rc.2
+npm install @dignite/ng.notification-center@10.0.0-rc.3
 ```
 
 The npm package version stays in lockstep with the repository's NuGet package version.

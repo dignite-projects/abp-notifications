@@ -10,6 +10,8 @@ changes.
 
 ## [Unreleased]
 
+## [10.0.0-rc.3] - 2026-07-23
+
 > This pre-stable line explored a much larger feature surface (per-recipient delivery reliability with leases /
 > retries / dead-lettering / force-delivery, per-user delivery preferences + quiet hours, large-audience broadcast
 > orchestration, payload schema-versioning + upcasters, opt-in definition payload/entity contracts, a replaceable
@@ -103,6 +105,14 @@ changes.
 - Consistent explicit-recipient semantics across inline and background distribution: `null` resolves subscriptions,
   an empty list is a no-op, and duplicate explicit user IDs are normalized before threshold selection, persistence,
   and channel delivery.
+- `NotificationDistributionJob` had two public `ExecuteAsync` overloads, so ABP's `BackgroundJobExecuter` (which
+  resolves a job's execute method by name via reflection) threw `AmbiguousMatchException` for every
+  background-dispatched distribution — any publish without explicit `userIds` (subscription-driven notifications,
+  or a large explicit fan-out) silently failed while the triggering AppService call still returned 200/204. The
+  second overload is renamed to `ExecuteWithCancellationAsync`. Fixing that exposed the job never opening a Unit of
+  Work, so `NotificationStore.GetSubscriptionUserIdsAsync` threw `ObjectDisposedException` on the `DbContext`; the
+  job now wraps distribution in `UnitOfWorkManager.Begin(requiresNew: true)` so the notification insert, inbox
+  rows, and outbox event write commit atomically.
 
 ## [10.0.0-rc.2] - 2026-07-16
 

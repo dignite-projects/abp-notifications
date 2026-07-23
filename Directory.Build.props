@@ -12,7 +12,7 @@
          10.5.0 in Directory.Packages.props -> MAJOR = 10). MINOR.PATCH are this module's OWN
          independent SemVer counters and reset to .0.0 whenever the tracked ABP major changes.
          See CONTRIBUTING.md "Versioning and releases" for the full rationale. -->
-    <Version>10.0.0-rc.2</Version>
+    <Version>10.0.0-rc.3</Version>
     <!-- Pinned explicitly and never bumped in lockstep with <Version>: without this the SDK
          derives AssemblyVersion from <Version>, moving it on every MINOR/PATCH and breaking
          AssemblyQualifiedName-based lookups. This repo already treats assembly-version stability
