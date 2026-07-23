@@ -29,7 +29,7 @@ them.
 
 | Dignite release | ABP Framework | Runtime | Angular library | Angular peer range |
 |---|---|---|---|---|
-| `10.0.0-rc.2` | `10.5.x` (built against `10.5.0`) | .NET 10 | `10.0.0-rc.2` | Angular `^21.2.0` |
+| `10.0.0-rc.3` | `10.5.x` (built against `10.5.0`) | .NET 10 | `10.0.0-rc.3` | Angular `^21.2.0` |
 
 The NuGet and npm packages always use the same version. Pre-release npm packages use the `next`
 dist-tag; stable releases use `latest`. npm requires every package to have a `latest` tag, so until
@@ -77,25 +77,25 @@ that layer's module.
 Install Core plus at least one external delivery channel. This example uses SignalR:
 
 ```bash
-dotnet add path/to/MyApp.csproj package Dignite.Abp.Notifications --version 10.0.0-rc.2
-dotnet add path/to/MyApp.csproj package Dignite.Abp.Notifications.SignalR --version 10.0.0-rc.2
+dotnet add path/to/MyApp.csproj package Dignite.Abp.Notifications --version 10.0.0-rc.3
+dotnet add path/to/MyApp.csproj package Dignite.Abp.Notifications.SignalR --version 10.0.0-rc.3
 ```
 
 Email is optional:
 
 ```bash
-dotnet add path/to/MyApp.csproj package Dignite.Abp.Notifications.Emailing --version 10.0.0-rc.2
-dotnet add path/to/MyApp.csproj package Dignite.Abp.Notifications.Emailing.Identity --version 10.0.0-rc.2
+dotnet add path/to/MyApp.csproj package Dignite.Abp.Notifications.Emailing --version 10.0.0-rc.3
+dotnet add path/to/MyApp.csproj package Dignite.Abp.Notifications.Emailing.Identity --version 10.0.0-rc.3
 ```
 
 ### Full Notification Center with EF Core
 
 ```bash
-dotnet add path/to/MyApp.csproj package Dignite.Abp.Notifications.SignalR --version 10.0.0-rc.2
-dotnet add path/to/MyApp.csproj package Dignite.NotificationCenter.Application --version 10.0.0-rc.2
-dotnet add path/to/MyApp.csproj package Dignite.NotificationCenter.HttpApi --version 10.0.0-rc.2
-dotnet add path/to/MyApp.csproj package Dignite.NotificationCenter.EntityFrameworkCore --version 10.0.0-rc.2
-dotnet add path/to/MyApp.csproj package Dignite.NotificationCenter.Web --version 10.0.0-rc.2
+dotnet add path/to/MyApp.csproj package Dignite.Abp.Notifications.SignalR --version 10.0.0-rc.3
+dotnet add path/to/MyApp.csproj package Dignite.NotificationCenter.Application --version 10.0.0-rc.3
+dotnet add path/to/MyApp.csproj package Dignite.NotificationCenter.HttpApi --version 10.0.0-rc.3
+dotnet add path/to/MyApp.csproj package Dignite.NotificationCenter.EntityFrameworkCore --version 10.0.0-rc.3
+dotnet add path/to/MyApp.csproj package Dignite.NotificationCenter.Web --version 10.0.0-rc.3
 ```
 
 `Dignite.NotificationCenter.Web` is optional. For MongoDB, replace
@@ -106,7 +106,7 @@ dotnet add path/to/MyApp.csproj package Dignite.NotificationCenter.Web --version
 For an Angular host, install the version-matched UI library:
 
 ```bash
-npm install @dignite/ng.notification-center@10.0.0-rc.2
+npm install @dignite/ng.notification-center@10.0.0-rc.3
 ```
 
 Then follow [The two operation modes](#the-two-operation-modes) for the module dependencies and
