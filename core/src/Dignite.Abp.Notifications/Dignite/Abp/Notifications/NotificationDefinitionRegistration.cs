@@ -3,8 +3,8 @@ using Volo.Abp.Collections;
 
 namespace Dignite.Abp.Notifications;
 
-/// <summary>Configures notification definition discovery independently from runtime delivery tuning.</summary>
-public class NotificationDefinitionOptions
+/// <summary>Registers the notification definition providers to execute at startup, independently from runtime delivery tuning.</summary>
+public class NotificationDefinitionRegistration
 {
     /// <summary>
     /// Gets definition provider types discovered across application modules or registered explicitly. Repeating the
@@ -12,7 +12,7 @@ public class NotificationDefinitionOptions
     /// </summary>
     public ITypeList<INotificationDefinitionProvider> DefinitionProviders { get; }
 
-    public NotificationDefinitionOptions()
+    public NotificationDefinitionRegistration()
     {
         DefinitionProviders = new TypeList<INotificationDefinitionProvider>();
     }
@@ -24,7 +24,7 @@ public class NotificationDefinitionOptions
             if (!typeof(INotificationDefinitionProvider).IsAssignableFrom(providerType))
             {
                 throw new InvalidOperationException(
-                    $"{nameof(NotificationDefinitionOptions)}.{nameof(DefinitionProviders)} contains " +
+                    $"{nameof(NotificationDefinitionRegistration)}.{nameof(DefinitionProviders)} contains " +
                     $"'{providerType.FullName}', which is not a notification definition provider.");
             }
         }

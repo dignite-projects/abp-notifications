@@ -6,7 +6,7 @@ using Microsoft.Extensions.Options;
 namespace Dignite.Abp.Notifications;
 
 /// <summary>
-/// Validates <see cref="NotificationDefinitionOptions"/> and materializes notification definitions (plus the
+/// Validates <see cref="NotificationDefinitionRegistration"/> and materializes notification definitions (plus the
 /// data-type registry, via constructor injection) in the host's starting phase, before any hosted service can
 /// publish notifications — the single startup fail-fast hook for both concerns, since the real definition-name
 /// conflict check only runs lazily inside <see cref="NotificationDefinitionManager"/> and can't be forced from
@@ -15,21 +15,21 @@ namespace Dignite.Abp.Notifications;
 internal sealed class NotificationDefinitionStartupService : IHostedLifecycleService
 {
     private readonly INotificationDefinitionManager _definitionManager;
-    private readonly IOptions<NotificationDefinitionOptions> _definitionOptions;
+    private readonly IOptions<NotificationDefinitionRegistration> _definitionRegistration;
 
     public NotificationDefinitionStartupService(
         INotificationDefinitionManager definitionManager,
-        IOptions<NotificationDefinitionOptions> definitionOptions,
+        IOptions<NotificationDefinitionRegistration> definitionRegistration,
         INotificationDataTypeRegistry dataTypeRegistry)
     {
         _definitionManager = definitionManager;
-        _definitionOptions = definitionOptions;
+        _definitionRegistration = definitionRegistration;
         _ = dataTypeRegistry;
     }
 
     public Task StartingAsync(CancellationToken cancellationToken)
     {
-        _definitionOptions.Value.Validate();
+        _definitionRegistration.Value.Validate();
         _definitionManager.GetAll();
         return Task.CompletedTask;
     }

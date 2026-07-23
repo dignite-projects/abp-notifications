@@ -702,7 +702,7 @@ Angular API URL) at the externally reachable hub while keeping `/api/notificatio
 ## Configuration
 
 ```csharp
-Configure<NotificationDefinitionOptions>(options =>
+Configure<NotificationDefinitionRegistration>(options =>
 {
     // Provider types are normally convention-discovered; explicit registration is also supported.
     options.DefinitionProviders.Add(typeof(MyNotificationDefinitionProvider));

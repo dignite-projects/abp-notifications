@@ -48,7 +48,7 @@ changes.
   `INotificationStore` while the concrete `NotificationSubscriptionManager` owns validated subscription mutation.
   REST routes are unchanged.
 - **Breaking options split before 10.0.0 stable.** The catch-all `NotificationOptions` type was replaced by
-  `NotificationDefinitionOptions` (provider registration) and `NotificationDistributionOptions` (inline/background
+  `NotificationDefinitionRegistration` (provider registration) and `NotificationDistributionOptions` (inline/background
   threshold + `RecipientBatchSize`, capped by `MaxBatchSize` = 10,000, validated on startup). Custom constructors
   and `IOptions<T>` consumers must adopt the responsible option type and be recompiled; no database migration.
 - **Breaking notifier contract.** `INotificationNotifier` is the sole channel execution contract: `Name` plus

@@ -17,17 +17,17 @@ namespace Dignite.Abp.Notifications;
 /// </summary>
 public class NotificationDefinitionManager : INotificationDefinitionManager, ISingletonDependency
 {
-    protected NotificationDefinitionOptions Options { get; }
+    protected NotificationDefinitionRegistration Registration { get; }
 
     protected IServiceScopeFactory ServiceScopeFactory { get; }
 
     private readonly Lazy<IDictionary<string, NotificationDefinition>> _definitions;
 
     public NotificationDefinitionManager(
-        IOptions<NotificationDefinitionOptions> options,
+        IOptions<NotificationDefinitionRegistration> registration,
         IServiceScopeFactory serviceScopeFactory)
     {
-        Options = options.Value;
+        Registration = registration.Value;
         ServiceScopeFactory = serviceScopeFactory;
         _definitions = new Lazy<IDictionary<string, NotificationDefinition>>(CreateDefinitions, isThreadSafe: true);
     }
@@ -108,7 +108,7 @@ public class NotificationDefinitionManager : INotificationDefinitionManager, ISi
 
         using (var scope = ServiceScopeFactory.CreateScope())
         {
-            foreach (var providerType in Options.DefinitionProviders.Distinct())
+            foreach (var providerType in Registration.DefinitionProviders.Distinct())
             {
                 context.SetCurrentProvider(providerType);
                 var provider = (INotificationDefinitionProvider)scope.ServiceProvider.GetRequiredService(providerType);

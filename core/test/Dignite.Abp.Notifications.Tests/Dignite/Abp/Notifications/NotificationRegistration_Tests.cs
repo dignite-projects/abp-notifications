@@ -201,7 +201,7 @@ public class NotificationRegistration_Tests
         distribution.DirectDistributionUserThreshold.ShouldBe(5);
         distribution.RecipientBatchSize.ShouldBe(256);
 
-        new NotificationDefinitionOptions().DefinitionProviders.ShouldBeEmpty();
+        new NotificationDefinitionRegistration().DefinitionProviders.ShouldBeEmpty();
         NotificationDistributionOptions.MaxBatchSize.ShouldBe(10_000);
     }
 
@@ -312,22 +312,22 @@ internal sealed class CaseSensitiveDataLower : NotificationData
 
 internal sealed class ProviderDependencyDefinitionProvider : INotificationDefinitionProvider
 {
-    private readonly NotificationDefinitionOptions _options;
+    private readonly NotificationDefinitionRegistration _registration;
     private readonly INotificationDefinitionManager _definitionManager;
 
     public ProviderDependencyDefinitionProvider(
-        IOptions<NotificationDefinitionOptions> options,
+        IOptions<NotificationDefinitionRegistration> registration,
         INotificationDefinitionManager definitionManager)
     {
-        _options = options.Value;
+        _registration = registration.Value;
         _definitionManager = definitionManager;
     }
 
     public void Define(INotificationDefinitionContext context)
     {
-        _options.ShouldNotBeNull();
+        _registration.ShouldNotBeNull();
         _definitionManager.ShouldNotBeNull();
-        _options.DefinitionProviders.Count(type => type == typeof(ProviderDependencyDefinitionProvider)).ShouldBe(1);
+        _registration.DefinitionProviders.Count(type => type == typeof(ProviderDependencyDefinitionProvider)).ShouldBe(1);
         context.Add(new NotificationDefinition(
             "Test.ProviderDependencies",
             new FixedLocalizableString("Provider dependencies")));
@@ -338,9 +338,9 @@ internal sealed class ProviderDependencyDefinitionProvider : INotificationDefini
 internal sealed class CustomNotificationDefinitionManager : NotificationDefinitionManager
 {
     public CustomNotificationDefinitionManager(
-        IOptions<NotificationDefinitionOptions> options,
+        IOptions<NotificationDefinitionRegistration> registration,
         IServiceScopeFactory serviceScopeFactory)
-        : base(options, serviceScopeFactory)
+        : base(registration, serviceScopeFactory)
     {
     }
 
@@ -440,7 +440,7 @@ public class ProviderDependencyStartupModule : AbpModule
     public override void ConfigureServices(ServiceConfigurationContext context)
     {
         context.Services.AddTransient<ProviderDependencyDefinitionProvider>();
-        Configure<NotificationDefinitionOptions>(options =>
+        Configure<NotificationDefinitionRegistration>(options =>
             options.DefinitionProviders.Add(typeof(ProviderDependencyDefinitionProvider)));
     }
 }
